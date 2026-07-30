@@ -1,0 +1,26 @@
+services:
+  jukebox:
+    image: jukebox:test
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_PATH: /app/data/jukebox.sqlite
+      ROOM_TTL_HOURS: "${ROOM_TTL_HOURS:-24}"
+      YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in jukebox.env}"
+      TRUST_PROXY: "${TRUST_PROXY:-false}"
+    ports:
+      - "${JUKEBOX_PORT:-3001}:3001"
+    volumes:
+      - jukebox-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  jukebox-data:

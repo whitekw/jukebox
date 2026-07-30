@@ -1,0 +1,56 @@
+# Dependencies
+**/node_modules/
+
+# Build and test output
+frontend/dist/
+frontend/dist-ssr/
+backend/dist/
+coverage/
+.nyc_output/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+jukebox.env
+!jukebox.env.example
+
+# Runtime data and databases
+backend/data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Docker image archives
+*.tar
+*.tar.gz
+
+# Local tooling
+.agents/
+.codex/
+*.local
+
+# Editors and operating systems
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

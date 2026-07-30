@@ -1,0 +1,88 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { DatabaseSync } = require('node:sqlite')
+const { createDatabase } = require('../src/db')
+
+test('migrates existing rooms and assigns the earliest participant as manager', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  let db
+
+  try {
+    const legacyDb = new DatabaseSync(databasePath)
+    legacyDb.exec(`
+      PRAGMA foreign_keys = ON;
+
+      CREATE TABLE rooms (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        host_token_hash TEXT NOT NULL,
+        max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
+        current_song_id TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE participants (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL,
+        nickname TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE(room_id, token_hash)
+      );
+    `)
+    legacyDb
+      .prepare(
+        `INSERT INTO rooms (
+          id, code, host_token_hash, max_songs_per_participant,
+          current_song_id, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'room-1',
+        'ABC234',
+        '0'.repeat(64),
+        2,
+        null,
+        Date.now(),
+        Date.now() + 60_000,
+      )
+    legacyDb
+      .prepare(
+        `INSERT INTO participants (
+          id, room_id, token_hash, nickname, created_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'participant-1',
+        'room-1',
+        '1'.repeat(64),
+        'First',
+        Date.now(),
+      )
+    legacyDb.close()
+
+    db = createDatabase(databasePath)
+    const columns = db
+      .prepare('PRAGMA table_info(rooms)')
+      .all()
+      .map((column) => column.name)
+    const migratedRoom = db
+      .prepare(
+        'SELECT manager_participant_id, host_volume FROM rooms WHERE id = ?',
+      )
+      .get('room-1')
+
+    assert.ok(columns.includes('manager_participant_id'))
+    assert.ok(columns.includes('host_volume'))
+    assert.equal(migratedRoom.manager_participant_id, 'participant-1')
+    assert.equal(migratedRoom.host_volume, 100)
+  } finally {
+    db?.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})

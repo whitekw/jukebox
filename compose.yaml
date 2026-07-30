@@ -1,0 +1,21 @@
+services:
+  jukebox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jukebox:test
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_PATH: /app/data/jukebox.sqlite
+    ports:
+      - "${JUKEBOX_PORT:-3001}:3001"
+    volumes:
+      - jukebox-data:/app/data
+
+volumes:
+  jukebox-data:
