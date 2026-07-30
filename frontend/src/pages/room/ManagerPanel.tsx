@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { SkipIcon } from '../../components/Icons'
+import {
+  buttonStyles,
+  cn,
+  formControlStyles,
+  panelStyles,
+} from '../../styles'
 import type { RoomState } from '../../types'
 
 type RoomSettings = {
@@ -83,26 +89,26 @@ export function ManagerPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-[22px] max-[680px]:p-4">
+    <section className={panelStyles({ tone: 'soft', padding: 'responsive' })}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="text-[10px] font-black tracking-[0.16em] text-[var(--lime)]">
+          <span className="text-[10px] font-black tracking-[0.16em] text-lime">
             ROOM MANAGER
           </span>
           <h2 className="mt-1.5 mb-0 text-[22px] tracking-[-0.03em]">
             호스트 제어
           </h2>
         </div>
-        <span className="rounded-full border border-[rgba(215,255,100,.22)] bg-[rgba(215,255,100,.05)] px-3 py-1.5 text-[11px] font-bold text-[var(--lime)]">
+        <span className="rounded-full border border-lime/20 bg-lime/[0.05] px-3 py-1.5 text-[11px] font-bold text-lime">
           관리자
         </span>
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-[var(--line)] bg-[rgba(0,0,0,.12)] p-4">
+        <div className="rounded-xl border border-line bg-black/10 p-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold text-[var(--muted)]">
+            <div className="min-w-0">
+              <span className="text-xs font-bold text-muted">
                 현재 재생
               </span>
               <p className="mt-1 mb-0 max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
@@ -110,7 +116,10 @@ export function ManagerPanel({
               </p>
             </div>
             <button
-              className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[rgba(255,255,255,.06)] px-3.5 text-sm font-bold text-[var(--ink)] transition-colors hover:bg-[rgba(255,255,255,.1)] disabled:cursor-not-allowed disabled:opacity-40"
+              className={cn(
+                buttonStyles({ intent: 'outline', size: 'md' }),
+                'min-h-10 shrink-0 bg-white/[0.06] font-bold',
+              )}
               type="button"
               disabled={!room.currentSong || Boolean(busyAction)}
               onClick={() => void runAction('advance', onAdvance)}
@@ -121,13 +130,13 @@ export function ManagerPanel({
           </div>
         </div>
 
-        <label className="block rounded-xl border border-[var(--line)] bg-[rgba(0,0,0,.12)] p-4">
-          <span className="flex items-center justify-between gap-3 text-xs font-bold text-[var(--muted)]">
+        <label className="block rounded-xl border border-line bg-black/10 p-4">
+          <span className="flex items-center justify-between gap-3 text-xs font-bold text-muted">
             호스트 볼륨
-            <strong className="text-sm text-[var(--ink)]">{volume}%</strong>
+            <strong className="text-sm text-ink">{volume}%</strong>
           </span>
           <input
-            className="mt-4 h-2 w-full cursor-pointer accent-[var(--purple)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4 h-2 w-full cursor-pointer accent-purple disabled:cursor-not-allowed disabled:opacity-40"
             type="range"
             min="0"
             max="100"
@@ -141,12 +150,15 @@ export function ManagerPanel({
           />
         </label>
 
-        <label className="block rounded-xl border border-[var(--line)] bg-[rgba(0,0,0,.12)] p-4">
-          <span className="text-xs font-bold text-[var(--muted)]">
+        <label className="block rounded-xl border border-line bg-black/10 p-4">
+          <span className="text-xs font-bold text-muted">
             인당 신청 가능 최대 곡 수
           </span>
           <select
-            className="mt-3 h-11 w-full rounded-[10px] border border-[var(--line)] bg-[#17141f] px-3 text-sm font-bold text-[var(--ink)] outline-none focus:border-[rgba(155,123,255,.65)] disabled:opacity-40"
+            className={cn(
+              formControlStyles({ weight: 'bold' }),
+              'mt-3 bg-[#17141f] focus:border-purple/65',
+            )}
             value={room.maxSongsPerParticipant}
             disabled={Boolean(busyAction)}
             onChange={(event) =>
@@ -167,13 +179,16 @@ export function ManagerPanel({
           </select>
         </label>
 
-        <div className="rounded-xl border border-[var(--line)] bg-[rgba(0,0,0,.12)] p-4">
-          <span className="text-xs font-bold text-[var(--muted)]">
+        <div className="rounded-xl border border-line bg-black/10 p-4">
+          <span className="text-xs font-bold text-muted">
             관리 권한 이전
           </span>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <select
-              className="h-11 min-w-0 flex-1 rounded-[10px] border border-[var(--line)] bg-[#17141f] px-3 text-sm text-[var(--ink)] outline-none focus:border-[rgba(155,123,255,.65)] disabled:opacity-40"
+              className={cn(
+                formControlStyles(),
+                'min-h-11 w-full bg-[#17141f] focus:border-purple/65 sm:min-w-0 sm:flex-1',
+              )}
               value={targetParticipantId}
               disabled={transferTargets.length === 0 || Boolean(busyAction)}
               onChange={(event) => setTargetParticipantId(event.target.value)}
@@ -186,7 +201,10 @@ export function ManagerPanel({
               ))}
             </select>
             <button
-              className="h-11 shrink-0 rounded-[10px] bg-[var(--purple)] px-3.5 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className={cn(
+                buttonStyles({ intent: 'purple', size: 'md' }),
+                'shrink-0 font-black',
+              )}
               type="button"
               disabled={!targetParticipantId || Boolean(busyAction)}
               onClick={transferManager}
@@ -199,14 +217,14 @@ export function ManagerPanel({
 
       {error && (
         <p
-          className="mt-4 mb-0 rounded-[10px] border border-[rgba(255,115,136,.3)] bg-[rgba(255,115,136,.08)] px-3.5 py-2.5 text-sm text-[#ffd4db]"
+          className="mt-4 mb-0 rounded-[10px] border border-danger/30 bg-danger/[0.08] px-3.5 py-2.5 text-sm text-[#ffd4db]"
           role="alert"
         >
           {error}
         </p>
       )}
 
-      <p className="mt-4 mb-0 text-xs leading-5 text-[var(--dim)]">
+      <p className="mt-4 mb-0 text-xs leading-5 text-dim">
         대기열의 순서 변경과 삭제는 아래 대기열에서 바로 관리할 수 있습니다.
       </p>
     </section>

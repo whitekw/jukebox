@@ -7,6 +7,16 @@ import {
 } from '../../api'
 import { Brand } from '../../components/Brand'
 import { MusicIcon } from '../../components/Icons'
+import {
+  buttonStyles,
+  cardIconStyles,
+  cn,
+  connectionDotStyles,
+  formControlStyles,
+  noticeStyles,
+  pageMessageStyles,
+  sectionKickerStyles,
+} from '../../styles'
 import type { Participant } from '../../types'
 import { useRoomState } from '../../useRoomState'
 import { ManagerPanel } from './ManagerPanel'
@@ -107,23 +117,36 @@ export function RoomPage() {
   }
 
   if (loading) {
-    return <main className="page-message"><Brand /><h1>방에 연결하는 중…</h1></main>
+    return (
+      <main className={pageMessageStyles}>
+        <Brand className="absolute top-[26px] left-[30px]" />
+        <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">방에 연결하는 중…</h1>
+      </main>
+    )
   }
   if (!room) {
-    return <main className="page-message"><Brand /><h1>{roomError || '방을 찾지 못했습니다.'}</h1><Link to="/">홈으로</Link></main>
+    return (
+      <main className={pageMessageStyles}>
+        <Brand className="absolute top-[26px] left-[30px]" />
+        <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">
+          {roomError || '방을 찾지 못했습니다.'}
+        </h1>
+        <Link className={buttonStyles({ intent: 'outline' })} to="/">홈으로</Link>
+      </main>
+    )
   }
 
   return (
-    <main className="guest-shell">
-      <header className="guest-header">
-        <Brand />
-        <div className="guest-room-code">
-          <span className={`connection-dot ${connected ? 'online' : ''}`} />
+    <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
+      <header className="mx-auto mb-[22px] flex max-w-[920px] items-center justify-between">
+        <Brand compactOnMobile />
+        <div className="flex items-center gap-[9px] text-[11px] font-bold tracking-[0.08em] text-dim">
+          <span className={connectionDotStyles({ connected })} />
           ROOM <strong>{code}</strong>
         </div>
       </header>
 
-      <section className="guest-content">
+      <section className="mx-auto grid max-w-[920px] gap-4">
         <NowPlaying song={room.currentSong} />
         {participant && isManager && (
           <ManagerPanel
@@ -188,14 +211,27 @@ export function RoomPage() {
       </section>
 
       {!participant && (
-        <div className="join-overlay">
-          <form className="join-dialog" onSubmit={join}>
-            <div className="card-icon"><MusicIcon size={25} /></div>
-            <span className="section-kicker">WELCOME TO {code}</span>
-            <h1>어떤 이름으로 참여할까요?</h1>
-            <p>신청곡 옆에 표시될 닉네임입니다.</p>
-            <label className="field-label" htmlFor="nickname">닉네임</label>
+        <div className="fixed inset-0 z-20 grid place-items-center bg-[#040307]/75 p-5 backdrop-blur-[18px]">
+          <form
+            className="flex w-full max-w-[420px] flex-col rounded-[18px] border border-purple/30 bg-[#121017] p-6 shadow-[0_30px_100px_rgba(0,0,0,.5)] md:p-[30px]"
+            onSubmit={join}
+          >
+            <div className={cardIconStyles()}><MusicIcon size={25} /></div>
+            <span className={sectionKickerStyles}>WELCOME TO {code}</span>
+            <h1 className="mt-2.5 mb-2 text-[27px] tracking-[-0.04em]">
+              어떤 이름으로 참여할까요?
+            </h1>
+            <p className="mb-7 text-[13px] text-muted">
+              신청곡 옆에 표시될 닉네임입니다.
+            </p>
+            <label
+              className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
+              htmlFor="nickname"
+            >
+              닉네임
+            </label>
             <input
+              className={cn(formControlStyles({ size: 'large' }), 'mb-3')}
               id="nickname"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
@@ -205,13 +241,35 @@ export function RoomPage() {
               autoFocus
               required
             />
-            <button className="primary-button" type="submit">입장하기 <span>→</span></button>
+            <button
+              className={buttonStyles({
+                intent: 'primary',
+                size: 'lg',
+                spread: true,
+                fullWidth: true,
+              })}
+              type="submit"
+            >
+              입장하기 <span>→</span>
+            </button>
           </form>
         </div>
       )}
 
-      {(error || roomError) && <div className="global-error">{error || roomError}</div>}
-      {message && <div className="toast" role="status" aria-live="polite">{message}</div>}
+      {(error || roomError) && (
+        <div className={noticeStyles({ tone: 'error' })}>
+          {error || roomError}
+        </div>
+      )}
+      {message && (
+        <div
+          className={noticeStyles({ tone: 'success' })}
+          role="status"
+          aria-live="polite"
+        >
+          {message}
+        </div>
+      )}
     </main>
   )
 }

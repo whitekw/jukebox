@@ -1,4 +1,5 @@
 import { SongList } from '../../components/SongList'
+import { panelStyles, sectionKickerStyles } from '../../styles'
 import type { Song } from '../../types'
 
 type QueuePanelProps = {
@@ -9,11 +10,14 @@ type QueuePanelProps = {
 
 export function QueuePanel({ songs, onMove, onRemove }: QueuePanelProps) {
   return (
-    <section className="guest-queue-panel">
-      <div className="guest-section-heading">
+    <section className={panelStyles({ padding: 'responsive' })}>
+      <div className="mx-1 mb-[18px] flex items-end justify-between md:mx-[7px]">
         <div>
-          <span className="section-kicker">UP NEXT</span>
-          <h2>다음 곡 <b>{songs.length}</b></h2>
+          <span className={sectionKickerStyles}>UP NEXT</span>
+          <h2 className="mt-1.5 text-xl tracking-[-0.03em] md:text-[23px]">
+            다음 곡{' '}
+            <b className="text-[13px] font-semibold text-dim">{songs.length}</b>
+          </h2>
         </div>
       </div>
       <SongList

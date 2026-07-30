@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { buttonStyles, cn } from '../styles'
 
 type YTPlayer = {
   loadVideoById(videoId: string): void
@@ -144,11 +145,19 @@ export function YouTubePlayer({
 
   return (
     <>
-      <div className="youtube-mount" ref={mountRef} />
+      <div className="size-full [&_iframe]:size-full" ref={mountRef} />
       {playbackError !== null ? (
-        <div className="player-notice error" role="alert">
+        <div
+          className={cn(
+            'absolute inset-x-3 bottom-3 z-[2] flex items-center justify-center gap-3 rounded-[10px]',
+            'border border-danger/30 bg-[#17141f]/95 px-3.5 py-3 text-center text-[13px] text-[#ffd4db]',
+            'shadow-[0_12px_36px_rgba(0,0,0,.35)] md:inset-x-4 md:bottom-4',
+          )}
+          role="alert"
+        >
           <span>{getPlaybackErrorMessage(playbackError)}</span>
           <button
+            className={buttonStyles({ intent: 'player', size: 'sm' })}
             type="button"
             onClick={() => {
               setPlaybackError(null)
@@ -160,9 +169,13 @@ export function YouTubePlayer({
           </button>
         </div>
       ) : autoplayBlocked && (
-        <div className="player-notice">
+        <div className="absolute inset-x-3 bottom-3 z-[2] flex items-center justify-center gap-3 rounded-[10px] border border-line bg-[#17141f]/95 px-3.5 py-3 text-center text-[13px] text-muted shadow-[0_12px_36px_rgba(0,0,0,.35)] md:inset-x-4 md:bottom-4">
           브라우저가 자동재생을 막았습니다.
-          <button type="button" onClick={() => playerRef.current?.playVideo()}>
+          <button
+            className={buttonStyles({ intent: 'player', size: 'sm' })}
+            type="button"
+            onClick={() => playerRef.current?.playVideo()}
+          >
             재생 계속
           </button>
         </div>
