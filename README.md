@@ -8,6 +8,7 @@
 - 가입 없는 닉네임 기반 참여
 - 참여자별 활성 신청곡 수 제한
 - YouTube 키워드 검색(최대 15개)
+- 접속 국가별 YouTube 인기 음악 목록(외부 재생 불가 영상은 표시만 제공)
 - YouTube, YouTube Music, `youtu.be`, Shorts URL 직접 추가
 - 중복 영상과 임베드 불가 영상 차단
 - 호스트 전용 건너뛰기, 순서 변경, 삭제
@@ -44,10 +45,13 @@ PORT=3001
 DATABASE_PATH=./data/jukebox.sqlite
 ROOM_TTL_HOURS=24
 YOUTUBE_API_KEY=your_api_key
+YOUTUBE_DEFAULT_REGION=KR
 TRUST_PROXY=false
 ```
 
 리버스 프록시 뒤에서 운영한다면 실제 클라이언트 IP를 요청 제한에 사용하도록 `TRUST_PROXY=true`로 설정합니다.
+Cloudflare의 `CF-IPCountry` 헤더가 없는 로컬 환경이나 국가별 차트를 제공하지 않는 지역에서는
+`YOUTUBE_DEFAULT_REGION`의 국가 코드로 인기 음악을 표시합니다.
 
 ## 개발 실행
 

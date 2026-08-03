@@ -113,6 +113,12 @@ export const api = {
     )
   },
 
+  getPopularMusic() {
+    return request<{ regionCode: string; items: VideoSearchResult[] }>(
+      '/api/youtube/charts/music',
+    )
+  },
+
   addSong(code: string, participantToken: string, videoId: string) {
     return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/songs`, {
       method: 'POST',

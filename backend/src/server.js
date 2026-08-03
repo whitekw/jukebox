@@ -12,6 +12,7 @@ const { createYouTubeService } = require('./youtube')
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
 const roomTtlHours = Number(process.env.ROOM_TTL_HOURS ?? 24)
+const youtubeDefaultRegion = process.env.YOUTUBE_DEFAULT_REGION ?? 'KR'
 
 const db = createDatabase(databasePath)
 const rooms = createRoomService(db, { roomTtlHours })
@@ -80,6 +81,15 @@ app.get(
   searchLimiter,
   asyncRoute(async (req, res) => {
     res.json({ items: await youtube.search(req.query.q) })
+  }),
+)
+
+app.get(
+  '/api/youtube/charts/music',
+  searchLimiter,
+  asyncRoute(async (req, res) => {
+    const { countryCode } = getLocaleConfig(req)
+    res.json(await youtube.getPopularMusic(countryCode, youtubeDefaultRegion))
   }),
 )
 

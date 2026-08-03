@@ -1,6 +1,10 @@
 const { AppError } = require('./errors')
 
 const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/
+const REGION_CODE_PATTERN = /^[A-Z]{2}$/
+const MUSIC_CATEGORY_ID = '10'
+const POPULAR_MUSIC_LIMIT = 15
+const POPULAR_MUSIC_CACHE_TTL_MS = 30 * 60 * 1000
 
 function extractYouTubeVideoId(input) {
   const value = String(input ?? '').trim()
@@ -45,8 +49,36 @@ function parseIsoDuration(duration) {
   )
 }
 
-function createYouTubeService(apiKey, { fetchImpl = fetch } = {}) {
+function normalizeRegionCode(value, fallback = 'KR') {
+  const regionCode = String(value ?? '').trim().toUpperCase()
+  if (REGION_CODE_PATTERN.test(regionCode)) return regionCode
+
+  const fallbackCode = String(fallback ?? '').trim().toUpperCase()
+  return REGION_CODE_PATTERN.test(fallbackCode) ? fallbackCode : 'KR'
+}
+
+function isAvailableVideo(item) {
+  return (
+    item.status?.privacyStatus === 'public' &&
+    item.snippet?.liveBroadcastContent !== 'live'
+  )
+}
+
+function isPlayableVideo(item) {
+  return isAvailableVideo(item) && item.status?.embeddable === true
+}
+
+function createYouTubeService(
+  apiKey,
+  {
+    fetchImpl = fetch,
+    now = Date.now,
+    popularMusicCacheTtlMs = POPULAR_MUSIC_CACHE_TTL_MS,
+  } = {},
+) {
   const baseUrl = 'https://www.googleapis.com/youtube/v3'
+  const popularMusicCache = new Map()
+  const popularMusicRequests = new Map()
 
   function assertConfigured() {
     if (!apiKey) {
@@ -75,7 +107,13 @@ function createYouTubeService(apiKey, { fetchImpl = fetch } = {}) {
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
       const message = body?.error?.message ?? 'YouTube API 요청에 실패했습니다.'
-      throw new AppError(response.status, message, 'YOUTUBE_API_ERROR')
+      const youtubeReason = body?.error?.errors?.[0]?.reason
+      throw new AppError(
+        response.status,
+        message,
+        'YOUTUBE_API_ERROR',
+        youtubeReason ? { youtubeReason } : undefined,
+      )
     }
     return body
   }
@@ -92,6 +130,7 @@ function createYouTubeService(apiKey, { fetchImpl = fetch } = {}) {
       artist: item.snippet?.channelTitle ?? '아티스트 정보 없음',
       durationSeconds: parseIsoDuration(item.contentDetails?.duration),
       thumbnailUrl: thumbnail,
+      embeddable: item.status?.embeddable === true,
     }
   }
 
@@ -102,14 +141,7 @@ function createYouTubeService(apiKey, { fetchImpl = fetch } = {}) {
       part: 'snippet,contentDetails,status',
       id: uniqueIds.join(','),
     })
-    return (result.items ?? [])
-      .filter(
-        (item) =>
-          item.status?.embeddable === true &&
-          item.status?.privacyStatus === 'public' &&
-          item.snippet?.liveBroadcastContent !== 'live',
-      )
-      .map(mapVideo)
+    return (result.items ?? []).filter(isPlayableVideo).map(mapVideo)
   }
 
   async function getVideo(input) {
@@ -150,11 +182,70 @@ function createYouTubeService(apiKey, { fetchImpl = fetch } = {}) {
     return getVideos(ids)
   }
 
-  return { search, getVideo }
+  async function fetchPopularMusic(regionCode) {
+    const result = await youtubeFetch('videos', {
+      part: 'snippet,contentDetails,status',
+      chart: 'mostPopular',
+      regionCode,
+      videoCategoryId: MUSIC_CATEGORY_ID,
+      maxResults: 25,
+    })
+    return (result.items ?? [])
+      .filter(isAvailableVideo)
+      .slice(0, POPULAR_MUSIC_LIMIT)
+      .map(mapVideo)
+  }
+
+  function loadPopularMusic(regionCode) {
+    const cached = popularMusicCache.get(regionCode)
+    if (cached && cached.expiresAt > now()) return Promise.resolve(cached.value)
+
+    const pending = popularMusicRequests.get(regionCode)
+    if (pending) return pending
+
+    const request = fetchPopularMusic(regionCode)
+      .then((items) => {
+        const value = { regionCode, items }
+        popularMusicCache.set(regionCode, {
+          value,
+          expiresAt: now() + popularMusicCacheTtlMs,
+        })
+        return value
+      })
+      .finally(() => popularMusicRequests.delete(regionCode))
+
+    popularMusicRequests.set(regionCode, request)
+    return request
+  }
+
+  async function getPopularMusic(regionCode, fallbackRegionCode = 'KR') {
+    const fallback = normalizeRegionCode(fallbackRegionCode)
+    const region = normalizeRegionCode(regionCode, fallback)
+
+    try {
+      return await loadPopularMusic(region)
+    } catch (error) {
+      const chartUnavailable =
+        error instanceof AppError &&
+        error.code === 'YOUTUBE_API_ERROR' &&
+        error.details?.youtubeReason === 'videoChartNotFound'
+      if (!chartUnavailable || region === fallback) throw error
+
+      const fallbackResult = await loadPopularMusic(fallback)
+      popularMusicCache.set(region, {
+        value: fallbackResult,
+        expiresAt: now() + popularMusicCacheTtlMs,
+      })
+      return fallbackResult
+    }
+  }
+
+  return { search, getVideo, getPopularMusic }
 }
 
 module.exports = {
   createYouTubeService,
   extractYouTubeVideoId,
+  normalizeRegionCode,
   parseIsoDuration,
 }
