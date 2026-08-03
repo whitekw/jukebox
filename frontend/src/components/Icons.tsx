@@ -61,6 +61,22 @@ export function SkipIcon(props: IconProps) {
   )
 }
 
+export function PauseIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M8 5v14M16 5v14" />
+    </IconBase>
+  )
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m7 4 13 8-13 8V4Z" />
+    </IconBase>
+  )
+}
+
 export function TrashIcon(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -85,4 +101,3 @@ export function CopyIcon(props: IconProps) {
     </IconBase>
   )
 }
-

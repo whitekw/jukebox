@@ -4,6 +4,7 @@ import { buttonStyles, cn } from '../styles'
 type YTPlayer = {
   loadVideoById(videoId: string): void
   playVideo(): void
+  pauseVideo(): void
   setVolume(volume: number): void
   destroy(): void
 }
@@ -60,16 +61,26 @@ function loadYouTubeApi() {
 export function YouTubePlayer({
   videoId,
   volume,
+  paused,
+  playbackBlocked,
+  onPlaybackBlockedChange,
   onEnded,
 }: {
   videoId: string
   volume: number
+  paused: boolean
+  playbackBlocked: boolean
+  onPlaybackBlockedChange: (blocked: boolean) => void
   onEnded: () => void
 }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
   const videoIdRef = useRef(videoId)
   const volumeRef = useRef(volume)
+  const pausedRef = useRef(paused)
+  const playbackBlockedRef = useRef(playbackBlocked)
+  const autoplayBlockedRef = useRef(false)
+  const onPlaybackBlockedChangeRef = useRef(onPlaybackBlockedChange)
   const onEndedRef = useRef(onEnded)
   const finishedVideoRef = useRef('')
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
@@ -79,15 +90,32 @@ export function YouTubePlayer({
     videoIdRef.current = videoId
     onEndedRef.current = onEnded
     finishedVideoRef.current = ''
+    autoplayBlockedRef.current = false
     setAutoplayBlocked(false)
     setPlaybackError(null)
     playerRef.current?.loadVideoById(videoId)
   }, [videoId, onEnded])
 
   useEffect(() => {
+    playbackBlockedRef.current = playbackBlocked
+    onPlaybackBlockedChangeRef.current = onPlaybackBlockedChange
+  }, [onPlaybackBlockedChange, playbackBlocked])
+
+  useEffect(() => {
     volumeRef.current = volume
     playerRef.current?.setVolume(volume)
   }, [volume])
+
+  useEffect(() => {
+    pausedRef.current = paused
+    if (paused) {
+      playerRef.current?.pauseVideo()
+    } else {
+      autoplayBlockedRef.current = false
+      setAutoplayBlocked(false)
+      playerRef.current?.playVideo()
+    }
+  }, [paused])
 
   useEffect(() => {
     let cancelled = false
@@ -115,16 +143,41 @@ export function YouTubePlayer({
         events: {
           onReady: (event) => {
             event.target.setVolume(volumeRef.current)
-            event.target.playVideo()
+            if (pausedRef.current) {
+              event.target.pauseVideo()
+            } else {
+              event.target.playVideo()
+            }
           },
           onStateChange: (event) => {
             if (event.data === 0 && finishedVideoRef.current !== videoIdRef.current) {
               finishedVideoRef.current = videoIdRef.current
               onEndedRef.current()
             }
+            if (event.data === 1) {
+              const wasBlocked =
+                autoplayBlockedRef.current || playbackBlockedRef.current
+              autoplayBlockedRef.current = false
+              setAutoplayBlocked(false)
+              if (wasBlocked) {
+                playbackBlockedRef.current = false
+                onPlaybackBlockedChangeRef.current(false)
+              }
+            }
           },
           onError: (event) => setPlaybackError(event.data),
-          onAutoplayBlocked: () => setAutoplayBlocked(true),
+          onAutoplayBlocked: () => {
+            if (
+              autoplayBlockedRef.current &&
+              playbackBlockedRef.current
+            ) {
+              return
+            }
+            autoplayBlockedRef.current = true
+            playbackBlockedRef.current = true
+            setAutoplayBlocked(true)
+            onPlaybackBlockedChangeRef.current(true)
+          },
         },
       })
       playerRef.current = player
@@ -162,7 +215,11 @@ export function YouTubePlayer({
             onClick={() => {
               setPlaybackError(null)
               playerRef.current?.loadVideoById(videoIdRef.current)
-              playerRef.current?.playVideo()
+              if (pausedRef.current) {
+                playerRef.current?.pauseVideo()
+              } else {
+                playerRef.current?.playVideo()
+              }
             }}
           >
             다시 시도
@@ -174,7 +231,11 @@ export function YouTubePlayer({
           <button
             className={buttonStyles({ intent: 'player', size: 'sm' })}
             type="button"
-            onClick={() => playerRef.current?.playVideo()}
+            onClick={() => {
+              autoplayBlockedRef.current = false
+              setAutoplayBlocked(false)
+              playerRef.current?.playVideo()
+            }}
           >
             재생 계속
           </button>

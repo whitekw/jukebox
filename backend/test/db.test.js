@@ -73,14 +73,20 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
       .map((column) => column.name)
     const migratedRoom = db
       .prepare(
-        'SELECT manager_participant_id, host_volume FROM rooms WHERE id = ?',
+        `SELECT manager_participant_id, host_volume, playback_paused,
+                playback_blocked
+         FROM rooms WHERE id = ?`,
       )
       .get('room-1')
 
     assert.ok(columns.includes('manager_participant_id'))
     assert.ok(columns.includes('host_volume'))
+    assert.ok(columns.includes('playback_paused'))
+    assert.ok(columns.includes('playback_blocked'))
     assert.equal(migratedRoom.manager_participant_id, 'participant-1')
     assert.equal(migratedRoom.host_volume, 100)
+    assert.equal(migratedRoom.playback_paused, 0)
+    assert.equal(migratedRoom.playback_blocked, 0)
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

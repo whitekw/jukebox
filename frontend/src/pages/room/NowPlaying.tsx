@@ -1,12 +1,24 @@
 import type { Song } from '../../types'
 import { panelStyles } from '../../styles'
 
-export const NowPlaying = ({ song }: { song: Song | null }) => {
+export const NowPlaying = ({
+  song,
+  paused,
+  blocked,
+}: {
+  song: Song | null
+  paused: boolean
+  blocked: boolean
+}) => {
   return (
     <div className={panelStyles({ tone: 'purple', padding: 'responsive' })}>
       <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-purple-light">
         <i className="block size-1.5 rounded-full bg-purple-light shadow-[0_0_10px_#9b7bff]" />
-        NOW PLAYING
+        {blocked && song
+          ? 'AUTOPLAY BLOCKED'
+          : paused && song
+            ? 'PAUSED'
+            : 'NOW PLAYING'}
       </span>
       {song ? (
         <div className="mt-[13px] flex items-center gap-3 md:gap-4">

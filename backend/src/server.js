@@ -99,6 +99,30 @@ app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   res.json(state)
 })
 
+app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
+  const state = rooms.setPlaybackPaused(
+    req.params.code,
+    controlCredentials(req),
+    req.body.paused,
+  )
+  emitRoom(req.params.code, state)
+  res.json(state)
+})
+
+app.patch(
+  '/api/rooms/:code/playback/autoplay-blocked',
+  mutationLimiter,
+  (req, res) => {
+    const state = rooms.reportPlaybackBlocked(
+      req.params.code,
+      req.get('x-host-token'),
+      req.body.blocked,
+    )
+    emitRoom(req.params.code, state)
+    res.json(state)
+  },
+)
+
 app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
   const state = rooms.removeSong(
     req.params.code,

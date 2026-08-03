@@ -39,6 +39,14 @@ export function HostPage() {
     if (hostToken) void runAction(() => api.advance(code, hostToken))
   }, [code, hostToken, runAction])
 
+  const reportPlaybackBlocked = useCallback((blocked: boolean) => {
+    if (hostToken) {
+      void runAction(() =>
+        api.reportPlaybackBlocked(code, hostToken, blocked),
+      )
+    }
+  }, [code, hostToken, runAction])
+
   async function copyJoinLink() {
     await navigator.clipboard.writeText(joinUrl)
     setCopied(true)
@@ -94,6 +102,9 @@ export function HostPage() {
               <YouTubePlayer
                 videoId={room.currentSong.videoId}
                 volume={room.hostVolume}
+                paused={room.playbackPaused}
+                playbackBlocked={room.playbackBlocked}
+                onPlaybackBlockedChange={reportPlaybackBlocked}
                 onEnded={advance}
               />
             ) : (
@@ -111,7 +122,11 @@ export function HostPage() {
             <div className="min-w-0">
               <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-purple-light">
                 <i className="size-1.5 rounded-full bg-purple-light shadow-[0_0_10px_#9b7bff]" />
-                NOW PLAYING
+                {room.playbackBlocked
+                  ? 'AUTOPLAY BLOCKED'
+                  : room.playbackPaused
+                    ? 'PAUSED'
+                    : 'NOW PLAYING'}
               </span>
               <h1 className="my-2 max-w-[65vw] overflow-hidden text-ellipsis whitespace-nowrap text-[23px] tracking-[-0.04em] md:my-2 md:max-w-[780px] md:text-[clamp(24px,3vw,39px)]">
                 {room.currentSong?.title ?? '아직 재생 중인 곡이 없습니다'}

@@ -147,11 +147,24 @@ export function RoomPage() {
       </header>
 
       <section className="mx-auto grid max-w-[920px] gap-4">
-        <NowPlaying song={room.currentSong} />
+        <NowPlaying
+          song={room.currentSong}
+          paused={room.playbackPaused}
+          blocked={room.playbackBlocked}
+        />
         {participant && isManager && (
           <ManagerPanel
             room={room}
             participantId={participant.id}
+            onTogglePlayback={() =>
+              runManagerAction(() =>
+                api.setPlaybackPaused(
+                  code,
+                  { participantToken },
+                  !room.playbackPaused,
+                ),
+              )
+            }
             onAdvance={() =>
               runManagerAction(() =>
                 api.advance(code, { participantToken }),

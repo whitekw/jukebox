@@ -60,6 +60,8 @@ test('assigns, transfers and enforces participant manager controls', () => {
   let state = rooms.getPublicRoom(created.code)
   assert.equal(state.managerParticipantId, alice.participant.id)
   assert.equal(state.hostVolume, 100)
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackBlocked, false)
   assert.deepEqual(
     state.participants.map(({ nickname, isManager }) => ({ nickname, isManager })),
     [
@@ -81,6 +83,61 @@ test('assigns, transfers and enforces participant manager controls', () => {
       }),
     /관리 권한/,
   )
+  assert.throws(
+    () =>
+      rooms.setPlaybackPaused(
+        created.code,
+        { participantToken: bob.participantToken },
+        true,
+      ),
+    /관리 권한/,
+  )
+
+  state = rooms.setPlaybackPaused(
+    created.code,
+    { participantToken: alice.participantToken },
+    true,
+  )
+  assert.equal(state.playbackPaused, true)
+  assert.equal(state.playbackBlocked, false)
+
+  assert.throws(
+    () =>
+      rooms.reportPlaybackBlocked(
+        created.code,
+        'wrong-token',
+        true,
+      ),
+    /호스트 권한/,
+  )
+  state = rooms.reportPlaybackBlocked(
+    created.code,
+    created.hostToken,
+    true,
+  )
+  assert.equal(state.playbackPaused, true)
+  assert.equal(state.playbackBlocked, true)
+
+  state = rooms.reportPlaybackBlocked(
+    created.code,
+    created.hostToken,
+    false,
+  )
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackBlocked, false)
+
+  state = rooms.reportPlaybackBlocked(
+    created.code,
+    created.hostToken,
+    true,
+  )
+  state = rooms.setPlaybackPaused(
+    created.code,
+    { participantToken: alice.participantToken },
+    false,
+  )
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackBlocked, false)
 
   state = rooms.updateRoomSettings(
     created.code,
@@ -94,6 +151,8 @@ test('assigns, transfers and enforces participant manager controls', () => {
     participantToken: alice.participantToken,
   })
   assert.equal(state.currentSong.title, 'Two')
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackBlocked, false)
 
   state = rooms.transferManager(
     created.code,

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { SkipIcon } from '../../components/Icons'
+import {
+  PauseIcon,
+  PlayIcon,
+  SkipIcon,
+} from '../../components/Icons'
 import {
   buttonStyles,
   cn,
@@ -16,6 +20,7 @@ type RoomSettings = {
 type ManagerPanelProps = {
   room: RoomState
   participantId: string
+  onTogglePlayback: () => Promise<void>
   onAdvance: () => Promise<void>
   onUpdateSettings: (settings: RoomSettings) => Promise<void>
   onTransfer: (targetParticipantId: string) => Promise<void>
@@ -24,6 +29,7 @@ type ManagerPanelProps = {
 export function ManagerPanel({
   room,
   participantId,
+  onTogglePlayback,
   onAdvance,
   onUpdateSettings,
   onTransfer,
@@ -106,27 +112,53 @@ export function ManagerPanel({
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-line bg-black/10 p-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <span className="text-xs font-bold text-muted">
                 현재 재생
               </span>
               <p className="mt-1 mb-0 max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
-                {room.currentSong?.title ?? '재생 중인 곡 없음'}
+                {room.playbackBlocked
+                  ? '자동재생 차단됨'
+                  : room.currentSong?.title ?? '재생 중인 곡 없음'}
               </p>
             </div>
-            <button
-              className={cn(
-                buttonStyles({ intent: 'outline', size: 'md' }),
-                'min-h-10 shrink-0 bg-white/[0.06] font-bold',
-              )}
-              type="button"
-              disabled={!room.currentSong || Boolean(busyAction)}
-              onClick={() => void runAction('advance', onAdvance)}
-            >
-              <SkipIcon size={18} />
-              건너뛰기
-            </button>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+              <button
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'min-h-10 bg-white/[0.06] font-bold',
+                )}
+                type="button"
+                disabled={!room.currentSong || Boolean(busyAction)}
+                onClick={() =>
+                  void runAction('playback', onTogglePlayback)
+                }
+              >
+                {room.playbackPaused ? (
+                  <PlayIcon size={18} />
+                ) : (
+                  <PauseIcon size={18} />
+                )}
+                {room.playbackBlocked
+                  ? '재생 시도'
+                  : room.playbackPaused
+                    ? '재생 계속'
+                    : '일시정지'}
+              </button>
+              <button
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'min-h-10 bg-white/[0.06] font-bold',
+                )}
+                type="button"
+                disabled={!room.currentSong || Boolean(busyAction)}
+                onClick={() => void runAction('advance', onAdvance)}
+              >
+                <SkipIcon size={18} />
+                건너뛰기
+              </button>
+            </div>
           </div>
         </div>
 

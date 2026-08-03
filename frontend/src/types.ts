@@ -16,6 +16,8 @@ export type RoomState = {
   maxSongsPerParticipant: number
   managerParticipantId: string | null
   hostVolume: number
+  playbackPaused: boolean
+  playbackBlocked: boolean
   participants: RoomParticipant[]
   currentSong: Song | null
   queue: Song[]

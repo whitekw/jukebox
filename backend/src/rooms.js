@@ -134,6 +134,8 @@ function createRoomService(db, options = {}) {
       maxSongsPerParticipant: room.max_songs_per_participant,
       managerParticipantId: room.manager_participant_id,
       hostVolume: room.host_volume,
+      playbackPaused: Boolean(room.playback_paused),
+      playbackBlocked: Boolean(room.playback_blocked),
       participants: participants.map((participant) => ({
         id: participant.id,
         nickname: participant.nickname,
@@ -288,7 +290,11 @@ function createRoomService(db, options = {}) {
         Date.now(),
       )
       if (status === 'current') {
-        db.prepare('UPDATE rooms SET current_song_id = ? WHERE id = ?').run(id, room.id)
+        db.prepare(
+          `UPDATE rooms
+           SET current_song_id = ?, playback_paused = 0, playback_blocked = 0
+           WHERE id = ?`,
+        ).run(id, room.id)
       }
       return getPublicRoom(code)
     })
@@ -313,10 +319,73 @@ function createRoomService(db, options = {}) {
       if (next) {
         db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
       }
-      db.prepare('UPDATE rooms SET current_song_id = ? WHERE id = ?').run(
+      db.prepare(
+        `UPDATE rooms
+         SET current_song_id = ?, playback_paused = 0, playback_blocked = 0
+         WHERE id = ?`,
+      ).run(
         next?.id ?? null,
         room.id,
       )
+      return getPublicRoom(code)
+    })
+  }
+
+  function setPlaybackPaused(code, credentials, paused) {
+    if (typeof paused !== 'boolean') {
+      throw new AppError(
+        400,
+        '재생 상태가 올바르지 않습니다.',
+        'INVALID_PLAYBACK_STATE',
+      )
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      requireController(room, credentials)
+      if (!room.current_song_id) {
+        throw new AppError(
+          409,
+          '현재 재생 중인 곡이 없습니다.',
+          'NO_CURRENT_SONG',
+        )
+      }
+      db.prepare(
+        `UPDATE rooms
+         SET playback_paused = ?, playback_blocked = 0
+         WHERE id = ?`,
+      ).run(paused ? 1 : 0, room.id)
+      return getPublicRoom(code)
+    })
+  }
+
+  function reportPlaybackBlocked(code, hostToken, blocked) {
+    if (typeof blocked !== 'boolean') {
+      throw new AppError(
+        400,
+        '자동재생 차단 상태가 올바르지 않습니다.',
+        'INVALID_PLAYBACK_BLOCKED_STATE',
+      )
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      if (!hasHostAccess(room, hostToken)) {
+        throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
+      }
+      if (!room.current_song_id) {
+        db.prepare(
+          `UPDATE rooms
+           SET playback_paused = 0, playback_blocked = 0
+           WHERE id = ?`,
+        ).run(room.id)
+        return getPublicRoom(code)
+      }
+      db.prepare(
+        `UPDATE rooms
+         SET playback_paused = ?, playback_blocked = ?
+         WHERE id = ?`,
+      ).run(blocked ? 1 : 0, blocked ? 1 : 0, room.id)
       return getPublicRoom(code)
     })
   }
@@ -466,6 +535,8 @@ function createRoomService(db, options = {}) {
     getParticipantStatus,
     addSong,
     advance,
+    setPlaybackPaused,
+    reportPlaybackBlocked,
     removeSong,
     moveSong,
     updateRoomSettings,

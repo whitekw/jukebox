@@ -21,6 +21,8 @@ function createDatabase(databasePath = ':memory:') {
       max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
       manager_participant_id TEXT,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
+      playback_paused INTEGER NOT NULL DEFAULT 0 CHECK(playback_paused IN (0, 1)),
+      playback_blocked INTEGER NOT NULL DEFAULT 0 CHECK(playback_blocked IN (0, 1)),
       current_song_id TEXT,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
@@ -67,6 +69,16 @@ function createDatabase(databasePath = ':memory:') {
   if (!roomColumns.has('host_volume')) {
     db.exec(
       'ALTER TABLE rooms ADD COLUMN host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100)',
+    )
+  }
+  if (!roomColumns.has('playback_paused')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_paused INTEGER NOT NULL DEFAULT 0 CHECK(playback_paused IN (0, 1))',
+    )
+  }
+  if (!roomColumns.has('playback_blocked')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_blocked INTEGER NOT NULL DEFAULT 0 CHECK(playback_blocked IN (0, 1))',
     )
   }
 

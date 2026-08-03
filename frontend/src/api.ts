@@ -113,6 +113,32 @@ export const api = {
     })
   },
 
+  setPlaybackPaused(
+    code: string,
+    credentials: ControlCredentials,
+    paused: boolean,
+  ) {
+    return request<RoomState>(
+      `/api/rooms/${encodeURIComponent(code)}/playback`,
+      {
+        method: 'PATCH',
+        headers: controlHeaders(credentials),
+        body: JSON.stringify({ paused }),
+      },
+    )
+  },
+
+  reportPlaybackBlocked(code: string, hostToken: string, blocked: boolean) {
+    return request<RoomState>(
+      `/api/rooms/${encodeURIComponent(code)}/playback/autoplay-blocked`,
+      {
+        method: 'PATCH',
+        headers: { 'x-host-token': hostToken },
+        body: JSON.stringify({ blocked }),
+      },
+    )
+  },
+
   removeSong(code: string, credentials: ControlCredentials, songId: string) {
     return request<RoomState>(
       `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}`,
