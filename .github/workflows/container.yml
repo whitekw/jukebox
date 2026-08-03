@@ -87,3 +87,39 @@ jobs:
             ghcr.io/whitekw/jukebox:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  update-deploy:
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    needs:
+      - publish
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout deploy branch
+        uses: actions/checkout@v6
+        with:
+          ref: deploy
+
+      - name: Update deployment image
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          sed -i \
+            "s|^[[:space:]]*image:.*ghcr.io/whitekw/jukebox.*|    image: \"ghcr.io/whitekw/jukebox:${IMAGE_TAG}\"|" \
+            compose.deploy.yaml
+
+      - name: Commit deployment
+        run: |
+          if git diff --quiet; then
+            echo "Deployment image is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add compose.deploy.yaml
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git push origin HEAD:deploy
