@@ -1,6 +1,6 @@
 services:
   jukebox:
-    image: jukebox:test
+    image: "ghcr.io/whitekw/jukebox:${JUKEBOX_IMAGE_TAG:-master}"
     restart: unless-stopped
     init: true
     environment:
@@ -8,7 +8,7 @@ services:
       PORT: 3001
       DATABASE_PATH: /app/data/jukebox.sqlite
       ROOM_TTL_HOURS: "${ROOM_TTL_HOURS:-24}"
-      YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in jukebox.env}"
+      YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in Portainer}"
       YOUTUBE_DEFAULT_REGION: "${YOUTUBE_DEFAULT_REGION:-KR}"
       TRUST_PROXY: "${TRUST_PROXY:-false}"
     ports:
@@ -25,3 +25,5 @@ services:
 
 volumes:
   jukebox-data:
+    external: true
+    name: jukebox-data
