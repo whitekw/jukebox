@@ -57,12 +57,15 @@ function normalizeRegionCode(value, fallback = 'KR') {
   return REGION_CODE_PATTERN.test(fallbackCode) ? fallbackCode : 'KR'
 }
 
-function isPlayableVideo(item) {
+function isAvailableVideo(item) {
   return (
-    item.status?.embeddable === true &&
     item.status?.privacyStatus === 'public' &&
     item.snippet?.liveBroadcastContent !== 'live'
   )
+}
+
+function isPlayableVideo(item) {
+  return isAvailableVideo(item) && item.status?.embeddable === true
 }
 
 function createYouTubeService(
@@ -127,6 +130,7 @@ function createYouTubeService(
       artist: item.snippet?.channelTitle ?? '아티스트 정보 없음',
       durationSeconds: parseIsoDuration(item.contentDetails?.duration),
       thumbnailUrl: thumbnail,
+      embeddable: item.status?.embeddable === true,
     }
   }
 
@@ -187,7 +191,7 @@ function createYouTubeService(
       maxResults: 25,
     })
     return (result.items ?? [])
-      .filter(isPlayableVideo)
+      .filter(isAvailableVideo)
       .slice(0, POPULAR_MUSIC_LIMIT)
       .map(mapVideo)
   }

@@ -59,6 +59,11 @@ export function VideoResultList({
             >
               {video.artist}
             </span>
+            {!video.embeddable && (
+              <span className="mt-1 w-fit rounded border border-danger/30 bg-danger/[0.08] px-1.5 py-0.5 text-[10px] font-bold text-[#ff9cab]">
+                {t('search.embedUnavailable')}
+              </span>
+            )}
           </div>
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(video.durationSeconds)}
@@ -66,8 +71,13 @@ export function VideoResultList({
           <button
             className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
             type="button"
-            aria-label={t('search.addSong', { title: video.title })}
-            disabled={songsLeft <= 0 || Boolean(addingId)}
+            aria-label={
+              video.embeddable
+                ? t('search.addSong', { title: video.title })
+                : t('search.cannotAddSong', { title: video.title })
+            }
+            title={!video.embeddable ? t('search.embedUnavailable') : undefined}
+            disabled={!video.embeddable || songsLeft <= 0 || Boolean(addingId)}
             onClick={() => onAddSong(video.videoId)}
           >
             {addingId === video.videoId ? '…' : '+'}

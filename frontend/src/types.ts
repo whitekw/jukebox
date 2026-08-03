@@ -42,4 +42,5 @@ export type VideoSearchResult = {
   artist: string
   durationSeconds: number
   thumbnailUrl: string
+  embeddable: boolean
 }

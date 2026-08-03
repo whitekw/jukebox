@@ -113,7 +113,7 @@ test('rejects a directly added video when embedding is disabled', async () => {
   )
 })
 
-test('loads playable popular music and caches it per region', async () => {
+test('loads popular music including non-embeddable videos and caches it per region', async () => {
   const requestedUrls = []
   let currentTime = 1_000
   const youtube = createYouTubeService('test-key', {
@@ -155,8 +155,10 @@ test('loads playable popular music and caches it per region', async () => {
 
   assert.deepEqual(first, concurrent)
   assert.equal(first.regionCode, 'KR')
-  assert.equal(first.items.length, 1)
+  assert.equal(first.items.length, 2)
   assert.equal(first.items[0].title, 'Popular song')
+  assert.equal(first.items[0].embeddable, true)
+  assert.equal(first.items[1].embeddable, false)
   assert.equal(requestedUrls.length, 1)
   assert.equal(requestedUrls[0].pathname, '/youtube/v3/videos')
   assert.equal(requestedUrls[0].searchParams.get('chart'), 'mostPopular')
