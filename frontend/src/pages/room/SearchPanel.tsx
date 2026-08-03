@@ -194,9 +194,6 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
             <h3 className="mt-1 text-base tracking-[-0.02em]">
               {t('search.popularHeading', { region: popularRegionName })}
             </h3>
-            <p className="mt-1 text-[11px] text-muted">
-              {t('search.popularDescription')}
-            </p>
           </div>
           {popularLoading && (
             <p
