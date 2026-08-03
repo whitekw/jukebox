@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../../api'
 import { SearchIcon } from '../../components/Icons'
 import { formatDuration } from '../../format'
+import { getErrorMessage, useI18n } from '../../i18n-context'
 import {
   buttonStyles,
   cn,
@@ -16,6 +17,7 @@ type SearchPanelProps = {
 }
 
 export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<VideoSearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -30,9 +32,9 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
     try {
       const response = await api.searchVideos(query)
       setResults(response.items)
-      if (response.items.length === 0) setSearchError('검색 결과가 없습니다.')
+      if (response.items.length === 0) setSearchError(t('search.noResults'))
     } catch (requestError) {
-      setSearchError((requestError as Error).message)
+      setSearchError(getErrorMessage(requestError, t))
     } finally {
       setSearching(false)
     }
@@ -54,7 +56,7 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
         <div>
           <span className={sectionKickerStyles}>REQUEST A SONG</span>
           <h2 className="mt-1.5 text-xl tracking-[-0.03em] md:text-[23px]">
-            어떤 곡을 들을까요?
+            {t('search.title')}
           </h2>
         </div>
         <span
@@ -65,7 +67,7 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
               : 'border-lime/20 bg-lime/[0.05] text-lime',
           )}
         >
-          {songsLeft}곡 추가 가능
+          {t('search.songsAvailable', { count: songsLeft })}
         </span>
       </div>
       <form
@@ -77,7 +79,7 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
           className="h-[42px] min-w-0 flex-1 border-0 bg-transparent p-0 text-ink outline-none placeholder:text-white/20"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="곡, 아티스트 또는 YouTube URL"
+          placeholder={t('search.placeholder')}
           minLength={2}
           required
         />
@@ -89,11 +91,11 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
           type="submit"
           disabled={searching}
         >
-          {searching ? '검색 중…' : '검색'}
+          {searching ? t('search.searching') : t('search.button')}
         </button>
       </form>
       <p className="mx-[3px] mt-2 text-[10px] text-[#67616f]">
-        YouTube, YouTube Music, youtu.be 주소를 바로 붙여넣을 수 있습니다.
+        {t('search.urlHint')}
       </p>
       {searchError && (
         <p className="mx-[3px] mt-3 text-xs text-[#ff9cab]" role="alert">
@@ -137,7 +139,7 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
               <button
                 className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
                 type="button"
-                aria-label={`${video.title} 추가`}
+                aria-label={t('search.addSong', { title: video.title })}
                 disabled={songsLeft <= 0 || Boolean(addingId)}
                 onClick={() => void addSong(video.videoId)}
               >

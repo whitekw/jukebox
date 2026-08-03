@@ -10,6 +10,7 @@ import {
   formControlStyles,
   panelStyles,
 } from '../../styles'
+import { getErrorMessage, useI18n } from '../../i18n-context'
 import type { RoomState } from '../../types'
 
 type RoomSettings = {
@@ -34,6 +35,7 @@ export function ManagerPanel({
   onUpdateSettings,
   onTransfer,
 }: ManagerPanelProps) {
+  const { t } = useI18n()
   const [volume, setVolume] = useState(room.hostVolume)
   const [targetParticipantId, setTargetParticipantId] = useState('')
   const [busyAction, setBusyAction] = useState('')
@@ -68,7 +70,7 @@ export function ManagerPanel({
     try {
       await action()
     } catch (requestError) {
-      setError((requestError as Error).message)
+      setError(getErrorMessage(requestError, t))
     } finally {
       setBusyAction('')
     }
@@ -86,7 +88,7 @@ export function ManagerPanel({
     if (!target) return
     if (
       !window.confirm(
-        `${target.nickname}님에게 관리 권한을 넘길까요? 권한을 넘긴 뒤에는 관리 기능을 사용할 수 없습니다.`,
+        t('manager.transferConfirm', { nickname: target.nickname }),
       )
     ) {
       return
@@ -102,11 +104,11 @@ export function ManagerPanel({
             ROOM MANAGER
           </span>
           <h2 className="mt-1.5 mb-0 text-[22px] tracking-[-0.03em]">
-            호스트 제어
+            {t('manager.title')}
           </h2>
         </div>
         <span className="rounded-full border border-lime/20 bg-lime/[0.05] px-3 py-1.5 text-[11px] font-bold text-lime">
-          관리자
+          {t('manager.badge')}
         </span>
       </div>
 
@@ -115,12 +117,12 @@ export function ManagerPanel({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <span className="text-xs font-bold text-muted">
-                현재 재생
+                {t('manager.currentPlayback')}
               </span>
               <p className="mt-1 mb-0 max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
                 {room.playbackBlocked
-                  ? '자동재생 차단됨'
-                  : room.currentSong?.title ?? '재생 중인 곡 없음'}
+                  ? t('status.autoplayBlocked')
+                  : room.currentSong?.title ?? t('manager.noCurrentSong')}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
@@ -141,10 +143,10 @@ export function ManagerPanel({
                   <PauseIcon size={18} />
                 )}
                 {room.playbackBlocked
-                  ? '재생 시도'
+                  ? t('manager.tryPlayback')
                   : room.playbackPaused
-                    ? '재생 계속'
-                    : '일시정지'}
+                    ? t('manager.resume')
+                    : t('manager.pause')}
               </button>
               <button
                 className={cn(
@@ -156,7 +158,7 @@ export function ManagerPanel({
                 onClick={() => void runAction('advance', onAdvance)}
               >
                 <SkipIcon size={18} />
-                건너뛰기
+                {t('manager.skip')}
               </button>
             </div>
           </div>
@@ -164,7 +166,7 @@ export function ManagerPanel({
 
         <label className="block rounded-xl border border-line bg-black/10 p-4">
           <span className="flex items-center justify-between gap-3 text-xs font-bold text-muted">
-            호스트 볼륨
+            {t('manager.hostVolume')}
             <strong className="text-sm text-ink">{volume}%</strong>
           </span>
           <input
@@ -184,7 +186,7 @@ export function ManagerPanel({
 
         <label className="block rounded-xl border border-line bg-black/10 p-4">
           <span className="text-xs font-bold text-muted">
-            인당 신청 가능 최대 곡 수
+            {t('manager.maxSongs')}
           </span>
           <select
             className={cn(
@@ -204,7 +206,12 @@ export function ManagerPanel({
             {Array.from({ length: 10 }, (_, index) => index + 1).map(
               (maximum) => (
                 <option key={maximum} value={maximum}>
-                  {maximum}곡
+                  {t(
+                    maximum === 1
+                      ? 'common.songCountOne'
+                      : 'common.songCount',
+                    { count: maximum },
+                  )}
                 </option>
               ),
             )}
@@ -213,7 +220,7 @@ export function ManagerPanel({
 
         <div className="rounded-xl border border-line bg-black/10 p-4">
           <span className="text-xs font-bold text-muted">
-            관리 권한 이전
+            {t('manager.transfer')}
           </span>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <select
@@ -225,7 +232,7 @@ export function ManagerPanel({
               disabled={transferTargets.length === 0 || Boolean(busyAction)}
               onChange={(event) => setTargetParticipantId(event.target.value)}
             >
-              <option value="">참여자 선택</option>
+              <option value="">{t('manager.selectParticipant')}</option>
               {transferTargets.map((participant) => (
                 <option key={participant.id} value={participant.id}>
                   {participant.nickname}
@@ -241,7 +248,7 @@ export function ManagerPanel({
               disabled={!targetParticipantId || Boolean(busyAction)}
               onClick={transferManager}
             >
-              넘기기
+              {t('manager.transferButton')}
             </button>
           </div>
         </div>
@@ -257,7 +264,7 @@ export function ManagerPanel({
       )}
 
       <p className="mt-4 mb-0 text-xs leading-5 text-dim">
-        대기열의 순서 변경과 삭제는 아래 대기열에서 바로 관리할 수 있습니다.
+        {t('manager.queueHint')}
       </p>
     </section>
   )

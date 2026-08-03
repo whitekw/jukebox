@@ -248,6 +248,7 @@ function createRoomService(db, options = {}) {
           409,
           `한 번에 최대 ${room.max_songs_per_participant}곡까지 추가할 수 있습니다.`,
           'SONG_LIMIT_REACHED',
+          { maxSongs: room.max_songs_per_participant },
         )
       }
 

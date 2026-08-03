@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 import { api } from './api'
+import { getErrorMessage, useI18n } from './i18n-context'
 import type { RoomState } from './types'
 
 export function useRoomState(code: string) {
+  const { t } = useI18n()
   const [room, setRoom] = useState<RoomState | null>(null)
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
@@ -19,8 +21,8 @@ export function useRoomState(code: string) {
       .then((state) => {
         if (active) setRoom(state)
       })
-      .catch((requestError: Error) => {
-        if (active) setError(requestError.message)
+      .catch((requestError: unknown) => {
+        if (active) setError(getErrorMessage(requestError, t))
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -35,8 +37,12 @@ export function useRoomState(code: string) {
       socket.emit(
         'room:subscribe',
         { code },
-        (result: { ok: boolean; message?: string }) => {
-          if (!result.ok && active) setError(result.message ?? '방에 연결하지 못했습니다.')
+        (result: {
+          ok: boolean
+          code?: string
+          details?: Record<string, string | number>
+        }) => {
+          if (!result.ok && active) setError(getErrorMessage(result, t))
         },
       )
     })
@@ -55,7 +61,7 @@ export function useRoomState(code: string) {
       active = false
       socket.disconnect()
     }
-  }, [code])
+  }, [code, t])
 
   return { room, setRoom, loading, connected, error }
 }

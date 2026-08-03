@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
+  ApiError,
   api,
   normalizeRoomCode,
   participantTokenKey,
 } from '../../api'
 import { Brand } from '../../components/Brand'
 import { MusicIcon } from '../../components/Icons'
+import { LocaleSwitcher } from '../../components/LocaleSwitcher'
+import { getErrorMessage, useI18n } from '../../i18n-context'
 import {
   buttonStyles,
   cardIconStyles,
@@ -25,6 +28,7 @@ import { QueuePanel } from './QueuePanel'
 import { SearchPanel } from './SearchPanel'
 
 export function RoomPage() {
+  const { t } = useI18n()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
   const { room, setRoom, loading, connected, error: roomError } = useRoomState(code)
@@ -81,7 +85,7 @@ export function RoomPage() {
       setParticipant(joined.participant)
       setRoom(joined.room)
     } catch (requestError) {
-      setError((requestError as Error).message)
+      setError(getErrorMessage(requestError, t))
     }
   }
 
@@ -94,17 +98,17 @@ export function RoomPage() {
       setRoom(await api.addSong(code, participantToken, videoId))
       setMessage(
         startsPlayingImmediately
-          ? '첫 곡을 바로 재생합니다.'
-          : '대기열에 추가했습니다.',
+          ? t('room.firstSongPlaying')
+          : t('room.addedToQueue'),
       )
     } catch (requestError) {
-      setError((requestError as Error).message)
+      setError(getErrorMessage(requestError, t))
     }
   }
 
   async function runManagerAction(action: () => Promise<NonNullable<typeof room>>) {
     if (!participantToken) {
-      throw new Error('이 방에 다시 참여해주세요.')
+      throw new ApiError(401, '', 'PARTICIPANT_REQUIRED')
     }
     setRoom(await action())
   }
@@ -112,7 +116,7 @@ export function RoomPage() {
   function runQueueAction(action: () => Promise<NonNullable<typeof room>>) {
     setError('')
     void runManagerAction(action).catch((requestError) => {
-      setError((requestError as Error).message)
+      setError(getErrorMessage(requestError, t))
     })
   }
 
@@ -120,7 +124,10 @@ export function RoomPage() {
     return (
       <main className={pageMessageStyles}>
         <Brand className="absolute top-[26px] left-[30px]" />
-        <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">방에 연결하는 중…</h1>
+        <LocaleSwitcher className="absolute top-[26px] right-[30px]" />
+        <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">
+          {t('room.connecting')}
+        </h1>
       </main>
     )
   }
@@ -128,10 +135,13 @@ export function RoomPage() {
     return (
       <main className={pageMessageStyles}>
         <Brand className="absolute top-[26px] left-[30px]" />
+        <LocaleSwitcher className="absolute top-[26px] right-[30px]" />
         <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">
-          {roomError || '방을 찾지 못했습니다.'}
+          {roomError || t('room.roomNotFound')}
         </h1>
-        <Link className={buttonStyles({ intent: 'outline' })} to="/">홈으로</Link>
+        <Link className={buttonStyles({ intent: 'outline' })} to="/">
+          {t('common.home')}
+        </Link>
       </main>
     )
   }
@@ -140,9 +150,14 @@ export function RoomPage() {
     <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
       <header className="mx-auto mb-[22px] flex max-w-[920px] items-center justify-between">
         <Brand compactOnMobile />
-        <div className="flex items-center gap-[9px] text-[11px] font-bold tracking-[0.08em] text-dim">
-          <span className={connectionDotStyles({ connected })} />
-          ROOM <strong>{code}</strong>
+        <div className="flex items-center gap-2">
+          {participant && (
+            <LocaleSwitcher className="max-w-[88px] sm:max-w-none" />
+          )}
+          <div className="flex items-center gap-[9px] text-[11px] font-bold tracking-[0.08em] text-dim">
+            <span className={connectionDotStyles({ connected })} />
+            ROOM <strong>{code}</strong>
+          </div>
         </div>
       </header>
 
@@ -226,22 +241,23 @@ export function RoomPage() {
       {!participant && (
         <div className="fixed inset-0 z-20 grid place-items-center bg-[#040307]/75 p-5 backdrop-blur-[18px]">
           <form
-            className="flex w-full max-w-[420px] flex-col rounded-[18px] border border-purple/30 bg-[#121017] p-6 shadow-[0_30px_100px_rgba(0,0,0,.5)] md:p-[30px]"
+            className="relative flex w-full max-w-[420px] flex-col rounded-[18px] border border-purple/30 bg-[#121017] p-6 shadow-[0_30px_100px_rgba(0,0,0,.5)] md:p-[30px]"
             onSubmit={join}
           >
+            <LocaleSwitcher className="absolute top-5 right-5" />
             <div className={cardIconStyles()}><MusicIcon size={25} /></div>
             <span className={sectionKickerStyles}>WELCOME TO {code}</span>
             <h1 className="mt-2.5 mb-2 text-[27px] tracking-[-0.04em]">
-              어떤 이름으로 참여할까요?
+              {t('room.askNickname')}
             </h1>
             <p className="mb-7 text-[13px] text-muted">
-              신청곡 옆에 표시될 닉네임입니다.
+              {t('room.nicknameDescription')}
             </p>
             <label
               className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
               htmlFor="nickname"
             >
-              닉네임
+              {t('room.nicknameLabel')}
             </label>
             <input
               className={cn(formControlStyles({ size: 'large' }), 'mb-3')}
@@ -250,7 +266,7 @@ export function RoomPage() {
               onChange={(event) => setNickname(event.target.value)}
               minLength={2}
               maxLength={20}
-              placeholder="예: 음악대장"
+              placeholder={t('room.nicknamePlaceholder')}
               autoFocus
               required
             />
@@ -263,7 +279,7 @@ export function RoomPage() {
               })}
               type="submit"
             >
-              입장하기 <span>→</span>
+              {t('room.enter')} <span>→</span>
             </button>
           </form>
         </div>

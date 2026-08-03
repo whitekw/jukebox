@@ -1,5 +1,6 @@
 import { ChevronIcon, TrashIcon } from './Icons'
 import { formatDuration } from '../format'
+import { useI18n } from '../i18n-context'
 import { cn } from '../styles'
 import type { Song } from '../types'
 
@@ -14,6 +15,8 @@ export function SongList({
   onMove?: (songId: string, direction: 'up' | 'down') => void
   onRemove?: (songId: string) => void
 }) {
+  const { t } = useI18n()
+
   if (songs.length === 0) {
     return (
       <div className="grid min-h-28 place-items-center rounded-[11px] border border-dashed border-line p-5 text-center text-dim">
@@ -45,7 +48,7 @@ export function SongList({
               {song.artist}
             </span>
             <small className="mt-0.5 text-[9px] text-[#66606d]">
-              {song.addedBy}의 신청곡
+              {t('song.requestedBy', { nickname: song.addedBy })}
             </small>
           </div>
           <span className="hidden font-mono text-[10px] text-dim md:inline">
@@ -58,7 +61,7 @@ export function SongList({
                   <button
                     className="grid size-[29px] place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] hover:bg-white/[0.07] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
                     type="button"
-                    aria-label="앞으로 이동"
+                    aria-label={t('song.moveUp')}
                     disabled={index === 0}
                     onClick={() => onMove(song.id, 'up')}
                   >
@@ -67,7 +70,7 @@ export function SongList({
                   <button
                     className="grid size-[29px] place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] hover:bg-white/[0.07] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
                     type="button"
-                    aria-label="뒤로 이동"
+                    aria-label={t('song.moveDown')}
                     disabled={index === songs.length - 1}
                     onClick={() => onMove(song.id, 'down')}
                   >
@@ -82,7 +85,7 @@ export function SongList({
                     'text-[#847e8c] hover:bg-danger/[0.08] hover:text-danger',
                   )}
                   type="button"
-                  aria-label="대기열에서 삭제"
+                  aria-label={t('song.removeFromQueue')}
                   onClick={() => onRemove(song.id)}
                 >
                   <TrashIcon size={17} />

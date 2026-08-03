@@ -1,4 +1,5 @@
 import type { Song } from '../../types'
+import { useI18n } from '../../i18n-context'
 import { panelStyles } from '../../styles'
 
 export const NowPlaying = ({
@@ -10,15 +11,17 @@ export const NowPlaying = ({
   paused: boolean
   blocked: boolean
 }) => {
+  const { t } = useI18n()
+
   return (
     <div className={panelStyles({ tone: 'purple', padding: 'responsive' })}>
       <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-purple-light">
         <i className="block size-1.5 rounded-full bg-purple-light shadow-[0_0_10px_#9b7bff]" />
         {blocked && song
-          ? 'AUTOPLAY BLOCKED'
+          ? t('status.autoplayBlocked')
           : paused && song
-            ? 'PAUSED'
-            : 'NOW PLAYING'}
+            ? t('status.paused')
+            : t('status.nowPlaying')}
       </span>
       {song ? (
         <div className="mt-[13px] flex items-center gap-3 md:gap-4">
@@ -34,12 +37,14 @@ export const NowPlaying = ({
             <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted md:text-base">
               {song.artist}
             </p>
-            <small className="text-dim">{song.addedBy}의 신청곡</small>
+            <small className="text-dim">
+              {t('song.requestedBy', { nickname: song.addedBy })}
+            </small>
           </div>
         </div>
       ) : (
         <div className="grid min-h-28 place-items-center rounded-[11px] border border-dashed border-line p-5 text-center text-dim">
-          첫 곡을 추가해보세요.
+          {t('nowPlaying.empty')}
         </div>
       )}
     </div>
