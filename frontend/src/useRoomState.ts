@@ -9,12 +9,12 @@ export function useRoomState(code: string) {
   const [room, setRoom] = useState<RoomState | null>(null)
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    setError('')
+    setError(null)
 
     void api
       .getRoom(code)
@@ -22,7 +22,7 @@ export function useRoomState(code: string) {
         if (active) setRoom(state)
       })
       .catch((requestError: unknown) => {
-        if (active) setError(getErrorMessage(requestError, t))
+        if (active) setError(requestError)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -42,7 +42,7 @@ export function useRoomState(code: string) {
           code?: string
           details?: Record<string, string | number>
         }) => {
-          if (!result.ok && active) setError(getErrorMessage(result, t))
+          if (!result.ok && active) setError(result)
         },
       )
     })
@@ -50,7 +50,7 @@ export function useRoomState(code: string) {
     socket.on('room:state', (state: RoomState) => {
       if (active && state.code === code) {
         setRoom(state)
-        setError('')
+        setError(null)
       }
     })
     socket.on('connect_error', () => {
@@ -61,7 +61,13 @@ export function useRoomState(code: string) {
       active = false
       socket.disconnect()
     }
-  }, [code, t])
+  }, [code])
 
-  return { room, setRoom, loading, connected, error }
+  return {
+    room,
+    setRoom,
+    loading,
+    connected,
+    error: error === null ? '' : getErrorMessage(error, t),
+  }
 }
