@@ -1,7 +1,13 @@
-import { useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { api } from '../../api'
 import { SearchIcon } from '../../components/Icons'
-import { formatDuration } from '../../format'
 import { getErrorMessage, useI18n } from '../../i18n-context'
 import {
   buttonStyles,
@@ -10,6 +16,7 @@ import {
   sectionKickerStyles,
 } from '../../styles'
 import type { VideoSearchResult } from '../../types'
+import { VideoResultList } from './VideoResultList'
 
 type SearchPanelProps = {
   songsLeft: number
@@ -17,24 +24,70 @@ type SearchPanelProps = {
 }
 
 export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<VideoSearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [addingId, setAddingId] = useState('')
-  const [searchError, setSearchError] = useState('')
+  const [searchError, setSearchError] = useState<unknown>(null)
+  const [searchEmpty, setSearchEmpty] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
+  const [activeView, setActiveView] = useState<'popular' | 'search'>('popular')
+  const [popularResults, setPopularResults] = useState<VideoSearchResult[]>([])
+  const [popularRegion, setPopularRegion] = useState('KR')
+  const [popularLoading, setPopularLoading] = useState(true)
+  const [popularError, setPopularError] = useState<unknown>(null)
+  const popularRequestId = useRef(0)
+
+  const loadPopularMusic = useCallback(async () => {
+    const requestId = ++popularRequestId.current
+    setPopularLoading(true)
+    setPopularError(null)
+    try {
+      const response = await api.getPopularMusic()
+      if (requestId !== popularRequestId.current) return
+      setPopularResults(response.items)
+      setPopularRegion(response.regionCode)
+    } catch (requestError) {
+      if (requestId === popularRequestId.current) setPopularError(requestError)
+    } finally {
+      if (requestId === popularRequestId.current) setPopularLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadPopularMusic()
+    return () => {
+      popularRequestId.current += 1
+    }
+  }, [loadPopularMusic])
+
+  const popularRegionName = useMemo(() => {
+    try {
+      return (
+        new Intl.DisplayNames([locale], { type: 'region' }).of(popularRegion) ??
+        popularRegion
+      )
+    } catch {
+      return popularRegion
+    }
+  }, [locale, popularRegion])
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (searching) return
+    setActiveView('search')
+    setHasSearched(true)
     setSearching(true)
-    setSearchError('')
+    setSearchError(null)
+    setSearchEmpty(false)
+    setResults([])
     try {
       const response = await api.searchVideos(query)
       setResults(response.items)
-      if (response.items.length === 0) setSearchError(t('search.noResults'))
+      setSearchEmpty(response.items.length === 0)
     } catch (requestError) {
-      setSearchError(getErrorMessage(requestError, t))
+      setSearchError(requestError)
     } finally {
       setSearching(false)
     }
@@ -97,57 +150,116 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
       <p className="mx-[3px] mt-2 text-[10px] text-[#67616f]">
         {t('search.urlHint')}
       </p>
-      {searchError && (
-        <p className="mx-[3px] mt-3 text-xs text-[#ff9cab]" role="alert">
-          {searchError}
-        </p>
+      <div
+        className="mt-[18px] flex gap-1 border-b border-line"
+        role="tablist"
+        aria-label={t('search.browseMode')}
+      >
+        <button
+          className={cn(
+            '-mb-px border-b-2 px-3 py-2 text-xs font-extrabold transition-colors',
+            activeView === 'popular'
+              ? 'border-lime text-lime'
+              : 'border-transparent text-muted hover:text-ink',
+          )}
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'popular'}
+          onClick={() => setActiveView('popular')}
+        >
+          {t('search.popularTab')}
+        </button>
+        <button
+          className={cn(
+            '-mb-px border-b-2 px-3 py-2 text-xs font-extrabold transition-colors',
+            activeView === 'search'
+              ? 'border-purple-light text-purple-light'
+              : 'border-transparent text-muted hover:text-ink',
+            'disabled:cursor-not-allowed disabled:opacity-40',
+          )}
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'search'}
+          disabled={!hasSearched}
+          onClick={() => setActiveView('search')}
+        >
+          {t('search.resultsTab')}
+        </button>
+      </div>
+
+      {activeView === 'popular' && (
+        <div role="tabpanel">
+          <div className="mx-1 mt-[18px]">
+            <span className={sectionKickerStyles}>YOUTUBE CHART</span>
+            <h3 className="mt-1 text-base tracking-[-0.02em]">
+              {t('search.popularHeading', { region: popularRegionName })}
+            </h3>
+            <p className="mt-1 text-[11px] text-muted">
+              {t('search.popularDescription')}
+            </p>
+          </div>
+          {popularLoading && (
+            <p
+              className="mt-[18px] animate-pulse rounded-[10px] bg-white/[0.035] px-4 py-6 text-center text-xs text-muted"
+              role="status"
+            >
+              {t('search.popularLoading')}
+            </p>
+          )}
+          {!popularLoading && popularError !== null && (
+            <div className="mt-[18px] flex items-center justify-between gap-3 rounded-[10px] border border-danger/25 bg-danger/[0.06] p-3">
+              <p className="m-0 text-xs text-[#ff9cab]" role="alert">
+                {getErrorMessage(popularError, t)}
+              </p>
+              <button
+                className={buttonStyles({ intent: 'outline', size: 'sm' })}
+                type="button"
+                onClick={() => void loadPopularMusic()}
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          )}
+          {!popularLoading && popularError === null && popularResults.length === 0 && (
+            <p className="mt-[18px] text-center text-xs text-muted">
+              {t('search.popularEmpty')}
+            </p>
+          )}
+          {!popularLoading && popularResults.length > 0 && (
+            <VideoResultList
+              videos={popularResults}
+              songsLeft={songsLeft}
+              addingId={addingId}
+              ranked
+              onAddSong={(videoId) => void addSong(videoId)}
+            />
+          )}
+        </div>
       )}
 
-      {results.length > 0 && (
-        <ul className="mt-[18px] flex min-w-0 list-none flex-col gap-1.5 p-0">
-          {results.map((video) => (
-            <li
-              className={cn(
-                'grid min-w-0 grid-cols-[minmax(0,1fr)_36px] gap-x-3 gap-y-2 overflow-hidden',
-                'rounded-[10px] bg-white/[0.035] p-3',
-                'md:flex md:items-center md:gap-[11px] md:p-2',
-              )}
-              key={video.videoId}
-            >
-              <img
-                className="col-start-1 row-start-1 aspect-video w-24 shrink-0 rounded-[7px] object-cover md:w-[76px]"
-                src={video.thumbnailUrl}
-                alt=""
-              />
-              <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-col md:col-span-1 md:row-auto">
-                <strong
-                  className="line-clamp-2 max-w-full text-[13px] leading-[1.45] md:block md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
-                  title={video.title}
-                >
-                  {video.title}
-                </strong>
-                <span
-                  className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted"
-                  title={video.artist}
-                >
-                  {video.artist}
-                </span>
-              </div>
-              <span className="hidden font-mono text-[10px] text-dim md:inline">
-                {formatDuration(video.durationSeconds)}
-              </span>
-              <button
-                className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
-                type="button"
-                aria-label={t('search.addSong', { title: video.title })}
-                disabled={songsLeft <= 0 || Boolean(addingId)}
-                onClick={() => void addSong(video.videoId)}
-              >
-                {addingId === video.videoId ? '…' : '+'}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {activeView === 'search' && (
+        <div role="tabpanel">
+          {(searchError !== null || searchEmpty) && (
+            <p className="mx-[3px] mt-[18px] text-xs text-[#ff9cab]" role="alert">
+              {searchEmpty
+                ? t('search.noResults')
+                : getErrorMessage(searchError, t)}
+            </p>
+          )}
+          {searching && (
+            <p className="mt-[18px] text-center text-xs text-muted" role="status">
+              {t('search.searching')}
+            </p>
+          )}
+          {!searching && results.length > 0 && (
+            <VideoResultList
+              videos={results}
+              songsLeft={songsLeft}
+              addingId={addingId}
+              onAddSong={(videoId) => void addSong(videoId)}
+            />
+          )}
+        </div>
       )}
     </section>
   )
