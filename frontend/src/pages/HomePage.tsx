@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { api, hostTokenKey, normalizeRoomCode } from '../api'
 import { Brand } from '../components/Brand'
 import { MusicIcon, UsersIcon } from '../components/Icons'
+import { LocaleSwitcher } from '../components/LocaleSwitcher'
+import { getErrorMessage, useI18n } from '../i18n-context'
 import {
   buttonStyles,
   cardIconStyles,
@@ -13,6 +15,7 @@ import {
 } from '../styles'
 
 export function HomePage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [roomCode, setRoomCode] = useState('')
   const [maxSongs, setMaxSongs] = useState(2)
@@ -28,7 +31,7 @@ export function HomePage() {
       localStorage.setItem(hostTokenKey(created.code), created.hostToken)
       navigate(`/host/${created.code}`)
     } catch (requestError) {
-      setError((requestError as Error).message)
+      setError(getErrorMessage(requestError, t))
     } finally {
       setCreating(false)
     }
@@ -52,9 +55,12 @@ export function HomePage() {
     >
       <nav className="relative z-[1] mx-auto flex max-w-[1180px] items-center justify-between">
         <Brand />
-        <span className="hidden text-xs tracking-[0.08em] text-dim md:inline">
-          함께 만드는 플레이리스트
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs tracking-[0.08em] text-dim md:inline">
+            {t('home.tagline')}
+          </span>
+          <LocaleSwitcher />
+        </div>
       </nav>
 
       <section className="relative z-[1] mx-auto mt-[68px] mb-9 max-w-[1180px] md:mt-[clamp(72px,10vh,118px)] md:mb-12">
@@ -62,13 +68,16 @@ export function HomePage() {
           <span className="h-px w-[26px] bg-lime" /> NO LOGIN · NO APP · JUST MUSIC
         </div>
         <h1 className="my-5 text-[clamp(46px,14.3vw,72px)] leading-[0.97] font-[850] tracking-[-0.065em] md:text-[clamp(48px,7.4vw,98px)]">
-          오늘의 음악은
+          {t('home.heroLineOne')}
           <br />
-          <em className="text-purple-light not-italic">모두가</em> 고릅니다.
+          <em className="text-purple-light not-italic">
+            {t('home.heroEmphasis')}
+          </em>
+          {t('home.heroLineTwo')}
         </h1>
         <p className="text-[clamp(15px,1.5vw,19px)] leading-[1.7] text-muted">
-          한 기기는 재생하고, 모두의 휴대폰은 리모컨이 됩니다.
-          <br className="hidden md:block" /> QR로 들어와 원하는 곡을 바로 추가하세요.
+          {t('home.descriptionOne')}
+          <br className="hidden md:block" /> {t('home.descriptionTwo')}
         </p>
       </section>
 
@@ -85,13 +94,15 @@ export function HomePage() {
           <span className={cn(sectionKickerStyles, 'mb-[7px] text-purple-light')}>
             FOR HOST
           </span>
-          <h2 className="mb-2 text-[27px] tracking-[-0.03em]">새로운 방 만들기</h2>
-          <p className="mb-7 text-sm text-muted">스피커와 연결된 기기에서 시작하세요.</p>
+          <h2 className="mb-2 text-[27px] tracking-[-0.03em]">
+            {t('home.createTitle')}
+          </h2>
+          <p className="mb-7 text-sm text-muted">{t('home.createDescription')}</p>
           <label
             className="mt-auto mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
             htmlFor="max-songs"
           >
-            한 사람당 대기 곡
+            {t('home.maxSongsLabel')}
           </label>
           <select
             className={cn(formControlStyles({ weight: 'bold' }), 'mb-3 h-[46px]')}
@@ -100,7 +111,11 @@ export function HomePage() {
             onChange={(event) => setMaxSongs(Number(event.target.value))}
           >
             {[1, 2, 3, 4, 5].map((value) => (
-              <option key={value} value={value}>{value}곡</option>
+              <option key={value} value={value}>
+                {t(value === 1 ? 'common.songCountOne' : 'common.songCount', {
+                  count: value,
+                })}
+              </option>
             ))}
           </select>
           <button
@@ -113,7 +128,7 @@ export function HomePage() {
             disabled={creating}
             type="submit"
           >
-            {creating ? '방을 만드는 중…' : '방 만들기'} <span>→</span>
+            {creating ? t('home.creating') : t('home.create')} <span>→</span>
           </button>
         </form>
 
@@ -127,13 +142,15 @@ export function HomePage() {
         >
           <div className={cardIconStyles({ tone: 'lime' })}><UsersIcon size={26} /></div>
           <span className={cn(sectionKickerStyles, 'mb-[7px]')}>FOR GUEST</span>
-          <h2 className="mb-2 text-[27px] tracking-[-0.03em]">플레이리스트 참여</h2>
-          <p className="mb-7 text-sm text-muted">화면의 여섯 자리 코드를 입력하세요.</p>
+          <h2 className="mb-2 text-[27px] tracking-[-0.03em]">
+            {t('home.joinTitle')}
+          </h2>
+          <p className="mb-7 text-sm text-muted">{t('home.joinDescription')}</p>
           <label
             className="mt-auto mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
             htmlFor="room-code"
           >
-            룸 코드
+            {t('home.roomCodeLabel')}
           </label>
           <input
             id="room-code"
@@ -155,7 +172,7 @@ export function HomePage() {
             })}
             type="submit"
           >
-            참여하기 <span>→</span>
+            {t('home.join')} <span>→</span>
           </button>
         </form>
       </section>

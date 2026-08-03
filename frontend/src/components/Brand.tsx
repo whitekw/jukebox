@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useI18n } from '../i18n-context'
 import { cn } from '../styles'
 
 export function Brand({
@@ -10,6 +11,8 @@ export function Brand({
   compactOnMobile?: boolean
   className?: string
 }) {
+  const { t } = useI18n()
+
   return (
     <Link
       className={cn(
@@ -18,7 +21,7 @@ export function Brand({
         className,
       )}
       to="/"
-      aria-label="Jukebox 홈"
+      aria-label={`Jukebox · ${t('common.home')}`}
     >
       <span
         className="flex size-6 items-end gap-[3px] rounded-[7px] border border-lime/45 bg-lime/[0.08] p-[5px]"

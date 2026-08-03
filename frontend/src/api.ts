@@ -25,18 +25,26 @@ type ApiErrorBody = {
   error?: {
     code?: string
     message?: string
+    details?: Record<string, string | number>
   }
 }
 
 export class ApiError extends Error {
   status: number
   code: string
+  details?: Record<string, string | number>
 
-  constructor(status: number, message: string, code = 'API_ERROR') {
+  constructor(
+    status: number,
+    message: string,
+    code = 'API_ERROR',
+    details?: Record<string, string | number>,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -54,12 +62,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       body.error?.message ?? '요청을 처리하지 못했습니다.',
       body.error?.code,
+      body.error?.details,
     )
   }
   return body
 }
 
 export const api = {
+  getConfig() {
+    return request<{
+      countryCode: string | null
+      suggestedLocale: 'ko' | 'ja' | 'en'
+    }>('/api/config')
+  },
+
   createRoom(maxSongsPerParticipant: number) {
     return request<{ code: string; hostToken: string; expiresAt: number }>(
       '/api/rooms',

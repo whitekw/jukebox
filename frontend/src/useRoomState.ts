@@ -1,26 +1,28 @@
 import { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 import { api } from './api'
+import { getErrorMessage, useI18n } from './i18n-context'
 import type { RoomState } from './types'
 
 export function useRoomState(code: string) {
+  const { t } = useI18n()
   const [room, setRoom] = useState<RoomState | null>(null)
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    setError('')
+    setError(null)
 
     void api
       .getRoom(code)
       .then((state) => {
         if (active) setRoom(state)
       })
-      .catch((requestError: Error) => {
-        if (active) setError(requestError.message)
+      .catch((requestError: unknown) => {
+        if (active) setError(requestError)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -35,8 +37,12 @@ export function useRoomState(code: string) {
       socket.emit(
         'room:subscribe',
         { code },
-        (result: { ok: boolean; message?: string }) => {
-          if (!result.ok && active) setError(result.message ?? '방에 연결하지 못했습니다.')
+        (result: {
+          ok: boolean
+          code?: string
+          details?: Record<string, string | number>
+        }) => {
+          if (!result.ok && active) setError(result)
         },
       )
     })
@@ -44,7 +50,7 @@ export function useRoomState(code: string) {
     socket.on('room:state', (state: RoomState) => {
       if (active && state.code === code) {
         setRoom(state)
-        setError('')
+        setError(null)
       }
     })
     socket.on('connect_error', () => {
@@ -57,5 +63,11 @@ export function useRoomState(code: string) {
     }
   }, [code])
 
-  return { room, setRoom, loading, connected, error }
+  return {
+    room,
+    setRoom,
+    loading,
+    connected,
+    error: error === null ? '' : getErrorMessage(error, t),
+  }
 }

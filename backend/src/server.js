@@ -4,6 +4,7 @@ const express = require('express')
 const { Server } = require('socket.io')
 const { createDatabase } = require('./db')
 const { AppError } = require('./errors')
+const { getLocaleConfig } = require('./locale')
 const { createRateLimiter } = require('./rate-limit')
 const { createRoomService, normalizeCode } = require('./rooms')
 const { createYouTubeService } = require('./youtube')
@@ -47,6 +48,10 @@ function controlCredentials(req) {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'jukebox-backend' })
+})
+
+app.get('/api/config', (req, res) => {
+  res.json(getLocaleConfig(req))
 })
 
 app.post('/api/rooms', mutationLimiter, (req, res) => {
@@ -174,7 +179,12 @@ io.on('connection', (socket) => {
       if (typeof acknowledge === 'function') acknowledge({ ok: true })
     } catch (error) {
       if (typeof acknowledge === 'function') {
-        acknowledge({ ok: false, message: error.message })
+        acknowledge({
+          ok: false,
+          code: error.code,
+          details: error.details,
+          message: error.message,
+        })
       }
     }
   })
@@ -201,6 +211,9 @@ app.use((error, _req, res, _next) => {
   res.status(status).json({
     error: {
       code,
+      ...(error instanceof AppError && error.details
+        ? { details: error.details }
+        : {}),
       message: status >= 500 && !(error instanceof AppError)
         ? '서버에서 요청을 처리하지 못했습니다.'
         : error.message,

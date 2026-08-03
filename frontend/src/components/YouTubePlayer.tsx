@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useI18n, type Translate } from '../i18n-context'
 import { buttonStyles, cn } from '../styles'
 
 type YTPlayer = {
@@ -73,6 +74,7 @@ export function YouTubePlayer({
   onPlaybackBlockedChange: (blocked: boolean) => void
   onEnded: () => void
 }) {
+  const { t } = useI18n()
   const mountRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
   const videoIdRef = useRef(videoId)
@@ -208,7 +210,7 @@ export function YouTubePlayer({
           )}
           role="alert"
         >
-          <span>{getPlaybackErrorMessage(playbackError)}</span>
+          <span>{getPlaybackErrorMessage(playbackError, t)}</span>
           <button
             className={buttonStyles({ intent: 'player', size: 'sm' })}
             type="button"
@@ -222,12 +224,12 @@ export function YouTubePlayer({
               }
             }}
           >
-            다시 시도
+            {t('common.retry')}
           </button>
         </div>
       ) : autoplayBlocked && (
         <div className="absolute inset-x-3 bottom-3 z-[2] flex items-center justify-center gap-3 rounded-[10px] border border-line bg-[#17141f]/95 px-3.5 py-3 text-center text-[13px] text-muted shadow-[0_12px_36px_rgba(0,0,0,.35)] md:inset-x-4 md:bottom-4">
-          브라우저가 자동재생을 막았습니다.
+          {t('player.autoplayBlocked')}
           <button
             className={buttonStyles({ intent: 'player', size: 'sm' })}
             type="button"
@@ -237,7 +239,7 @@ export function YouTubePlayer({
               playerRef.current?.playVideo()
             }}
           >
-            재생 계속
+            {t('player.resume')}
           </button>
         </div>
       )}
@@ -245,22 +247,22 @@ export function YouTubePlayer({
   )
 }
 
-function getPlaybackErrorMessage(code: number) {
+function getPlaybackErrorMessage(code: number, t: Translate) {
   switch (code) {
     case -1:
-      return 'YouTube 플레이어를 불러오지 못했습니다.'
+      return t('player.loadFailed')
     case 2:
-      return 'YouTube 영상 주소가 올바르지 않습니다. (오류 2)'
+      return t('player.invalidVideo', { code })
     case 5:
-      return '브라우저에서 이 영상을 재생하지 못했습니다. (오류 5)'
+      return t('player.html5Error', { code })
     case 100:
-      return '삭제되었거나 비공개인 영상입니다. (오류 100)'
+      return t('player.unavailable', { code })
     case 101:
     case 150:
-      return `영상 소유자가 외부 재생을 허용하지 않았습니다. (오류 ${code})`
+      return t('player.embedDisabled', { code })
     case 153:
-      return 'YouTube가 재생 요청을 확인하지 못했습니다. 광고 차단 또는 추적 방지 설정을 확인해주세요. (오류 153)'
+      return t('player.requestUnverified', { code })
     default:
-      return `YouTube 영상을 재생하지 못했습니다. (오류 ${code})`
+      return t('player.unknownError', { code })
   }
 }
