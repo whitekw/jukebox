@@ -35,6 +35,14 @@ function createRoomService(db, options = {}) {
   const findParticipant = db.prepare(
     'SELECT * FROM participants WHERE room_id = ? AND token_hash = ?',
   )
+  const findAllDevicesPlaybackRooms = db.prepare(
+    `SELECT rooms.code
+     FROM rooms
+     WHERE rooms.expires_at > ?
+       AND rooms.playback_mode = 'all_devices'
+       AND rooms.playback_paused = 0
+       AND rooms.current_song_id IS NOT NULL`,
+  )
 
   function getRoomRecord(code) {
     const room = findRoom.get(normalizeCode(code), now())
@@ -345,39 +353,71 @@ function createRoomService(db, options = {}) {
     })
   }
 
+  function advanceRoom(room, code, changedAt = now()) {
+    if (room.current_song_id) {
+      db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
+        room.current_song_id,
+      )
+    }
+    const next = db
+      .prepare(
+        `SELECT id FROM songs
+         WHERE room_id = ? AND status = 'queued'
+         ORDER BY position ASC, created_at ASC LIMIT 1`,
+      )
+      .get(room.id)
+    if (next) {
+      db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
+    }
+    db.prepare(
+      `UPDATE rooms
+       SET current_song_id = ?, playback_paused = 0, playback_blocked = 0,
+           playback_position_seconds = 0, playback_anchor_at = ?,
+           playback_revision = playback_revision + 1
+       WHERE id = ?`,
+    ).run(next?.id ?? null, changedAt, room.id)
+    return getPublicRoom(code)
+  }
+
   function advance(code, credentials) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
       requireController(room, credentials)
-      const changedAt = now()
-      if (room.current_song_id) {
-        db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
-          room.current_song_id,
-        )
-      }
-      const next = db
-        .prepare(
-          `SELECT id FROM songs
-           WHERE room_id = ? AND status = 'queued'
-           ORDER BY position ASC, created_at ASC LIMIT 1`,
-        )
-        .get(room.id)
-      if (next) {
-        db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
-      }
-      db.prepare(
-        `UPDATE rooms
-         SET current_song_id = ?, playback_paused = 0, playback_blocked = 0,
-             playback_position_seconds = 0, playback_anchor_at = ?,
-             playback_revision = playback_revision + 1
-         WHERE id = ?`,
-      ).run(
-        next?.id ?? null,
-        changedAt,
-        room.id,
-      )
-      return getPublicRoom(code)
+      return advanceRoom(room, code)
     })
+  }
+
+  function advanceCompletedAllDeviceRooms() {
+    const checkedAt = now()
+    const advancedRooms = []
+
+    for (const candidate of findAllDevicesPlaybackRooms.all(checkedAt)) {
+      const advanced = transaction(db, () => {
+        const room = getRoomRecord(candidate.code)
+        if (
+          room.playback_mode !== 'all_devices' ||
+          room.playback_paused ||
+          !room.current_song_id
+        ) {
+          return null
+        }
+
+        const currentSong = db
+          .prepare('SELECT duration_seconds FROM songs WHERE id = ?')
+          .get(room.current_song_id)
+        if (
+          !currentSong ||
+          getPlaybackPosition(room, checkedAt) < Number(currentSong.duration_seconds)
+        ) {
+          return null
+        }
+
+        return advanceRoom(room, candidate.code, checkedAt)
+      })
+      if (advanced) advancedRooms.push(advanced)
+    }
+
+    return advancedRooms
   }
 
   function setPlaybackPaused(code, credentials, paused) {
@@ -603,6 +643,7 @@ function createRoomService(db, options = {}) {
     getParticipantStatus,
     addSong,
     advance,
+    advanceCompletedAllDeviceRooms,
     setPlaybackPaused,
     reportPlaybackBlocked,
     removeSong,

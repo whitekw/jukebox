@@ -124,7 +124,9 @@ export function HostPage() {
                     ? reportPlaybackBlocked
                     : undefined
                 }
-                onEnded={advance}
+                onEnded={
+                  room.playbackMode === 'host_only' ? advance : undefined
+                }
                 synchronization={
                   room.playbackMode === 'all_devices'
                     ? {

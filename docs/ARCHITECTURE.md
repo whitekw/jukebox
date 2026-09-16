@@ -205,16 +205,22 @@ sequenceDiagram
     participant Player as 호스트 YouTubePlayer
     participant Host as HostPage
     participant API as Express
+    participant Timer as 서버 재생 타이머
     participant RS as Room Service
     participant DB as SQLite
     participant Clients as 구독 브라우저들
 
-    Player-->>Host: onStateChange(ENDED)
-    Host->>API: POST /api/rooms/:code/advance + host token
-    API->>RS: advance()
+    alt 호스트 전용 모드
+        Player-->>Host: onStateChange(ENDED)
+        Host->>API: POST /api/rooms/:code/advance + host token
+        API->>RS: advance()
+    else 모든 기기 모드
+        Timer->>RS: 기준 위치가 영상 길이에 도달했는지 0.5초마다 검사
+        RS->>RS: advanceCompletedAllDeviceRooms()
+    end
     RS->>DB: current -> played, 첫 queued -> current
-    RS-->>API: RoomState
-    API-->>Clients: room:state
+    RS-->>API: 갱신된 RoomState
+    API-->>Clients: Socket.IO room:state
     Clients-->>Player: 새 videoId 반영
 ```
 
@@ -222,7 +228,7 @@ sequenceDiagram
 
 호스트 전용 모드에서 매니저 브라우저는 영상을 직접 재생하지 않으며 호스트 플레이어의 볼륨을 조절할 수 있습니다. 모든 기기 모드에서는 매니저를 포함한 각 참여자 브라우저가 영상을 재생하므로 호스트 볼륨 제어를 표시하지 않고, 각 기기의 YouTube 플레이어에서 로컬 볼륨을 조절합니다. 어느 모드든 매니저가 재생 상태를 변경하면 서버가 기준 위치와 revision을 저장해 브로드캐스트하고 해당 모드의 플레이어들이 `playVideo()`, `pauseVideo()`, `seekTo()`를 적용합니다.
 
-호스트 전용 모드에서 자동재생이 막히면 호스트가 `playback/autoplay-blocked`를 보고하고 서버가 전역 재생을 멈춥니다. 모든 기기 모드의 자동재생 차단은 기기별 상태이므로 다른 기기를 멈추지 않으며, 해당 플레이어의 `재생 계속` 버튼으로 사용자 상호작용을 확보한 뒤 현재 서버 위치로 이동합니다. 곡 종료에 따른 자동 `advance`는 중복 전환을 막기 위해 기존처럼 호스트 플레이어만 요청합니다.
+호스트 전용 모드에서 자동재생이 막히면 호스트가 `playback/autoplay-blocked`를 보고하고 서버가 전역 재생을 멈춥니다. 모든 기기 모드의 자동재생 차단은 기기별 상태이므로 다른 기기를 멈추지 않으며, 해당 플레이어의 `재생 계속` 버튼으로 사용자 상호작용을 확보한 뒤 현재 서버 위치로 이동합니다. 호스트 전용 모드의 곡 종료는 호스트 플레이어가 `advance`를 요청합니다. 모든 기기 모드는 특정 브라우저의 종료 이벤트에 의존하지 않고 서버가 0.5초마다 기준 타임라인과 영상 길이를 비교해 다음 곡으로 전환합니다.
 
 ## 7. 권한 모델
 

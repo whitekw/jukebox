@@ -3,12 +3,12 @@ const assert = require('node:assert/strict')
 const { createDatabase } = require('../src/db')
 const { createRoomService } = require('../src/rooms')
 
-function song(videoId, title) {
+function song(videoId, title, durationSeconds = 180) {
   return {
     videoId,
     title,
     artist: 'Test Artist',
-    durationSeconds: 180,
+    durationSeconds,
     thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
   }
 }
@@ -102,6 +102,79 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
   assert.equal(state.playbackPaused, false)
   assert.equal(state.playbackBlocked, false)
   assert.equal(state.playbackRevision, 3)
+  db.close()
+})
+
+test('automatically advances completed all-device playback from the server timeline', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, {
+    roomTtlHours: 1,
+    now: () => currentTime,
+  })
+  const created = rooms.createRoom({
+    maxSongsPerParticipant: 2,
+    playbackMode: 'all_devices',
+  })
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('aaaaaaaaaaa', 'One', 20),
+  )
+  rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('bbbbbbbbbbb', 'Two', 30),
+  )
+
+  currentTime += 19_999
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
+
+  currentTime += 1
+  const advanced = rooms.advanceCompletedAllDeviceRooms()
+  assert.equal(advanced.length, 1)
+  assert.equal(advanced[0].currentSong.title, 'Two')
+  assert.equal(advanced[0].queue.length, 0)
+  assert.equal(advanced[0].playbackAnchorAt, currentTime)
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
+  db.close()
+})
+
+test('does not server-advance host-only or paused playback', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const hostOnly = rooms.createRoom({ playbackMode: 'host_only' })
+  const hostParticipant = rooms.joinRoom(hostOnly.code, { nickname: 'Host mode' })
+  rooms.addSong(
+    hostOnly.code,
+    hostParticipant.participantToken,
+    song('aaaaaaaaaaa', 'Host song', 10),
+  )
+
+  const synchronized = rooms.createRoom({ playbackMode: 'all_devices' })
+  const synchronizedParticipant = rooms.joinRoom(synchronized.code, {
+    nickname: 'Synchronized mode',
+  })
+  rooms.addSong(
+    synchronized.code,
+    synchronizedParticipant.participantToken,
+    song('bbbbbbbbbbb', 'Paused song', 10),
+  )
+  rooms.setPlaybackPaused(
+    synchronized.code,
+    { participantToken: synchronizedParticipant.participantToken },
+    true,
+  )
+
+  currentTime += 20_000
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
+  assert.equal(rooms.getPublicRoom(hostOnly.code).currentSong.title, 'Host song')
+  assert.equal(
+    rooms.getPublicRoom(synchronized.code).currentSong.title,
+    'Paused song',
+  )
   db.close()
 })
 
