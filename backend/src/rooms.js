@@ -3,6 +3,7 @@ const { transaction } = require('./db')
 const { AppError } = require('./errors')
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
 
 function createToken() {
   return crypto.randomBytes(32).toString('base64url')
@@ -26,6 +27,7 @@ function generateCode(length = 6) {
 
 function createRoomService(db, options = {}) {
   const roomTtlMs = (options.roomTtlHours ?? 24) * 60 * 60 * 1000
+  const now = options.now ?? Date.now
 
   const findRoom = db.prepare(
     'SELECT * FROM rooms WHERE code = ? AND expires_at > ?',
@@ -33,9 +35,17 @@ function createRoomService(db, options = {}) {
   const findParticipant = db.prepare(
     'SELECT * FROM participants WHERE room_id = ? AND token_hash = ?',
   )
+  const findAllDevicesPlaybackRooms = db.prepare(
+    `SELECT rooms.code
+     FROM rooms
+     WHERE rooms.expires_at > ?
+       AND rooms.playback_mode = 'all_devices'
+       AND rooms.playback_paused = 0
+       AND rooms.current_song_id IS NOT NULL`,
+  )
 
   function getRoomRecord(code) {
-    const room = findRoom.get(normalizeCode(code), Date.now())
+    const room = findRoom.get(normalizeCode(code), now())
     if (!room) throw new AppError(404, '존재하지 않거나 만료된 방입니다.', 'ROOM_NOT_FOUND')
     return room
   }
@@ -98,8 +108,17 @@ function createRoomService(db, options = {}) {
     }
   }
 
+  function getPlaybackPosition(room, at = now()) {
+    if (!room.current_song_id) return 0
+    const position = Number(room.playback_position_seconds)
+    if (room.playback_paused || room.playback_blocked) return position
+    const elapsedSeconds = Math.max(0, at - Number(room.playback_anchor_at)) / 1000
+    return position + elapsedSeconds
+  }
+
   function getPublicRoom(code) {
     const room = getRoomRecord(code)
+    const serverTime = now()
     const current = room.current_song_id
       ? db
           .prepare(
@@ -134,8 +153,13 @@ function createRoomService(db, options = {}) {
       maxSongsPerParticipant: room.max_songs_per_participant,
       managerParticipantId: room.manager_participant_id,
       hostVolume: room.host_volume,
+      playbackMode: room.playback_mode,
       playbackPaused: Boolean(room.playback_paused),
       playbackBlocked: Boolean(room.playback_blocked),
+      playbackPositionSeconds: Number(room.playback_position_seconds),
+      playbackAnchorAt: Number(room.playback_anchor_at),
+      playbackRevision: Number(room.playback_revision),
+      serverTime,
       participants: participants.map((participant) => ({
         id: participant.id,
         nickname: participant.nickname,
@@ -146,10 +170,20 @@ function createRoomService(db, options = {}) {
     }
   }
 
-  function createRoom({ maxSongsPerParticipant = 2 } = {}) {
+  function createRoom({
+    maxSongsPerParticipant = 2,
+    playbackMode = 'host_only',
+  } = {}) {
     const maximum = Number(maxSongsPerParticipant)
     if (!Number.isInteger(maximum) || maximum < 1 || maximum > 10) {
       throw new AppError(400, '참여자별 곡 수는 1~10 사이여야 합니다.', 'INVALID_MAX_SONGS')
+    }
+    if (!PLAYBACK_MODES.has(playbackMode)) {
+      throw new AppError(
+        400,
+        '재생 방식이 올바르지 않습니다.',
+        'INVALID_PLAYBACK_MODE',
+      )
     }
 
     let code
@@ -159,14 +193,29 @@ function createRoomService(db, options = {}) {
 
     const id = crypto.randomUUID()
     const hostToken = createToken()
-    const now = Date.now()
+    const createdAt = now()
     db.prepare(
       `INSERT INTO rooms (
-        id, code, host_token_hash, max_songs_per_participant, created_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(id, code, hashToken(hostToken), maximum, now, now + roomTtlMs)
+        id, code, host_token_hash, max_songs_per_participant, playback_mode,
+        playback_anchor_at, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      code,
+      hashToken(hostToken),
+      maximum,
+      playbackMode,
+      createdAt,
+      createdAt,
+      createdAt + roomTtlMs,
+    )
 
-    return { code, hostToken, expiresAt: now + roomTtlMs }
+    return {
+      code,
+      hostToken,
+      playbackMode,
+      expiresAt: createdAt + roomTtlMs,
+    }
   }
 
   function joinRoom(code, { nickname }) {
@@ -183,7 +232,7 @@ function createRoomService(db, options = {}) {
         roomId: room.id,
         tokenHash: hashToken(participantToken),
         nickname: normalizedNickname,
-        createdAt: Date.now(),
+        createdAt: now(),
       }
       db.prepare(
         `INSERT INTO participants (id, room_id, token_hash, nickname, created_at)
@@ -271,6 +320,7 @@ function createRoomService(db, options = {}) {
           .get(room.id).position,
       )
       const id = crypto.randomUUID()
+      const createdAt = now()
       const status = room.current_song_id ? 'queued' : 'current'
       db.prepare(
         `INSERT INTO songs (
@@ -288,48 +338,86 @@ function createRoomService(db, options = {}) {
         participant.id,
         status,
         status === 'current' ? 0 : nextPosition,
-        Date.now(),
+        createdAt,
       )
       if (status === 'current') {
         db.prepare(
           `UPDATE rooms
-           SET current_song_id = ?, playback_paused = 0, playback_blocked = 0
+           SET current_song_id = ?, playback_paused = 0, playback_blocked = 0,
+               playback_position_seconds = 0, playback_anchor_at = ?,
+               playback_revision = playback_revision + 1
            WHERE id = ?`,
-        ).run(id, room.id)
+        ).run(id, createdAt, room.id)
       }
       return getPublicRoom(code)
     })
+  }
+
+  function advanceRoom(room, code, changedAt = now()) {
+    if (room.current_song_id) {
+      db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
+        room.current_song_id,
+      )
+    }
+    const next = db
+      .prepare(
+        `SELECT id FROM songs
+         WHERE room_id = ? AND status = 'queued'
+         ORDER BY position ASC, created_at ASC LIMIT 1`,
+      )
+      .get(room.id)
+    if (next) {
+      db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
+    }
+    db.prepare(
+      `UPDATE rooms
+       SET current_song_id = ?, playback_paused = 0, playback_blocked = 0,
+           playback_position_seconds = 0, playback_anchor_at = ?,
+           playback_revision = playback_revision + 1
+       WHERE id = ?`,
+    ).run(next?.id ?? null, changedAt, room.id)
+    return getPublicRoom(code)
   }
 
   function advance(code, credentials) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
       requireController(room, credentials)
-      if (room.current_song_id) {
-        db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
-          room.current_song_id,
-        )
-      }
-      const next = db
-        .prepare(
-          `SELECT id FROM songs
-           WHERE room_id = ? AND status = 'queued'
-           ORDER BY position ASC, created_at ASC LIMIT 1`,
-        )
-        .get(room.id)
-      if (next) {
-        db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
-      }
-      db.prepare(
-        `UPDATE rooms
-         SET current_song_id = ?, playback_paused = 0, playback_blocked = 0
-         WHERE id = ?`,
-      ).run(
-        next?.id ?? null,
-        room.id,
-      )
-      return getPublicRoom(code)
+      return advanceRoom(room, code)
     })
+  }
+
+  function advanceCompletedAllDeviceRooms() {
+    const checkedAt = now()
+    const advancedRooms = []
+
+    for (const candidate of findAllDevicesPlaybackRooms.all(checkedAt)) {
+      const advanced = transaction(db, () => {
+        const room = getRoomRecord(candidate.code)
+        if (
+          room.playback_mode !== 'all_devices' ||
+          room.playback_paused ||
+          !room.current_song_id
+        ) {
+          return null
+        }
+
+        const currentSong = db
+          .prepare('SELECT duration_seconds FROM songs WHERE id = ?')
+          .get(room.current_song_id)
+        if (
+          !currentSong ||
+          getPlaybackPosition(room, checkedAt) < Number(currentSong.duration_seconds)
+        ) {
+          return null
+        }
+
+        return advanceRoom(room, candidate.code, checkedAt)
+      })
+      if (advanced) advancedRooms.push(advanced)
+    }
+
+    return advancedRooms
   }
 
   function setPlaybackPaused(code, credentials, paused) {
@@ -351,11 +439,15 @@ function createRoomService(db, options = {}) {
           'NO_CURRENT_SONG',
         )
       }
+      const changedAt = now()
+      const position = getPlaybackPosition(room, changedAt)
       db.prepare(
         `UPDATE rooms
-         SET playback_paused = ?, playback_blocked = 0
+         SET playback_paused = ?, playback_blocked = 0,
+             playback_position_seconds = ?, playback_anchor_at = ?,
+             playback_revision = playback_revision + 1
          WHERE id = ?`,
-      ).run(paused ? 1 : 0, room.id)
+      ).run(paused ? 1 : 0, position, changedAt, room.id)
       return getPublicRoom(code)
     })
   }
@@ -374,19 +466,34 @@ function createRoomService(db, options = {}) {
       if (!hasHostAccess(room, hostToken)) {
         throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
       }
+      if (room.playback_mode === 'all_devices') {
+        return getPublicRoom(code)
+      }
+      const changedAt = now()
       if (!room.current_song_id) {
         db.prepare(
           `UPDATE rooms
-           SET playback_paused = 0, playback_blocked = 0
+           SET playback_paused = 0, playback_blocked = 0,
+               playback_position_seconds = 0, playback_anchor_at = ?,
+               playback_revision = playback_revision + 1
            WHERE id = ?`,
-        ).run(room.id)
+        ).run(changedAt, room.id)
         return getPublicRoom(code)
       }
+      const position = getPlaybackPosition(room, changedAt)
       db.prepare(
         `UPDATE rooms
-         SET playback_paused = ?, playback_blocked = ?
+         SET playback_paused = ?, playback_blocked = ?,
+             playback_position_seconds = ?, playback_anchor_at = ?,
+             playback_revision = playback_revision + 1
          WHERE id = ?`,
-      ).run(blocked ? 1 : 0, blocked ? 1 : 0, room.id)
+      ).run(
+        blocked ? 1 : 0,
+        blocked ? 1 : 0,
+        position,
+        changedAt,
+        room.id,
+      )
       return getPublicRoom(code)
     })
   }
@@ -433,7 +540,7 @@ function createRoomService(db, options = {}) {
         .get(room.id, song.position)
       if (!neighbor) return getPublicRoom(code)
 
-      const temporaryPosition = -Date.now()
+      const temporaryPosition = -now()
       db.prepare('UPDATE songs SET position = ? WHERE id = ?').run(
         temporaryPosition,
         song.id,
@@ -526,7 +633,7 @@ function createRoomService(db, options = {}) {
   }
 
   function deleteExpiredRooms() {
-    return db.prepare('DELETE FROM rooms WHERE expires_at <= ?').run(Date.now()).changes
+    return db.prepare('DELETE FROM rooms WHERE expires_at <= ?').run(now()).changes
   }
 
   return {
@@ -536,6 +643,7 @@ function createRoomService(db, options = {}) {
     getParticipantStatus,
     addSong,
     advance,
+    advanceCompletedAllDeviceRooms,
     setPlaybackPaused,
     reportPlaybackBlocked,
     removeSong,

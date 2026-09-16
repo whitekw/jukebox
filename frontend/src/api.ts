@@ -1,4 +1,9 @@
-import type { Participant, RoomState, VideoSearchResult } from './types'
+import type {
+  Participant,
+  PlaybackMode,
+  RoomState,
+  VideoSearchResult,
+} from './types'
 
 type ControlCredentials =
   | string
@@ -76,12 +81,17 @@ export const api = {
     }>('/api/config')
   },
 
-  createRoom(maxSongsPerParticipant: number) {
-    return request<{ code: string; hostToken: string; expiresAt: number }>(
+  createRoom(maxSongsPerParticipant: number, playbackMode: PlaybackMode) {
+    return request<{
+      code: string
+      hostToken: string
+      playbackMode: PlaybackMode
+      expiresAt: number
+    }>(
       '/api/rooms',
       {
         method: 'POST',
-        body: JSON.stringify({ maxSongsPerParticipant }),
+        body: JSON.stringify({ maxSongsPerParticipant, playbackMode }),
       },
     )
   },
