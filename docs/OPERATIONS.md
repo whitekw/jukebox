@@ -1,0 +1,205 @@
+# 개발 및 운영 가이드
+
+## 1. 요구 사항
+
+- Node.js 24 이상
+- npm 11.6.2 권장(`packageManager` 및 Dockerfile 기준)
+- YouTube Data API v3 키
+- 프로덕션 공개 시 HTTPS와 WebSocket upgrade를 지원하는 리버스 프록시
+
+## 2. 환경 변수
+
+백엔드 개발 환경은 `backend/.env.example`, Compose 이미지 배포는 `jukebox.env.example`을 기준으로 합니다.
+
+| 변수 | 기본값 | 필수 여부 | 설명 |
+| --- | --- | --- | --- |
+| `PORT` | `3001` | 선택 | HTTP/Socket.IO 수신 포트 |
+| `DATABASE_PATH` | `./data/jukebox.sqlite` | 선택 | SQLite 파일 경로 |
+| `ROOM_TTL_HOURS` | `24` | 선택 | 방 고정 수명(시간) |
+| `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
+| `YOUTUBE_DEFAULT_REGION` | `KR` | 선택 | 국가 감지 실패 또는 차트 미지원 시 기본 지역 |
+| `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
+| `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
+
+YouTube API 키는 프런트 코드나 `VITE_*` 환경 변수에 넣지 않습니다.
+
+## 3. 로컬 개발
+
+백엔드:
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+npm install
+npm run dev
+```
+
+프런트엔드:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+접속 주소는 `http://localhost:5173`입니다. Vite 개발 서버는 `/api`와 `/socket.io`를 `http://localhost:3001`로 프록시합니다.
+
+## 4. 검증 명령
+
+```powershell
+cd backend
+npm test
+
+cd ..\frontend
+npm run lint
+npm run build
+```
+
+현재 자동 검증 범위:
+
+- DB의 레거시 컬럼 마이그레이션과 최초 매니저 보정
+- 방 생성, 참여, 곡 추가/한도/중복, 다음 곡 전환
+- 재생 모드 기본값/검증과 공유 재생 타임라인 계산
+- 호스트/매니저 권한, 재생 상태, 설정, 권한 이전
+- 국가/언어 판별
+- YouTube URL 파싱, 재생 가능성 필터, 인기 차트 캐시와 지역 폴백
+- 프런트 정적 lint, TypeScript 빌드
+
+## 5. 로컬 프로덕션 실행
+
+```powershell
+cd frontend
+npm ci
+npm run build
+
+cd ..\backend
+npm ci
+npm start
+```
+
+Express가 `frontend/dist`를 제공하므로 최종 런타임에는 포트 3001 하나만 노출하면 됩니다.
+
+## 6. Docker Compose
+
+### 소스에서 빌드
+
+`backend/.env`에 실제 API 키를 설정한 뒤 실행합니다.
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f jukebox
+```
+
+구성 특성:
+
+- 멀티 스테이지 Dockerfile에서 프런트를 빌드하고 백엔드 production dependency만 런타임에 복사합니다.
+- 런타임 프로세스는 비루트 `node` 사용자로 실행됩니다.
+- `/app/data`는 `jukebox-data` named volume에 연결됩니다.
+- healthcheck는 30초마다 `/api/health`를 조회합니다.
+
+중지:
+
+```bash
+docker compose down
+```
+
+`docker compose down -v`는 SQLite 영속 볼륨까지 삭제하므로 데이터 폐기가 명확히 필요한 경우에만 사용합니다.
+
+### 게시 이미지로 배포
+
+`compose.deploy.yaml`은 GHCR의 commit SHA 이미지와 외부 `jukebox-data` 볼륨을 사용합니다.
+
+```bash
+docker volume create jukebox-data
+cp jukebox.env.example jukebox.env
+docker compose --env-file jukebox.env -f compose.deploy.yaml up -d
+```
+
+운영 Compose는 다음 방어 설정을 적용합니다.
+
+- 읽기 전용 root filesystem
+- `/tmp` tmpfs
+- `no-new-privileges`
+- Linux capability 전체 제거
+- `unless-stopped` 재시작 정책
+
+## 7. 리버스 프록시 요구사항
+
+- 외부 트래픽은 HTTPS로 종료합니다.
+- 일반 HTTP와 `/socket.io/`의 WebSocket upgrade를 모두 백엔드 포트로 전달합니다.
+- 프록시가 실제 클라이언트 IP를 전달하고 토폴로지가 한 단계일 때 `TRUST_PROXY=true`를 사용합니다.
+- Cloudflare를 사용하는 경우 `CF-IPCountry`가 지역별 차트와 추천 언어에 사용됩니다.
+- 연결 유휴 시간 제한이 너무 짧으면 Socket.IO가 자주 재연결될 수 있습니다.
+
+## 8. CI/CD
+
+`.github/workflows/container.yml`은 `master` 대상 pull request와 push에서 실행됩니다.
+
+```mermaid
+flowchart LR
+    Push[PR 또는 master push]
+    Test[Node 24 + npm 11.6.2]
+    Back[backend npm test]
+    Front[frontend lint + build]
+    Image[Docker Buildx]
+    GHCR[GHCR push]
+
+    Push --> Test --> Back --> Front
+    Front -->|master push만| Image --> GHCR
+```
+
+게시 태그:
+
+- `ghcr.io/whitekw/jukebox:master`
+- `ghcr.io/whitekw/jukebox:sha-{git-sha}`
+
+운영 Compose는 재현 가능한 SHA 태그를 사용합니다.
+
+## 9. 운영 점검
+
+### 상태 확인
+
+```bash
+curl --fail http://127.0.0.1:3001/api/health
+docker compose ps
+docker compose logs --tail=200 jukebox
+```
+
+애플리케이션 로그는 현재 시작 메시지와 처리되지 않은 5xx 오류를 표준 출력/오류에 기록합니다. 구조화 로그, access log, metrics 엔드포인트는 아직 없습니다.
+
+### 데이터
+
+- `jukebox-data` 볼륨 사용 여부와 여유 공간을 확인합니다.
+- 방 수명은 생성 시점부터 고정이며 기본 24시간입니다.
+- 만료 정리는 시작 시와 15분 간격으로 실행됩니다.
+- 백업 시 WAL 일관성을 고려합니다. 자세한 내용은 [DATA_MODEL.md](./DATA_MODEL.md)를 참고합니다.
+
+### YouTube 연동
+
+- 키가 없으면 YouTube 검색·차트·곡 추가가 `YOUTUBE_NOT_CONFIGURED`로 실패하지만 방 생성/조회는 동작합니다.
+- 외부 연결 실패는 `YOUTUBE_UNAVAILABLE`, API 응답 오류는 `YOUTUBE_API_ERROR`입니다.
+- 인기 음악은 프로세스 메모리에 30분 캐시되므로 재시작 시 초기화됩니다.
+
+## 10. 장애 대응 메모
+
+| 증상 | 우선 확인 |
+| --- | --- |
+| 방 화면은 열리나 실시간 갱신 안 됨 | 리버스 프록시의 WebSocket upgrade, `/socket.io/` 전달, 브라우저 네트워크 탭 |
+| 모든 사용자가 같은 IP로 제한됨 | 프록시 전달 헤더와 `TRUST_PROXY` 설정 |
+| 검색/추가만 실패 | `YOUTUBE_API_KEY`, 외부 연결, YouTube API 오류 응답 |
+| 컨테이너 재생성 후 방 소실 | `/app/data`의 named volume 연결 여부 |
+| 호스트 제어 불가 | 해당 브라우저의 `jukebox:host:{CODE}` localStorage 키 존재 여부 |
+| 참여자 재입장 요구 | 해당 브라우저의 참여자 토큰 삭제/불일치 또는 방 만료 여부 |
+| 자동재생 차단 표시 | 해당 기기에서 `재생 계속` 사용, 호스트 전용 모드라면 호스트 브라우저의 자동재생 정책도 확인 |
+
+호스트 토큰을 잃은 경우 서버에 원본 토큰이 없으므로 복구할 수 없습니다. 단, 참여자 매니저가 존재하면 매니저 화면에서 대부분의 재생 및 대기열 제어는 계속할 수 있습니다.
+
+## 11. 운영 변경 전 체크리스트
+
+- 배포 이미지가 CI를 통과한 SHA 태그인지 확인
+- SQLite 볼륨 백업 또는 스냅샷 확보
+- 필수 환경 변수와 비밀 값 노출 여부 확인
+- 리버스 프록시의 HTTPS 및 WebSocket 경로 확인
+- 배포 후 healthcheck, 홈 로드, 방 생성, 참여, 실시간 갱신 확인
+- 문제 시 되돌릴 이전 이미지 태그와 DB 백업 위치 확인

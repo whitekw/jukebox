@@ -74,7 +74,8 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     const migratedRoom = db
       .prepare(
         `SELECT manager_participant_id, host_volume, playback_paused,
-                playback_blocked
+                playback_blocked, playback_mode, playback_position_seconds,
+                playback_anchor_at, playback_revision
          FROM rooms WHERE id = ?`,
       )
       .get('room-1')
@@ -83,10 +84,18 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     assert.ok(columns.includes('host_volume'))
     assert.ok(columns.includes('playback_paused'))
     assert.ok(columns.includes('playback_blocked'))
+    assert.ok(columns.includes('playback_mode'))
+    assert.ok(columns.includes('playback_position_seconds'))
+    assert.ok(columns.includes('playback_anchor_at'))
+    assert.ok(columns.includes('playback_revision'))
     assert.equal(migratedRoom.manager_participant_id, 'participant-1')
     assert.equal(migratedRoom.host_volume, 100)
     assert.equal(migratedRoom.playback_paused, 0)
     assert.equal(migratedRoom.playback_blocked, 0)
+    assert.equal(migratedRoom.playback_mode, 'host_only')
+    assert.equal(migratedRoom.playback_position_seconds, 0)
+    assert.equal(migratedRoom.playback_anchor_at, 0)
+    assert.equal(migratedRoom.playback_revision, 0)
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

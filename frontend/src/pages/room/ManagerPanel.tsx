@@ -164,25 +164,27 @@ export function ManagerPanel({
           </div>
         </div>
 
-        <label className="block rounded-xl border border-line bg-black/10 p-4">
-          <span className="flex items-center justify-between gap-3 text-xs font-bold text-muted">
-            {t('manager.hostVolume')}
-            <strong className="text-sm text-ink">{volume}%</strong>
-          </span>
-          <input
-            className="mt-4 h-2 w-full cursor-pointer accent-purple disabled:cursor-not-allowed disabled:opacity-40"
-            type="range"
-            min="0"
-            max="100"
-            step="5"
-            value={volume}
-            disabled={Boolean(busyAction)}
-            onChange={(event) => setVolume(Number(event.target.value))}
-            onPointerUp={commitVolume}
-            onKeyUp={commitVolume}
-            onBlur={commitVolume}
-          />
-        </label>
+        {room.playbackMode === 'host_only' && (
+          <label className="block rounded-xl border border-line bg-black/10 p-4">
+            <span className="flex items-center justify-between gap-3 text-xs font-bold text-muted">
+              {t('manager.hostVolume')}
+              <strong className="text-sm text-ink">{volume}%</strong>
+            </span>
+            <input
+              className="mt-4 h-2 w-full cursor-pointer accent-purple disabled:cursor-not-allowed disabled:opacity-40"
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={volume}
+              disabled={Boolean(busyAction)}
+              onChange={(event) => setVolume(Number(event.target.value))}
+              onPointerUp={commitVolume}
+              onKeyUp={commitVolume}
+              onBlur={commitVolume}
+            />
+          </label>
+        )}
 
         <label className="block rounded-xl border border-line bg-black/10 p-4">
           <span className="text-xs font-bold text-muted">

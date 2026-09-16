@@ -1,3 +1,5 @@
+export type PlaybackMode = 'host_only' | 'all_devices'
+
 export type Song = {
   id: string
   videoId: string
@@ -16,8 +18,13 @@ export type RoomState = {
   maxSongsPerParticipant: number
   managerParticipantId: string | null
   hostVolume: number
+  playbackMode: PlaybackMode
   playbackPaused: boolean
   playbackBlocked: boolean
+  playbackPositionSeconds: number
+  playbackAnchorAt: number
+  playbackRevision: number
+  serverTime: number
   participants: RoomParticipant[]
   currentSong: Song | null
   queue: Song[]

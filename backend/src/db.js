@@ -21,8 +21,14 @@ function createDatabase(databasePath = ':memory:') {
       max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
       manager_participant_id TEXT,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
+      playback_mode TEXT NOT NULL DEFAULT 'host_only'
+        CHECK(playback_mode IN ('host_only', 'all_devices')),
       playback_paused INTEGER NOT NULL DEFAULT 0 CHECK(playback_paused IN (0, 1)),
       playback_blocked INTEGER NOT NULL DEFAULT 0 CHECK(playback_blocked IN (0, 1)),
+      playback_position_seconds REAL NOT NULL DEFAULT 0
+        CHECK(playback_position_seconds >= 0),
+      playback_anchor_at INTEGER NOT NULL DEFAULT 0,
+      playback_revision INTEGER NOT NULL DEFAULT 0,
       current_song_id TEXT,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
@@ -71,6 +77,11 @@ function createDatabase(databasePath = ':memory:') {
       'ALTER TABLE rooms ADD COLUMN host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100)',
     )
   }
+  if (!roomColumns.has('playback_mode')) {
+    db.exec(
+      "ALTER TABLE rooms ADD COLUMN playback_mode TEXT NOT NULL DEFAULT 'host_only' CHECK(playback_mode IN ('host_only', 'all_devices'))",
+    )
+  }
   if (!roomColumns.has('playback_paused')) {
     db.exec(
       'ALTER TABLE rooms ADD COLUMN playback_paused INTEGER NOT NULL DEFAULT 0 CHECK(playback_paused IN (0, 1))',
@@ -81,6 +92,27 @@ function createDatabase(databasePath = ':memory:') {
       'ALTER TABLE rooms ADD COLUMN playback_blocked INTEGER NOT NULL DEFAULT 0 CHECK(playback_blocked IN (0, 1))',
     )
   }
+  if (!roomColumns.has('playback_position_seconds')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_position_seconds REAL NOT NULL DEFAULT 0 CHECK(playback_position_seconds >= 0)',
+    )
+  }
+  if (!roomColumns.has('playback_anchor_at')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_anchor_at INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+  if (!roomColumns.has('playback_revision')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_revision INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+
+  db.prepare(
+    `UPDATE rooms
+     SET playback_anchor_at = ?
+     WHERE playback_anchor_at = 0 AND current_song_id IS NOT NULL`,
+  ).run(Date.now())
 
   db.exec(`
     UPDATE rooms

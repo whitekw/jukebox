@@ -9,6 +9,7 @@ import {
 import { Brand } from '../../components/Brand'
 import { MusicIcon } from '../../components/Icons'
 import { LocaleSwitcher } from '../../components/LocaleSwitcher'
+import { YouTubePlayer } from '../../components/YouTubePlayer'
 import { getErrorMessage, useI18n } from '../../i18n-context'
 import {
   buttonStyles,
@@ -31,7 +32,14 @@ export function RoomPage() {
   const { t } = useI18n()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
-  const { room, setRoom, loading, connected, error: roomError } = useRoomState(code)
+  const {
+    room,
+    setRoom,
+    loading,
+    connected,
+    serverTimeOffsetMs,
+    error: roomError,
+  } = useRoomState(code)
   const [participant, setParticipant] = useState<Participant | null>(null)
   const [participantToken, setParticipantToken] = useState(
     () => localStorage.getItem(participantTokenKey(code)) ?? '',
@@ -165,7 +173,27 @@ export function RoomPage() {
         <NowPlaying
           song={room.currentSong}
           paused={room.playbackPaused}
-          blocked={room.playbackBlocked}
+          blocked={
+            room.playbackMode === 'host_only' && room.playbackBlocked
+          }
+          synchronized={room.playbackMode === 'all_devices'}
+          player={
+            participant &&
+            room.playbackMode === 'all_devices' &&
+            room.currentSong ? (
+              <YouTubePlayer
+                videoId={room.currentSong.videoId}
+                volume={100}
+                paused={room.playbackPaused}
+                synchronization={{
+                  positionSeconds: room.playbackPositionSeconds,
+                  anchorAt: room.playbackAnchorAt,
+                  revision: room.playbackRevision,
+                  serverTimeOffsetMs,
+                }}
+              />
+            ) : undefined
+          }
         />
         {participant && isManager && (
           <ManagerPanel

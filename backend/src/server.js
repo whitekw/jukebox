@@ -180,6 +180,12 @@ app.post('/api/rooms/:code/manager/transfer', mutationLimiter, (req, res) => {
 })
 
 io.on('connection', (socket) => {
+  socket.on('time:sync', (acknowledge) => {
+    if (typeof acknowledge === 'function') {
+      acknowledge({ serverTime: Date.now() })
+    }
+  })
+
   socket.on('room:subscribe', ({ code } = {}, acknowledge) => {
     try {
       const normalizedCode = normalizeCode(code)
@@ -235,11 +241,24 @@ rooms.deleteExpiredRooms()
 const cleanupTimer = setInterval(() => rooms.deleteExpiredRooms(), 15 * 60 * 1000)
 cleanupTimer.unref()
 
+const playbackTimer = setInterval(() => {
+  try {
+    for (const state of rooms.advanceCompletedAllDeviceRooms()) {
+      emitRoom(state.code, state)
+    }
+  } catch (error) {
+    console.error('Failed to advance completed playback.', error)
+  }
+}, 500)
+playbackTimer.unref()
+
 server.listen(port, () => {
   console.log(`Jukebox backend listening on http://localhost:${port}`)
 })
 
 function shutdown() {
+  clearInterval(playbackTimer)
+  clearInterval(cleanupTimer)
   server.close(() => {
     db.close()
     process.exit(0)
