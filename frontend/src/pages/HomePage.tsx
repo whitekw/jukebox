@@ -5,6 +5,7 @@ import { Brand } from '../components/Brand'
 import { MusicIcon, UsersIcon } from '../components/Icons'
 import { LocaleSwitcher } from '../components/LocaleSwitcher'
 import { getErrorMessage, useI18n } from '../i18n-context'
+import type { PlaybackMode } from '../types'
 import {
   buttonStyles,
   cardIconStyles,
@@ -19,6 +20,8 @@ export function HomePage() {
   const navigate = useNavigate()
   const [roomCode, setRoomCode] = useState('')
   const [maxSongs, setMaxSongs] = useState(2)
+  const [playbackMode, setPlaybackMode] =
+    useState<PlaybackMode>('host_only')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,7 +30,7 @@ export function HomePage() {
     setCreating(true)
     setError('')
     try {
-      const created = await api.createRoom(maxSongs)
+      const created = await api.createRoom(maxSongs, playbackMode)
       localStorage.setItem(hostTokenKey(created.code), created.hostToken)
       navigate(`/host/${created.code}`)
     } catch (requestError) {
@@ -84,9 +87,9 @@ export function HomePage() {
       <section className="relative z-[1] mx-auto mb-[72px] grid max-w-[920px] grid-cols-1 gap-[18px] md:grid-cols-2">
         <form
           className={cn(
-            'relative flex min-h-[350px] flex-col rounded-[18px] border border-purple/30',
+            'relative flex min-h-[460px] flex-col rounded-[18px] border border-purple/30',
             'bg-[#12101a]/90 p-6 shadow-[0_24px_70px_rgba(0,0,0,.25)] backdrop-blur-2xl',
-            'motion-safe:animate-rise md:min-h-[380px] md:p-[30px]',
+            'motion-safe:animate-rise md:min-h-[500px] md:p-[30px]',
           )}
           onSubmit={createRoom}
         >
@@ -97,7 +100,55 @@ export function HomePage() {
           <h2 className="mb-2 text-[27px] tracking-[-0.03em]">
             {t('home.createTitle')}
           </h2>
-          <p className="mb-7 text-sm text-muted">{t('home.createDescription')}</p>
+          <p className="mb-5 text-sm text-muted">{t('home.createDescription')}</p>
+          <fieldset className="mb-5 grid gap-2 border-0 p-0">
+            <legend className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase">
+              {t('home.playbackModeLabel')}
+            </legend>
+            {([
+              {
+                value: 'host_only',
+                title: t('home.playbackModeHostOnly'),
+                description: t('home.playbackModeHostOnlyDescription'),
+              },
+              {
+                value: 'all_devices',
+                title: t('home.playbackModeAllDevices'),
+                description: t('home.playbackModeAllDevicesDescription'),
+              },
+            ] satisfies Array<{
+              value: PlaybackMode
+              title: string
+              description: string
+            }>).map((option) => (
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors',
+                  playbackMode === option.value
+                    ? 'border-purple/60 bg-purple/[0.10]'
+                    : 'border-line bg-white/[0.025] hover:bg-white/[0.045]',
+                )}
+                key={option.value}
+              >
+                <input
+                  className="mt-1 accent-purple"
+                  type="radio"
+                  name="playback-mode"
+                  value={option.value}
+                  checked={playbackMode === option.value}
+                  onChange={() => setPlaybackMode(option.value)}
+                />
+                <span className="min-w-0">
+                  <strong className="block text-sm text-ink">
+                    {option.title}
+                  </strong>
+                  <small className="mt-0.5 block leading-4 text-dim">
+                    {option.description}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <label
             className="mt-auto mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
             htmlFor="max-songs"

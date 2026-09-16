@@ -50,6 +50,75 @@ test('enforces participant cap, duplicate prevention and host token', () => {
   db.close()
 })
 
+test('stores the selected playback mode and maintains a shared timeline', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, {
+    roomTtlHours: 1,
+    now: () => currentTime,
+  })
+  const created = rooms.createRoom({
+    maxSongsPerParticipant: 2,
+    playbackMode: 'all_devices',
+  })
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+
+  assert.equal(created.playbackMode, 'all_devices')
+  let state = rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('aaaaaaaaaaa', 'One'),
+  )
+  assert.equal(state.playbackMode, 'all_devices')
+  assert.equal(state.playbackPositionSeconds, 0)
+  assert.equal(state.playbackAnchorAt, currentTime)
+  assert.equal(state.playbackRevision, 1)
+  assert.equal(state.serverTime, currentTime)
+
+  currentTime += 5_250
+  state = rooms.setPlaybackPaused(
+    created.code,
+    { participantToken: alice.participantToken },
+    true,
+  )
+  assert.equal(state.playbackPaused, true)
+  assert.equal(state.playbackPositionSeconds, 5.25)
+  assert.equal(state.playbackAnchorAt, currentTime)
+  assert.equal(state.playbackRevision, 2)
+
+  currentTime += 10_000
+  state = rooms.setPlaybackPaused(
+    created.code,
+    { participantToken: alice.participantToken },
+    false,
+  )
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackPositionSeconds, 5.25)
+  assert.equal(state.playbackAnchorAt, currentTime)
+  assert.equal(state.playbackRevision, 3)
+
+  currentTime += 2_000
+  state = rooms.reportPlaybackBlocked(created.code, created.hostToken, true)
+  assert.equal(state.playbackPaused, false)
+  assert.equal(state.playbackBlocked, false)
+  assert.equal(state.playbackRevision, 3)
+  db.close()
+})
+
+test('defaults to host-only playback and rejects unknown playback modes', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+
+  assert.equal(created.playbackMode, 'host_only')
+  assert.equal(rooms.getPublicRoom(created.code).playbackMode, 'host_only')
+  assert.throws(
+    () => rooms.createRoom({ playbackMode: 'somewhere_else' }),
+    /재생 방식/,
+  )
+  db.close()
+})
+
 test('assigns, transfers and enforces participant manager controls', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)

@@ -180,6 +180,12 @@ app.post('/api/rooms/:code/manager/transfer', mutationLimiter, (req, res) => {
 })
 
 io.on('connection', (socket) => {
+  socket.on('time:sync', (acknowledge) => {
+    if (typeof acknowledge === 'function') {
+      acknowledge({ serverTime: Date.now() })
+    }
+  })
+
   socket.on('room:subscribe', ({ code } = {}, acknowledge) => {
     try {
       const normalizedCode = normalizeCode(code)

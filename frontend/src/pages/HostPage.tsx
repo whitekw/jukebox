@@ -23,7 +23,14 @@ export function HostPage() {
   const { t } = useI18n()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
-  const { room, setRoom, loading, connected, error: roomError } = useRoomState(code)
+  const {
+    room,
+    setRoom,
+    loading,
+    connected,
+    serverTimeOffsetMs,
+    error: roomError,
+  } = useRoomState(code)
   const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
   const [actionError, setActionError] = useState('')
   const [copied, setCopied] = useState(false)
@@ -109,9 +116,25 @@ export function HostPage() {
                 videoId={room.currentSong.videoId}
                 volume={room.hostVolume}
                 paused={room.playbackPaused}
-                playbackBlocked={room.playbackBlocked}
-                onPlaybackBlockedChange={reportPlaybackBlocked}
+                playbackBlocked={
+                  room.playbackMode === 'host_only' && room.playbackBlocked
+                }
+                onPlaybackBlockedChange={
+                  room.playbackMode === 'host_only'
+                    ? reportPlaybackBlocked
+                    : undefined
+                }
                 onEnded={advance}
+                synchronization={
+                  room.playbackMode === 'all_devices'
+                    ? {
+                        positionSeconds: room.playbackPositionSeconds,
+                        anchorAt: room.playbackAnchorAt,
+                        revision: room.playbackRevision,
+                        serverTimeOffsetMs,
+                      }
+                    : undefined
+                }
               />
             ) : (
               <div className="flex size-full flex-col items-center justify-center text-center">
@@ -134,6 +157,11 @@ export function HostPage() {
                     ? t('status.paused')
                     : t('status.nowPlaying')}
               </span>
+              {room.playbackMode === 'all_devices' && (
+                <span className="mt-2 inline-flex rounded-full border border-lime/20 bg-lime/[0.05] px-2.5 py-1 text-[10px] font-bold text-lime">
+                  {t('player.allDevices')}
+                </span>
+              )}
               <h1 className="my-2 max-w-[65vw] overflow-hidden text-ellipsis whitespace-nowrap text-[23px] tracking-[-0.04em] md:my-2 md:max-w-[780px] md:text-[clamp(24px,3vw,39px)]">
                 {room.currentSong?.title ?? t('host.noCurrentSong')}
               </h1>
