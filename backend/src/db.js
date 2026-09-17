@@ -28,8 +28,10 @@ function createDatabase(databasePath = ':memory:') {
       playback_position_seconds REAL NOT NULL DEFAULT 0
         CHECK(playback_position_seconds >= 0),
       playback_anchor_at INTEGER NOT NULL DEFAULT 0,
+      playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1)),
       playback_revision INTEGER NOT NULL DEFAULT 0,
       current_song_id TEXT,
+      empty_since INTEGER,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
     );
@@ -107,6 +109,17 @@ function createDatabase(databasePath = ':memory:') {
       'ALTER TABLE rooms ADD COLUMN playback_revision INTEGER NOT NULL DEFAULT 0',
     )
   }
+  if (!roomColumns.has('playback_pending')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1))',
+    )
+  }
+  if (!roomColumns.has('empty_since')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN empty_since INTEGER')
+  }
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
+  )
 
   db.prepare(
     `UPDATE rooms

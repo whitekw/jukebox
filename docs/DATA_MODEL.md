@@ -22,8 +22,10 @@ erDiagram
         integer playback_blocked
         real playback_position_seconds
         integer playback_anchor_at
+        integer playback_pending
         integer playback_revision
         text current_song_id
+        integer empty_since
         integer created_at
         integer expires_at
     }
@@ -68,8 +70,10 @@ erDiagram
 | `playback_blocked` | INTEGER, 기본 0, `0/1` | 호스트 브라우저 자동재생 차단 상태 |
 | `playback_position_seconds` | REAL, 기본 0, 0 이상 | 기준 시각에서의 재생 위치 |
 | `playback_anchor_at` | INTEGER, 기본 0 | 기준 위치가 유효한 서버 epoch ms |
+| `playback_pending` | INTEGER, 기본 0, `0/1` | 실제 플레이어의 재생 시작을 기다리는 상태 |
 | `playback_revision` | INTEGER, 기본 0 | 타임라인 변경 순번 |
 | `current_song_id` | TEXT nullable | 현재 곡 ID |
+| `empty_since` | INTEGER nullable | 인증된 Socket.IO 연결이 0개가 된 서버 epoch ms |
 | `created_at` | INTEGER NOT NULL | 생성 epoch ms |
 | `expires_at` | INTEGER NOT NULL | 만료 epoch ms |
 
@@ -77,6 +81,7 @@ erDiagram
 
 - `rooms.code`의 UNIQUE 인덱스
 - `rooms_by_expiry(expires_at)`
+- `rooms_by_empty_since(empty_since)`
 
 ## 3. `participants`
 
@@ -183,14 +188,18 @@ stateDiagram-v2
 - `playback_mode`
 - `playback_position_seconds`
 - `playback_anchor_at`
+- `playback_pending`
 - `playback_revision`
+- `empty_since`
 
 그 뒤 매니저가 없는 기존 방에는 생성 시각이 가장 빠른 참여자를 매니저로 채웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
 
 ## 9. 만료와 삭제
 
 - 방 생성 시 `expires_at = now + ROOM_TTL_HOURS`로 고정합니다.
-- 서버 시작 시와 이후 15분마다 `expires_at <= now`인 방을 삭제합니다.
+- 유효한 호스트 또는 참여자 토큰으로 연결된 Socket.IO 클라이언트가 하나도 없으면 `empty_since`를 기록하고, 다시 연결되면 비웁니다.
+- 서버 시작 시 모든 방을 빈 상태로 표시하며, 재연결된 방은 삭제 대상에서 제외합니다.
+- 서버 시작 시와 이후 1분마다 `expires_at <= now`이거나 `empty_since + EMPTY_ROOM_TTL_HOURS <= now`인 방을 삭제합니다.
 - 방 삭제는 foreign key cascade로 참여자와 곡을 함께 삭제합니다.
 - 방 활동에 따른 TTL 연장 기능은 없습니다.
 

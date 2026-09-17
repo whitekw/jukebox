@@ -74,8 +74,9 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     const migratedRoom = db
       .prepare(
         `SELECT manager_participant_id, host_volume, playback_paused,
-                playback_blocked, playback_mode, playback_position_seconds,
-                playback_anchor_at, playback_revision
+                 playback_blocked, playback_mode, playback_position_seconds,
+                 playback_anchor_at, playback_pending, playback_revision,
+                 empty_since
          FROM rooms WHERE id = ?`,
       )
       .get('room-1')
@@ -87,6 +88,8 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     assert.ok(columns.includes('playback_mode'))
     assert.ok(columns.includes('playback_position_seconds'))
     assert.ok(columns.includes('playback_anchor_at'))
+    assert.ok(columns.includes('playback_pending'))
+    assert.ok(columns.includes('empty_since'))
     assert.ok(columns.includes('playback_revision'))
     assert.equal(migratedRoom.manager_participant_id, 'participant-1')
     assert.equal(migratedRoom.host_volume, 100)
@@ -95,7 +98,9 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     assert.equal(migratedRoom.playback_mode, 'host_only')
     assert.equal(migratedRoom.playback_position_seconds, 0)
     assert.equal(migratedRoom.playback_anchor_at, 0)
+    assert.equal(migratedRoom.playback_pending, 0)
     assert.equal(migratedRoom.playback_revision, 0)
+    assert.equal(migratedRoom.empty_since, null)
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

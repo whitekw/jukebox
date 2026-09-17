@@ -3,12 +3,16 @@ import { useI18n, type Translate } from '../i18n-context'
 import { buttonStyles, cn } from '../styles'
 
 type YTPlayer = {
-  loadVideoById(videoId: string, startSeconds?: number): void
+  loadVideoById(options: {
+    videoId: string
+    startSeconds?: number
+  }): void
   playVideo(): void
   pauseVideo(): void
   seekTo(seconds: number, allowSeekAhead: boolean): void
   getCurrentTime(): number
   getPlayerState(): number
+  getVideoUrl(): string
   setVolume(volume: number): void
   destroy(): void
 }
@@ -46,11 +50,20 @@ const YOUTUBE_STATE_PLAYING = 1
 const YOUTUBE_STATE_PAUSED = 2
 const YOUTUBE_STATE_BUFFERING = 3
 
+type PlaybackSession = {
+  videoId: string
+  loadedAt: number
+  started: boolean
+  startReported: boolean
+  ended: boolean
+}
+
 export type PlaybackSynchronization = {
   positionSeconds: number
   anchorAt: number
   revision: number
   serverTimeOffsetMs: number
+  pending: boolean
 }
 
 function loadYouTubeApi() {
@@ -75,6 +88,17 @@ function loadYouTubeApi() {
   return youtubeApiPromise
 }
 
+function getLoadedVideoId(player: YTPlayer) {
+  const url = player.getVideoUrl()
+  if (!url) return ''
+  try {
+    const parsed = new URL(url)
+    return parsed.searchParams.get('v') ?? parsed.pathname.split('/').pop() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export function YouTubePlayer({
   videoId,
   volume,
@@ -82,6 +106,7 @@ export function YouTubePlayer({
   playbackBlocked = false,
   onPlaybackBlockedChange,
   onPausedChange,
+  onPlaybackStarted,
   onEnded,
   synchronization,
 }: {
@@ -91,6 +116,7 @@ export function YouTubePlayer({
   playbackBlocked?: boolean
   onPlaybackBlockedChange?: (blocked: boolean) => void
   onPausedChange?: (paused: boolean) => void
+  onPlaybackStarted?: (videoId: string, positionSeconds: number) => void
   onEnded?: () => void
   synchronization?: PlaybackSynchronization
 }) {
@@ -105,9 +131,17 @@ export function YouTubePlayer({
   const autoplayBlockedRef = useRef(false)
   const onPlaybackBlockedChangeRef = useRef(onPlaybackBlockedChange)
   const onPausedChangeRef = useRef(onPausedChange)
+  const onPlaybackStartedRef = useRef(onPlaybackStarted)
   const onEndedRef = useRef(onEnded)
   const requestedPausedStateRef = useRef<boolean | null>(null)
-  const finishedVideoRef = useRef('')
+  const playbackSessionRef = useRef<PlaybackSession>({
+    videoId,
+    loadedAt: performance.now(),
+    started: false,
+    startReported: false,
+    ended: false,
+  })
+  const transitionRetryTimerRef = useRef<number | null>(null)
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
   const [playbackError, setPlaybackError] = useState<number | null>(null)
   const synchronizationRevision = synchronization?.revision
@@ -115,7 +149,7 @@ export function YouTubePlayer({
 
   function expectedPosition() {
     const sync = synchronizationRef.current
-    if (!sync) return 0
+    if (!sync || sync.pending) return sync?.positionSeconds ?? 0
     const serverNow = Date.now() + sync.serverTimeOffsetMs
     const elapsed = pausedRef.current
       ? 0
@@ -125,15 +159,10 @@ export function YouTubePlayer({
 
   function alignPlayer(player: YTPlayer, forceSeek: boolean) {
     const playerState = player.getPlayerState()
-    if (
-      playerState === YOUTUBE_STATE_ENDED &&
-      finishedVideoRef.current === videoIdRef.current
-    ) {
-      return
-    }
+    if (playerState === YOUTUBE_STATE_ENDED) return
 
     const sync = synchronizationRef.current
-    if (sync) {
+    if (sync && !sync.pending) {
       const expected = expectedPosition()
       const current = player.getCurrentTime()
       if (
@@ -158,17 +187,60 @@ export function YouTubePlayer({
 
   useEffect(() => {
     videoIdRef.current = videoId
-    finishedVideoRef.current = ''
+    const session: PlaybackSession = {
+      videoId,
+      loadedAt: performance.now(),
+      started: false,
+      startReported: false,
+      ended: false,
+    }
+    playbackSessionRef.current = session
+    requestedPausedStateRef.current = pausedRef.current
     autoplayBlockedRef.current = false
     setAutoplayBlocked(false)
     setPlaybackError(null)
+    if (transitionRetryTimerRef.current !== null) {
+      window.clearTimeout(transitionRetryTimerRef.current)
+      transitionRetryTimerRef.current = null
+    }
     const player = playerRef.current
     if (player) {
-      player.loadVideoById(
+      player.loadVideoById({
         videoId,
-        synchronizationRef.current ? expectedPosition() : undefined,
-      )
-      alignPlayer(player, Boolean(synchronizationRef.current))
+        ...(synchronizationRef.current && !synchronizationRef.current.pending
+          ? { startSeconds: expectedPosition() }
+          : {}),
+      })
+
+      // loadVideoById 자체가 영상을 재생한다. 전환 직후에는 이전 영상의
+      // 상태가 잠시 남을 수 있으므로 즉시 seek/play 명령을 겹쳐 보내지 않는다.
+      // 드물게 새 영상이 준비되지 않은 상태에 머물면 한 번만 재생을 재시도한다.
+      transitionRetryTimerRef.current = window.setTimeout(() => {
+        transitionRetryTimerRef.current = null
+        if (
+          playbackSessionRef.current !== session ||
+          session.started ||
+          pausedRef.current ||
+          autoplayBlockedRef.current
+        ) {
+          return
+        }
+        const state = player.getPlayerState()
+        if (
+          state !== YOUTUBE_STATE_PLAYING &&
+          state !== YOUTUBE_STATE_BUFFERING
+        ) {
+          requestedPausedStateRef.current = false
+          player.playVideo()
+        }
+      }, 1_200)
+    }
+
+    return () => {
+      if (transitionRetryTimerRef.current !== null) {
+        window.clearTimeout(transitionRetryTimerRef.current)
+        transitionRetryTimerRef.current = null
+      }
     }
   }, [videoId])
 
@@ -179,6 +251,10 @@ export function YouTubePlayer({
   useEffect(() => {
     onPausedChangeRef.current = onPausedChange
   }, [onPausedChange])
+
+  useEffect(() => {
+    onPlaybackStartedRef.current = onPlaybackStarted
+  }, [onPlaybackStarted])
 
   useEffect(() => {
     playbackBlockedRef.current = playbackBlocked
@@ -205,7 +281,10 @@ export function YouTubePlayer({
   useEffect(() => {
     if (!synchronizationRef.current) return
     const player = playerRef.current
-    if (player) alignPlayer(player, true)
+    const session = playbackSessionRef.current
+    if (player && session.videoId === videoIdRef.current && session.started) {
+      alignPlayer(player, true)
+    }
   }, [synchronizationRevision])
 
   useEffect(() => {
@@ -253,14 +332,39 @@ export function YouTubePlayer({
             alignPlayer(event.target, Boolean(synchronizationRef.current))
           },
           onStateChange: (event) => {
+            const session = playbackSessionRef.current
+            const loadedVideoId = getLoadedVideoId(event.target)
+            if (loadedVideoId && loadedVideoId !== session.videoId) return
             if (
               event.data === YOUTUBE_STATE_ENDED &&
-              finishedVideoRef.current !== videoIdRef.current
+              session.videoId === videoIdRef.current &&
+              performance.now() - session.loadedAt >= 500 &&
+              !session.ended
             ) {
-              finishedVideoRef.current = videoIdRef.current
+              // 새 영상을 로드하는 도중 이전 영상의 ENDED 이벤트가 늦게
+              // 도착할 수 있다. 로드 직후 보호 구간이 지난 현재 영상의
+              // 종료 이벤트만 방의 다음 곡 처리로 전달한다.
+              session.ended = true
               onEndedRef.current?.()
             }
             if (event.data === YOUTUBE_STATE_PLAYING) {
+              if (session.videoId === videoIdRef.current) {
+                session.started = true
+                if (
+                  synchronizationRef.current?.pending &&
+                  !session.startReported
+                ) {
+                  session.startReported = true
+                  onPlaybackStartedRef.current?.(
+                    session.videoId,
+                    Math.max(0, event.target.getCurrentTime()),
+                  )
+                }
+              }
+              if (transitionRetryTimerRef.current !== null) {
+                window.clearTimeout(transitionRetryTimerRef.current)
+                transitionRetryTimerRef.current = null
+              }
               const wasBlocked =
                 autoplayBlockedRef.current || playbackBlockedRef.current
               autoplayBlockedRef.current = false
@@ -269,12 +373,20 @@ export function YouTubePlayer({
                 playbackBlockedRef.current = false
                 onPlaybackBlockedChangeRef.current?.(false)
               }
+              if (pausedRef.current) {
+                requestedPausedStateRef.current = true
+                event.target.pauseVideo()
+                return
+              }
             }
             if (
               event.data === YOUTUBE_STATE_PLAYING ||
               event.data === YOUTUBE_STATE_PAUSED
             ) {
               const eventPaused = event.data === YOUTUBE_STATE_PAUSED
+              // 다음 영상을 불러오는 중 전달되는 이전 영상의 PAUSED 이벤트가
+              // 방 전체를 일시정지시키지 않도록 실제 재생 시작 전에는 무시한다.
+              if (eventPaused && !session.started) return
               if (requestedPausedStateRef.current === eventPaused) {
                 requestedPausedStateRef.current = null
               } else if (pausedRef.current !== eventPaused) {
@@ -282,7 +394,13 @@ export function YouTubePlayer({
               }
             }
           },
-          onError: (event) => setPlaybackError(event.data),
+          onError: (event) => {
+            if (transitionRetryTimerRef.current !== null) {
+              window.clearTimeout(transitionRetryTimerRef.current)
+              transitionRetryTimerRef.current = null
+            }
+            setPlaybackError(event.data)
+          },
           onAutoplayBlocked: () => {
             if (
               autoplayBlockedRef.current &&
@@ -304,6 +422,10 @@ export function YouTubePlayer({
 
     return () => {
       cancelled = true
+      if (transitionRetryTimerRef.current !== null) {
+        window.clearTimeout(transitionRetryTimerRef.current)
+        transitionRetryTimerRef.current = null
+      }
       if (playerRef.current === player) playerRef.current = null
       try {
         player?.destroy()
@@ -333,11 +455,21 @@ export function YouTubePlayer({
               setPlaybackError(null)
               const player = playerRef.current
               if (player) {
-                player.loadVideoById(
-                  videoIdRef.current,
-                  synchronizationRef.current ? expectedPosition() : undefined,
-                )
-                alignPlayer(player, Boolean(synchronizationRef.current))
+                const session: PlaybackSession = {
+                  videoId: videoIdRef.current,
+                  loadedAt: performance.now(),
+                  started: false,
+                  startReported: false,
+                  ended: false,
+                }
+                playbackSessionRef.current = session
+                player.loadVideoById({
+                  videoId: videoIdRef.current,
+                  ...(synchronizationRef.current &&
+                  !synchronizationRef.current.pending
+                    ? { startSeconds: expectedPosition() }
+                    : {}),
+                })
               }
             }}
           >

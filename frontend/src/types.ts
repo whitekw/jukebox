@@ -22,6 +22,7 @@ export type RoomState = {
   playbackBlocked: boolean
   playbackPositionSeconds: number
   playbackAnchorAt: number
+  playbackPending: boolean
   playbackRevision: number
   serverTime: number
   participants: RoomParticipant[]
@@ -39,6 +40,12 @@ export type Participant = {
   id: string
   nickname: string
   isManager?: boolean
+}
+
+export type RoomSession = {
+  isHost: boolean
+  participant: Participant | null
+  room: RoomState
 }
 
 export type VideoSearchResult = {

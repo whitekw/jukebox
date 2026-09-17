@@ -34,6 +34,11 @@ export function RoomPage() {
   const { t } = useI18n()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
+  const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
+  const isHost = Boolean(hostToken)
+  const [participantToken, setParticipantToken] = useState(
+    () => localStorage.getItem(participantTokenKey(code)) ?? '',
+  )
   const {
     room,
     setRoom,
@@ -41,13 +46,8 @@ export function RoomPage() {
     connected,
     serverTimeOffsetMs,
     error: roomError,
-  } = useRoomState(code)
-  const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
-  const isHost = Boolean(hostToken)
+  } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
-  const [participantToken, setParticipantToken] = useState(
-    () => localStorage.getItem(participantTokenKey(code)) ?? '',
-  )
   const [nickname, setNickname] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -145,6 +145,18 @@ export function RoomPage() {
     runQueueAction(() => api.setPlaybackPaused(code, hostToken, paused))
   }
 
+  function reportPlaybackStarted(videoId: string, positionSeconds: number) {
+    if (!controlCredentials || room?.playbackMode !== 'all_devices') return
+    void runControllerAction(() =>
+      api.startPlayback(
+        code,
+        controlCredentials,
+        videoId,
+        positionSeconds,
+      ),
+    ).catch((requestError) => setError(getErrorMessage(requestError, t)))
+  }
+
   async function copyJoinLink() {
     await navigator.clipboard.writeText(joinUrl)
     setCopied(true)
@@ -239,6 +251,11 @@ export function RoomPage() {
                   onPausedChange={
                     isHost ? updatePlaybackFromPlayer : undefined
                   }
+                  onPlaybackStarted={
+                    isController && room.playbackMode === 'all_devices'
+                      ? reportPlaybackStarted
+                      : undefined
+                  }
                   onEnded={
                     isHost && room.playbackMode === 'host_only'
                       ? () =>
@@ -254,6 +271,7 @@ export function RoomPage() {
                           anchorAt: room.playbackAnchorAt,
                           revision: room.playbackRevision,
                           serverTimeOffsetMs,
+                          pending: room.playbackPending,
                         }
                       : undefined
                   }

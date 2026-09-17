@@ -130,8 +130,22 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
   assert.equal(state.playbackMode, 'all_devices')
   assert.equal(state.playbackPositionSeconds, 0)
   assert.equal(state.playbackAnchorAt, currentTime)
+  assert.equal(state.playbackPending, true)
   assert.equal(state.playbackRevision, 1)
   assert.equal(state.serverTime, currentTime)
+
+  currentTime += 3_000
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
+  state = rooms.startPlayback(
+    created.code,
+    { participantToken: alice.participantToken },
+    'aaaaaaaaaaa',
+    0.2,
+  )
+  assert.equal(state.playbackPending, false)
+  assert.equal(state.playbackPositionSeconds, 0.2)
+  assert.equal(state.playbackAnchorAt, currentTime)
+  assert.equal(state.playbackRevision, 2)
 
   currentTime += 5_250
   state = rooms.setPlaybackPaused(
@@ -140,9 +154,9 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
     true,
   )
   assert.equal(state.playbackPaused, true)
-  assert.equal(state.playbackPositionSeconds, 5.25)
+  assert.equal(state.playbackPositionSeconds, 5.45)
   assert.equal(state.playbackAnchorAt, currentTime)
-  assert.equal(state.playbackRevision, 2)
+  assert.equal(state.playbackRevision, 3)
 
   currentTime += 10_000
   state = rooms.setPlaybackPaused(
@@ -151,15 +165,15 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
     false,
   )
   assert.equal(state.playbackPaused, false)
-  assert.equal(state.playbackPositionSeconds, 5.25)
+  assert.equal(state.playbackPositionSeconds, 5.45)
   assert.equal(state.playbackAnchorAt, currentTime)
-  assert.equal(state.playbackRevision, 3)
+  assert.equal(state.playbackRevision, 4)
 
   currentTime += 2_000
   state = rooms.reportPlaybackBlocked(created.code, created.hostToken, true)
   assert.equal(state.playbackPaused, false)
   assert.equal(state.playbackBlocked, false)
-  assert.equal(state.playbackRevision, 3)
+  assert.equal(state.playbackRevision, 4)
   db.close()
 })
 
@@ -184,6 +198,12 @@ test('automatically advances completed all-device playback from the server timel
     alice.participantToken,
     song('bbbbbbbbbbb', 'Two', 30),
   )
+  rooms.startPlayback(
+    created.code,
+    { participantToken: alice.participantToken },
+    'aaaaaaaaaaa',
+    0,
+  )
 
   currentTime += 19_999
   assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
@@ -194,6 +214,7 @@ test('automatically advances completed all-device playback from the server timel
   assert.equal(advanced[0].currentSong.title, 'Two')
   assert.equal(advanced[0].queue.length, 0)
   assert.equal(advanced[0].playbackAnchorAt, currentTime)
+  assert.equal(advanced[0].playbackPending, true)
   assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
   db.close()
 })
@@ -246,6 +267,69 @@ test('defaults to host-only playback and rejects unknown playback modes', () => 
     () => rooms.createRoom({ playbackMode: 'somewhere_else' }),
     /재생 방식/,
   )
+  db.close()
+})
+
+test('validates stored room sessions for hosts and participants', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+
+  const hostSession = rooms.getRoomSession(created.code, {
+    hostToken: created.hostToken,
+  })
+  assert.equal(hostSession.isHost, true)
+  assert.equal(hostSession.participant, null)
+
+  const participantSession = rooms.getRoomSession(created.code, {
+    participantToken: alice.participantToken,
+  })
+  assert.equal(participantSession.isHost, false)
+  assert.equal(participantSession.participant.nickname, 'Alice')
+  assert.equal(
+    rooms.hasActiveSession(created.code, {
+      participantToken: alice.participantToken,
+    }),
+    true,
+  )
+  assert.equal(
+    rooms.hasActiveSession(created.code, { participantToken: 'invalid' }),
+    false,
+  )
+  assert.throws(
+    () =>
+      rooms.getRoomSession(created.code, {
+        participantToken: 'invalid',
+      }),
+    /저장된 세션/,
+  )
+  db.close()
+})
+
+test('deletes a room after it remains empty for one hour', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, {
+    roomTtlHours: 24,
+    emptyRoomTtlHours: 1,
+    now: () => currentTime,
+  })
+  const created = rooms.createRoom()
+
+  currentTime += 60 * 60 * 1000 - 1
+  assert.equal(rooms.deleteExpiredRooms(), 0)
+
+  rooms.markRoomOccupied(created.code)
+  currentTime += 2 * 60 * 60 * 1000
+  assert.equal(rooms.deleteExpiredRooms(), 0)
+
+  rooms.markRoomEmpty(created.code)
+  currentTime += 60 * 60 * 1000 - 1
+  assert.equal(rooms.deleteExpiredRooms(), 0)
+  currentTime += 1
+  assert.equal(rooms.deleteExpiredRooms(), 1)
+  assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않거나 만료/)
   db.close()
 })
 

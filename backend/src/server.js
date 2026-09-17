@@ -12,10 +12,11 @@ const { createYouTubeService } = require('./youtube')
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
 const roomTtlHours = Number(process.env.ROOM_TTL_HOURS ?? 24)
+const emptyRoomTtlHours = Number(process.env.EMPTY_ROOM_TTL_HOURS ?? 1)
 const youtubeDefaultRegion = process.env.YOUTUBE_DEFAULT_REGION ?? 'KR'
 
 const db = createDatabase(databasePath)
-const rooms = createRoomService(db, { roomTtlHours })
+const rooms = createRoomService(db, { roomTtlHours, emptyRoomTtlHours })
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
 const app = express()
 const server = http.createServer(app)
@@ -30,6 +31,10 @@ const mutationLimiter = createRateLimiter({ windowMs: 60_000, limit: 120 })
 
 function roomChannel(code) {
   return `room:${normalizeCode(code)}`
+}
+
+function activeRoomChannel(code) {
+  return `active-room:${normalizeCode(code)}`
 }
 
 function emitRoom(code, state) {
@@ -62,6 +67,10 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
 
 app.get('/api/rooms/:code', (req, res) => {
   res.json(rooms.getPublicRoom(req.params.code))
+})
+
+app.get('/api/rooms/:code/session', (req, res) => {
+  res.json(rooms.getRoomSession(req.params.code, controlCredentials(req)))
 })
 
 app.post('/api/rooms/:code/join', mutationLimiter, (req, res) => {
@@ -119,6 +128,17 @@ app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
     req.params.code,
     controlCredentials(req),
     req.body.paused,
+  )
+  emitRoom(req.params.code, state)
+  res.json(state)
+})
+
+app.post('/api/rooms/:code/playback/start', mutationLimiter, (req, res) => {
+  const state = rooms.startPlayback(
+    req.params.code,
+    controlCredentials(req),
+    req.body.videoId,
+    req.body.positionSeconds,
   )
   emitRoom(req.params.code, state)
   res.json(state)
@@ -186,22 +206,42 @@ io.on('connection', (socket) => {
     }
   })
 
-  socket.on('room:subscribe', ({ code } = {}, acknowledge) => {
-    try {
-      const normalizedCode = normalizeCode(code)
-      const state = rooms.getPublicRoom(normalizedCode)
-      socket.join(roomChannel(normalizedCode))
-      socket.emit('room:state', state)
-      if (typeof acknowledge === 'function') acknowledge({ ok: true })
-    } catch (error) {
-      if (typeof acknowledge === 'function') {
-        acknowledge({
-          ok: false,
-          code: error.code,
-          details: error.details,
-          message: error.message,
-        })
+  socket.on(
+    'room:subscribe',
+    ({ code, hostToken, participantToken } = {}, acknowledge) => {
+      try {
+        const normalizedCode = normalizeCode(code)
+        const state = rooms.getPublicRoom(normalizedCode)
+        socket.join(roomChannel(normalizedCode))
+        if (
+          rooms.hasActiveSession(normalizedCode, {
+            hostToken,
+            participantToken,
+          })
+        ) {
+          socket.join(activeRoomChannel(normalizedCode))
+          rooms.markRoomOccupied(normalizedCode)
+        }
+        socket.emit('room:state', state)
+        if (typeof acknowledge === 'function') acknowledge({ ok: true })
+      } catch (error) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: false,
+            code: error.code,
+            details: error.details,
+            message: error.message,
+          })
+        }
       }
+    },
+  )
+
+  socket.on('disconnecting', () => {
+    for (const channel of socket.rooms) {
+      if (!channel.startsWith('active-room:')) continue
+      if (io.sockets.adapter.rooms.get(channel)?.size !== 1) continue
+      rooms.markRoomEmpty(channel.slice('active-room:'.length))
     }
   })
 })
@@ -237,8 +277,9 @@ app.use((error, _req, res, _next) => {
   })
 })
 
+rooms.markAllRoomsEmpty()
 rooms.deleteExpiredRooms()
-const cleanupTimer = setInterval(() => rooms.deleteExpiredRooms(), 15 * 60 * 1000)
+const cleanupTimer = setInterval(() => rooms.deleteExpiredRooms(), 60 * 1000)
 cleanupTimer.unref()
 
 const playbackTimer = setInterval(() => {
