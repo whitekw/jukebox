@@ -43,6 +43,7 @@ const DRIFT_TOLERANCE_SECONDS = 0.75
 const SYNCHRONIZATION_INTERVAL_MS = 3_000
 const YOUTUBE_STATE_ENDED = 0
 const YOUTUBE_STATE_PLAYING = 1
+const YOUTUBE_STATE_PAUSED = 2
 const YOUTUBE_STATE_BUFFERING = 3
 
 export type PlaybackSynchronization = {
@@ -80,6 +81,7 @@ export function YouTubePlayer({
   paused,
   playbackBlocked = false,
   onPlaybackBlockedChange,
+  onPausedChange,
   onEnded,
   synchronization,
 }: {
@@ -88,6 +90,7 @@ export function YouTubePlayer({
   paused: boolean
   playbackBlocked?: boolean
   onPlaybackBlockedChange?: (blocked: boolean) => void
+  onPausedChange?: (paused: boolean) => void
   onEnded?: () => void
   synchronization?: PlaybackSynchronization
 }) {
@@ -101,7 +104,9 @@ export function YouTubePlayer({
   const playbackBlockedRef = useRef(playbackBlocked)
   const autoplayBlockedRef = useRef(false)
   const onPlaybackBlockedChangeRef = useRef(onPlaybackBlockedChange)
+  const onPausedChangeRef = useRef(onPausedChange)
   const onEndedRef = useRef(onEnded)
+  const requestedPausedStateRef = useRef<boolean | null>(null)
   const finishedVideoRef = useRef('')
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
   const [playbackError, setPlaybackError] = useState<number | null>(null)
@@ -140,11 +145,13 @@ export function YouTubePlayer({
     }
 
     if (pausedRef.current) {
+      requestedPausedStateRef.current = true
       player.pauseVideo()
     } else if (
       !autoplayBlockedRef.current &&
       playerState !== YOUTUBE_STATE_PLAYING
     ) {
+      requestedPausedStateRef.current = false
       player.playVideo()
     }
   }
@@ -170,6 +177,10 @@ export function YouTubePlayer({
   }, [onEnded])
 
   useEffect(() => {
+    onPausedChangeRef.current = onPausedChange
+  }, [onPausedChange])
+
+  useEffect(() => {
     playbackBlockedRef.current = playbackBlocked
     onPlaybackBlockedChangeRef.current = onPlaybackBlockedChange
   }, [onPlaybackBlockedChange, playbackBlocked])
@@ -181,6 +192,7 @@ export function YouTubePlayer({
 
   useEffect(() => {
     pausedRef.current = paused
+    requestedPausedStateRef.current = paused
     if (paused) {
       playerRef.current?.pauseVideo()
     } else {
@@ -229,7 +241,7 @@ export function YouTubePlayer({
       player = new YT.Player(playerElement, {
         videoId: videoIdRef.current,
         playerVars: {
-          autoplay: 1,
+          autoplay: pausedRef.current ? 0 : 1,
           controls: 1,
           playsinline: 1,
           rel: 0,
@@ -256,6 +268,17 @@ export function YouTubePlayer({
               if (wasBlocked) {
                 playbackBlockedRef.current = false
                 onPlaybackBlockedChangeRef.current?.(false)
+              }
+            }
+            if (
+              event.data === YOUTUBE_STATE_PLAYING ||
+              event.data === YOUTUBE_STATE_PAUSED
+            ) {
+              const eventPaused = event.data === YOUTUBE_STATE_PAUSED
+              if (requestedPausedStateRef.current === eventPaused) {
+                requestedPausedStateRef.current = null
+              } else if (pausedRef.current !== eventPaused) {
+                onPausedChangeRef.current?.(eventPaused)
               }
             }
           },

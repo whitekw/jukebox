@@ -6,8 +6,8 @@ Jukebox는 하나의 Node.js 프로세스가 REST API, Socket.IO, 빌드된 SPA 
 
 ```mermaid
 flowchart LR
-    H[호스트 브라우저\n/host/:code]
-    P[참여자 브라우저\n/room/:code]
+    H[호스트 브라우저\n/room/:code + hostToken]
+    P[참여자 브라우저\n/room/:code + participantToken]
     S[Node.js 24\nExpress + Socket.IO]
     R[Room Service]
     Y[YouTube Service]
@@ -105,7 +105,6 @@ flowchart TB
 flowchart TB
     APP[App + BrowserRouter]
     HOME[HomePage]
-    HOST[HostPage]
     ROOM[RoomPage]
     HOOK[useRoomState]
     API[api.ts]
@@ -115,14 +114,11 @@ flowchart TB
 
     I18N --> APP
     APP --> HOME
-    APP --> HOST
     APP --> ROOM
     HOME --> API
-    HOST --> HOOK
-    HOST --> API
-    HOST --> PLAYER
     ROOM --> HOOK
     ROOM --> API
+    ROOM --> PLAYER
     ROOM --> PANELS
     HOOK --> API
 ```
@@ -132,8 +128,8 @@ flowchart TB
 | 경로 | 화면 | 역할 |
 | --- | --- | --- |
 | `/` | `HomePage` | 방 생성 또는 코드 입력 |
-| `/host/:code` | `HostPage` | 실제 영상 재생, QR/코드, 호스트 대기열 제어 |
-| `/room/:code` | `RoomPage` | 참여, 곡 검색/추가, 매니저 제어, 모든 기기 모드 재생 |
+| `/room/:code` | `RoomPage` | 모든 사용자의 참여·신청 기능과 호스트 토큰 보유자의 추가 관리 기능 제공 |
+| `/host/:code` | `LegacyHostRedirect` | 기존 호스트 URL을 통합 룸 경로로 리다이렉트 |
 | 기타 | `/`로 이동 | SPA fallback |
 
 ### 상태 동기화 훅
@@ -166,6 +162,11 @@ sequenceDiagram
     RS->>DB: room + host token hash 저장
     API-->>FE: code, hostToken, expiresAt
     FE->>FE: hostToken을 localStorage에 저장
+    Host->>FE: 닉네임 제출
+    FE->>API: POST /api/rooms/:code/join
+    API->>RS: joinRoom()
+    RS->>DB: 호스트의 participant 저장
+    API-->>FE: participantToken + room
 
     Guest->>FE: 코드/QR로 입장, 닉네임 제출
     FE->>API: POST /api/rooms/:code/join
@@ -203,7 +204,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Player as 호스트 YouTubePlayer
-    participant Host as HostPage
+    participant Host as RoomPage(hostToken)
     participant API as Express
     participant Timer as 서버 재생 타이머
     participant RS as Room Service
@@ -226,7 +227,7 @@ sequenceDiagram
 
 ### 매니저의 재생 제어
 
-호스트 전용 모드에서 매니저 브라우저는 영상을 직접 재생하지 않으며 호스트 플레이어의 볼륨을 조절할 수 있습니다. 모든 기기 모드에서는 매니저를 포함한 각 참여자 브라우저가 영상을 재생하므로 호스트 볼륨 제어를 표시하지 않고, 각 기기의 YouTube 플레이어에서 로컬 볼륨을 조절합니다. 어느 모드든 매니저가 재생 상태를 변경하면 서버가 기준 위치와 revision을 저장해 브로드캐스트하고 해당 모드의 플레이어들이 `playVideo()`, `pauseVideo()`, `seekTo()`를 적용합니다.
+호스트 전용 모드에서 매니저 브라우저는 영상을 직접 재생하지 않으며 호스트 플레이어의 볼륨을 조절할 수 있습니다. 모든 기기 모드에서는 매니저를 포함한 각 참여자 브라우저가 영상을 재생하므로 호스트 볼륨 제어를 표시하지 않고, 각 기기의 YouTube 플레이어에서 로컬 볼륨을 조절합니다. 호스트가 YouTube 임베드 컨트롤에서 재생 또는 일시정지하면 해당 상태를 서버에 저장해 브로드캐스트하고, 각 플레이어가 `playVideo()`, `pauseVideo()`, `seekTo()`를 적용합니다.
 
 호스트 전용 모드에서 자동재생이 막히면 호스트가 `playback/autoplay-blocked`를 보고하고 서버가 전역 재생을 멈춥니다. 모든 기기 모드의 자동재생 차단은 기기별 상태이므로 다른 기기를 멈추지 않으며, 해당 플레이어의 `재생 계속` 버튼으로 사용자 상호작용을 확보한 뒤 현재 서버 위치로 이동합니다. 호스트 전용 모드의 곡 종료는 호스트 플레이어가 `advance`를 요청합니다. 모든 기기 모드는 특정 브라우저의 종료 이벤트에 의존하지 않고 서버가 0.5초마다 기준 타임라인과 영상 길이를 비교해 다음 곡으로 전환합니다.
 

@@ -150,7 +150,6 @@ function createRoomService(db, options = {}) {
     return {
       code: room.code,
       expiresAt: room.expires_at,
-      maxSongsPerParticipant: room.max_songs_per_participant,
       managerParticipantId: room.manager_participant_id,
       hostVolume: room.host_volume,
       playbackMode: room.playback_mode,
@@ -170,14 +169,7 @@ function createRoomService(db, options = {}) {
     }
   }
 
-  function createRoom({
-    maxSongsPerParticipant = 2,
-    playbackMode = 'host_only',
-  } = {}) {
-    const maximum = Number(maxSongsPerParticipant)
-    if (!Number.isInteger(maximum) || maximum < 1 || maximum > 10) {
-      throw new AppError(400, '참여자별 곡 수는 1~10 사이여야 합니다.', 'INVALID_MAX_SONGS')
-    }
+  function createRoom({ playbackMode = 'host_only' } = {}) {
     if (!PLAYBACK_MODES.has(playbackMode)) {
       throw new AppError(
         400,
@@ -196,14 +188,13 @@ function createRoomService(db, options = {}) {
     const createdAt = now()
     db.prepare(
       `INSERT INTO rooms (
-        id, code, host_token_hash, max_songs_per_participant, playback_mode,
+        id, code, host_token_hash, playback_mode,
         playback_anchor_at, created_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       code,
       hashToken(hostToken),
-      maximum,
       playbackMode,
       createdAt,
       createdAt,
@@ -266,17 +257,10 @@ function createRoomService(db, options = {}) {
   function getParticipantStatus(code, participantToken) {
     const room = getRoomRecord(code)
     const participant = requireParticipant(room, participantToken)
-    const activeCount = db
-      .prepare(
-        `SELECT COUNT(*) AS count FROM songs
-         WHERE room_id = ? AND added_by = ? AND status IN ('queued', 'current')`,
-      )
-      .get(room.id, participant.id).count
     return {
       id: participant.id,
       nickname: participant.nickname,
       isManager: participant.id === room.manager_participant_id,
-      songsLeft: Math.max(0, room.max_songs_per_participant - Number(activeCount)),
     }
   }
 
@@ -284,22 +268,6 @@ function createRoomService(db, options = {}) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
       const participant = requireParticipant(room, participantToken)
-      const activeCount = Number(
-        db
-          .prepare(
-            `SELECT COUNT(*) AS count FROM songs
-             WHERE room_id = ? AND added_by = ? AND status IN ('queued', 'current')`,
-          )
-          .get(room.id, participant.id).count,
-      )
-      if (activeCount >= room.max_songs_per_participant) {
-        throw new AppError(
-          409,
-          `한 번에 최대 ${room.max_songs_per_participant}곡까지 추가할 수 있습니다.`,
-          'SONG_LIMIT_REACHED',
-          { maxSongs: room.max_songs_per_participant },
-        )
-      }
 
       const duplicate = db
         .prepare(
@@ -558,29 +526,14 @@ function createRoomService(db, options = {}) {
   }
 
   function updateRoomSettings(code, credentials, settings = {}) {
-    const hasMaximum = settings.maxSongsPerParticipant !== undefined
     const hasVolume = settings.hostVolume !== undefined
-    if (!hasMaximum && !hasVolume) {
+    if (!hasVolume) {
       throw new AppError(400, '변경할 설정이 없습니다.', 'EMPTY_SETTINGS')
     }
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
       requireController(room, credentials)
-
-      if (hasMaximum) {
-        const maximum = Number(settings.maxSongsPerParticipant)
-        if (!Number.isInteger(maximum) || maximum < 1 || maximum > 10) {
-          throw new AppError(
-            400,
-            '참여자별 곡 수는 1~10 사이여야 합니다.',
-            'INVALID_MAX_SONGS',
-          )
-        }
-        db.prepare(
-          'UPDATE rooms SET max_songs_per_participant = ? WHERE id = ?',
-        ).run(maximum, room.id)
-      }
 
       if (hasVolume) {
         const volume = Number(settings.hostVolume)

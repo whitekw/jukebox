@@ -81,7 +81,7 @@ export const api = {
     }>('/api/config')
   },
 
-  createRoom(maxSongsPerParticipant: number, playbackMode: PlaybackMode) {
+  createRoom(playbackMode: PlaybackMode) {
     return request<{
       code: string
       hostToken: string
@@ -91,7 +91,7 @@ export const api = {
       '/api/rooms',
       {
         method: 'POST',
-        body: JSON.stringify({ maxSongsPerParticipant, playbackMode }),
+        body: JSON.stringify({ playbackMode }),
       },
     )
   },
@@ -202,7 +202,6 @@ export const api = {
     credentials: ControlCredentials,
     settings: {
       hostVolume?: number
-      maxSongsPerParticipant?: number
     },
   ) {
     return request<RoomState>(

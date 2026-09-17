@@ -16,7 +16,7 @@ function song(videoId, title, durationSeconds = 180) {
 test('creates, joins, queues and advances a room', () => {
   const db = createDatabase()
   const rooms = createRoomService(db, { roomTtlHours: 1 })
-  const created = rooms.createRoom({ maxSongsPerParticipant: 2 })
+  const created = rooms.createRoom()
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
@@ -35,16 +35,22 @@ test('creates, joins, queues and advances a room', () => {
   db.close()
 })
 
-test('enforces participant cap, duplicate prevention and host token', () => {
+test('allows unlimited requests while enforcing duplicate prevention and host token', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
-  const created = rooms.createRoom({ maxSongsPerParticipant: 1 })
+  const created = rooms.createRoom()
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
   rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One'))
+  const state = rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('bbbbbbbbbbb', 'Two'),
+  )
+  assert.equal(state.queue.length, 1)
 
   assert.throws(
-    () => rooms.addSong(created.code, alice.participantToken, song('bbbbbbbbbbb', 'Two')),
-    /최대 1곡/,
+    () => rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One')),
+    /이미 재생 중이거나 대기열/,
   )
   assert.throws(() => rooms.advance(created.code, 'wrong-token'), /호스트 권한/)
   db.close()
@@ -58,7 +64,6 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
     now: () => currentTime,
   })
   const created = rooms.createRoom({
-    maxSongsPerParticipant: 2,
     playbackMode: 'all_devices',
   })
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
@@ -113,7 +118,6 @@ test('automatically advances completed all-device playback from the server timel
     now: () => currentTime,
   })
   const created = rooms.createRoom({
-    maxSongsPerParticipant: 2,
     playbackMode: 'all_devices',
   })
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
@@ -195,7 +199,7 @@ test('defaults to host-only playback and rejects unknown playback modes', () => 
 test('assigns, transfers and enforces participant manager controls', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
-  const created = rooms.createRoom({ maxSongsPerParticipant: 2 })
+  const created = rooms.createRoom()
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
@@ -284,9 +288,8 @@ test('assigns, transfers and enforces participant manager controls', () => {
   state = rooms.updateRoomSettings(
     created.code,
     { participantToken: alice.participantToken },
-    { maxSongsPerParticipant: 4, hostVolume: 35 },
+    { hostVolume: 35 },
   )
-  assert.equal(state.maxSongsPerParticipant, 4)
   assert.equal(state.hostVolume, 35)
 
   state = rooms.advance(created.code, {

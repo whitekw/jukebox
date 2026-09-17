@@ -60,7 +60,7 @@ erDiagram
 | `id` | TEXT PK | 내부 UUID |
 | `code` | TEXT NOT NULL UNIQUE | 사용자에게 노출하는 6자리 방 코드 |
 | `host_token_hash` | TEXT NOT NULL | 호스트 원본 토큰의 SHA-256 hex |
-| `max_songs_per_participant` | INTEGER NOT NULL, 기본 2 | 참여자별 `current + queued` 최대 수, 서비스 규칙 `1..10` |
+| `max_songs_per_participant` | INTEGER NOT NULL, 기본 2 | 이전 버전 호환을 위해 남겨둔 미사용 컬럼 |
 | `manager_participant_id` | TEXT nullable | 현재 매니저 참여자 ID |
 | `host_volume` | INTEGER, 기본 100, `0..100` | 호스트 IFrame 플레이어 볼륨 |
 | `playback_mode` | TEXT, 기본 `host_only` | `host_only` 또는 `all_devices` |
@@ -154,7 +154,6 @@ stateDiagram-v2
 
 ### 신청곡
 
-- 한 참여자의 `current + queued` 수는 추가 시점의 방 한도 미만이어야 합니다.
 - 한 방에는 같은 `video_id`의 활성 곡이 둘 이상 존재할 수 없습니다.
 - 직접 추가되는 영상은 YouTube 조회 시 공개·비라이브·임베드 가능 상태여야 합니다.
 - 대기열 조회는 `position ASC, created_at ASC`로 안정적으로 정렬합니다.

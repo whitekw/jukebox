@@ -19,7 +19,6 @@ export function HomePage() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const [roomCode, setRoomCode] = useState('')
-  const [maxSongs, setMaxSongs] = useState(2)
   const [playbackMode, setPlaybackMode] =
     useState<PlaybackMode>('host_only')
   const [creating, setCreating] = useState(false)
@@ -30,9 +29,9 @@ export function HomePage() {
     setCreating(true)
     setError('')
     try {
-      const created = await api.createRoom(maxSongs, playbackMode)
+      const created = await api.createRoom(playbackMode)
       localStorage.setItem(hostTokenKey(created.code), created.hostToken)
-      navigate(`/host/${created.code}`)
+      navigate(`/room/${created.code}`)
     } catch (requestError) {
       setError(getErrorMessage(requestError, t))
     } finally {
@@ -66,25 +65,7 @@ export function HomePage() {
         </div>
       </nav>
 
-      <section className="relative z-[1] mx-auto mt-[68px] mb-9 max-w-[1180px] md:mt-[clamp(72px,10vh,118px)] md:mb-12">
-        <div className="flex items-center gap-2.5 text-[11px] font-extrabold tracking-[0.18em] text-lime">
-          <span className="h-px w-[26px] bg-lime" /> NO LOGIN · NO APP · JUST MUSIC
-        </div>
-        <h1 className="my-5 text-[clamp(46px,14.3vw,72px)] leading-[0.97] font-[850] tracking-[-0.065em] md:text-[clamp(48px,7.4vw,98px)]">
-          {t('home.heroLineOne')}
-          <br />
-          <em className="text-purple-light not-italic">
-            {t('home.heroEmphasis')}
-          </em>
-          {t('home.heroLineTwo')}
-        </h1>
-        <p className="text-[clamp(15px,1.5vw,19px)] leading-[1.7] text-muted">
-          {t('home.descriptionOne')}
-          <br className="hidden md:block" /> {t('home.descriptionTwo')}
-        </p>
-      </section>
-
-      <section className="relative z-[1] mx-auto mb-[72px] grid max-w-[920px] grid-cols-1 gap-[18px] md:grid-cols-2">
+      <section className="relative z-[1] mx-auto mt-12 mb-[72px] grid max-w-[920px] grid-cols-1 gap-[18px] md:mt-16 md:grid-cols-2">
         <form
           className={cn(
             'relative flex min-h-[460px] flex-col rounded-[18px] border border-purple/30',
@@ -101,7 +82,7 @@ export function HomePage() {
             {t('home.createTitle')}
           </h2>
           <p className="mb-5 text-sm text-muted">{t('home.createDescription')}</p>
-          <fieldset className="mb-5 grid gap-2 border-0 p-0">
+          <fieldset className="mt-auto mb-3 grid gap-2 border-0 p-0">
             <legend className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase">
               {t('home.playbackModeLabel')}
             </legend>
@@ -149,26 +130,6 @@ export function HomePage() {
               </label>
             ))}
           </fieldset>
-          <label
-            className="mt-auto mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
-            htmlFor="max-songs"
-          >
-            {t('home.maxSongsLabel')}
-          </label>
-          <select
-            className={cn(formControlStyles({ weight: 'bold' }), 'mb-3 h-[46px]')}
-            id="max-songs"
-            value={maxSongs}
-            onChange={(event) => setMaxSongs(Number(event.target.value))}
-          >
-            {[1, 2, 3, 4, 5].map((value) => (
-              <option key={value} value={value}>
-                {t(value === 1 ? 'common.songCountOne' : 'common.songCount', {
-                  count: value,
-                })}
-              </option>
-            ))}
-          </select>
           <button
             className={buttonStyles({
               intent: 'primary',

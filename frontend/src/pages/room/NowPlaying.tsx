@@ -1,20 +1,21 @@
 import type { ReactNode } from 'react'
 import type { Song } from '../../types'
+import { SkipIcon } from '../../components/Icons'
 import { useI18n } from '../../i18n-context'
-import { panelStyles } from '../../styles'
+import { buttonStyles, cn, panelStyles } from '../../styles'
 
 export const NowPlaying = ({
   song,
   paused,
   blocked,
   player,
-  synchronized = false,
+  onAdvance,
 }: {
   song: Song | null
   paused: boolean
   blocked: boolean
   player?: ReactNode
-  synchronized?: boolean
+  onAdvance?: () => void
 }) => {
   const { t } = useI18n()
 
@@ -29,11 +30,6 @@ export const NowPlaying = ({
               ? t('status.paused')
               : t('status.nowPlaying')}
         </span>
-        {synchronized && (
-          <span className="rounded-full border border-lime/20 bg-lime/[0.05] px-2.5 py-1 text-[10px] font-bold text-lime">
-            {t('player.allDevices')}
-          </span>
-        )}
       </div>
       {song ? (
         <>
@@ -42,25 +38,42 @@ export const NowPlaying = ({
               {player}
             </div>
           )}
-          <div className="mt-[13px] flex items-center gap-3 md:gap-4">
-            {!player && (
-              <img
-                className="aspect-video w-[108px] shrink-0 rounded-[10px] object-cover md:w-[142px]"
-                src={song.thumbnailUrl}
-                alt=""
-              />
-            )}
-            <div className="min-w-0">
-              <h1 className="mb-[5px] overflow-hidden text-ellipsis whitespace-nowrap text-[17px] md:text-[22px]">
-                {song.title}
-              </h1>
-              <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted md:text-base">
-                {song.artist}
-              </p>
-              <small className="text-dim">
-                {t('song.requestedBy', { nickname: song.addedBy })}
-              </small>
+          <div className="mt-[13px] flex items-end justify-between gap-3 md:gap-4">
+            <div className="flex min-w-0 items-center gap-3 md:gap-4">
+              {!player && (
+                <img
+                  className="aspect-video w-[108px] shrink-0 rounded-[10px] object-cover md:w-[142px]"
+                  src={song.thumbnailUrl}
+                  alt=""
+                />
+              )}
+              <div className="min-w-0">
+                <h1 className="mb-[5px] overflow-hidden text-ellipsis whitespace-nowrap text-[17px] md:text-[22px]">
+                  {song.title}
+                </h1>
+                <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted md:text-base">
+                  {song.artist}
+                </p>
+                <small className="text-dim">
+                  {t('song.requestedBy', { nickname: song.addedBy })}
+                </small>
+              </div>
             </div>
+            {onAdvance && (
+              <button
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'size-11 shrink-0 px-0 font-bold sm:h-11 sm:w-auto sm:px-4',
+                )}
+                type="button"
+                onClick={onAdvance}
+              >
+                <SkipIcon size={18} />
+                <span className="sr-only sm:not-sr-only">
+                  {t('manager.skip')}
+                </span>
+              </button>
+            )}
           </div>
         </>
       ) : (

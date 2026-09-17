@@ -5,7 +5,6 @@ import type { VideoSearchResult } from '../../types'
 
 type VideoResultListProps = {
   videos: VideoSearchResult[]
-  songsLeft: number
   addingId: string
   ranked?: boolean
   onAddSong: (videoId: string) => void
@@ -13,7 +12,6 @@ type VideoResultListProps = {
 
 export function VideoResultList({
   videos,
-  songsLeft,
   addingId,
   ranked = false,
   onAddSong,
@@ -77,7 +75,7 @@ export function VideoResultList({
                 : t('search.cannotAddSong', { title: video.title })
             }
             title={!video.embeddable ? t('search.embedUnavailable') : undefined}
-            disabled={!video.embeddable || songsLeft <= 0 || Boolean(addingId)}
+            disabled={!video.embeddable || Boolean(addingId)}
             onClick={() => onAddSong(video.videoId)}
           >
             {addingId === video.videoId ? '…' : '+'}
