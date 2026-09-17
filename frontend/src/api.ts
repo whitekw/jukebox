@@ -1,11 +1,12 @@
 import type {
   Participant,
   PlaybackMode,
+  RoomSession,
   RoomState,
   VideoSearchResult,
 } from './types'
 
-type ControlCredentials =
+export type ControlCredentials =
   | string
   | {
       hostToken?: string
@@ -81,7 +82,7 @@ export const api = {
     }>('/api/config')
   },
 
-  createRoom(maxSongsPerParticipant: number, playbackMode: PlaybackMode) {
+  createRoom(playbackMode: PlaybackMode) {
     return request<{
       code: string
       hostToken: string
@@ -91,13 +92,20 @@ export const api = {
       '/api/rooms',
       {
         method: 'POST',
-        body: JSON.stringify({ maxSongsPerParticipant, playbackMode }),
+        body: JSON.stringify({ playbackMode }),
       },
     )
   },
 
   getRoom(code: string) {
     return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}`)
+  },
+
+  getRoomSession(code: string, credentials: ControlCredentials) {
+    return request<RoomSession>(
+      `/api/rooms/${encodeURIComponent(code)}/session`,
+      { headers: controlHeaders(credentials) },
+    )
   },
 
   joinRoom(code: string, nickname: string) {
@@ -160,6 +168,22 @@ export const api = {
     )
   },
 
+  startPlayback(
+    code: string,
+    credentials: ControlCredentials,
+    videoId: string,
+    positionSeconds: number,
+  ) {
+    return request<RoomState>(
+      `/api/rooms/${encodeURIComponent(code)}/playback/start`,
+      {
+        method: 'POST',
+        headers: controlHeaders(credentials),
+        body: JSON.stringify({ videoId, positionSeconds }),
+      },
+    )
+  },
+
   reportPlaybackBlocked(code: string, hostToken: string, blocked: boolean) {
     return request<RoomState>(
       `/api/rooms/${encodeURIComponent(code)}/playback/autoplay-blocked`,
@@ -181,18 +205,18 @@ export const api = {
     )
   },
 
-  moveSong(
+  reorderSong(
     code: string,
     credentials: ControlCredentials,
     songId: string,
-    direction: 'up' | 'down',
+    targetIndex: number,
   ) {
     return request<RoomState>(
-      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/move`,
+      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/reorder`,
       {
         method: 'POST',
         headers: controlHeaders(credentials),
-        body: JSON.stringify({ direction }),
+        body: JSON.stringify({ targetIndex }),
       },
     )
   },
@@ -202,7 +226,6 @@ export const api = {
     credentials: ControlCredentials,
     settings: {
       hostVolume?: number
-      maxSongsPerParticipant?: number
     },
   ) {
     return request<RoomState>(
@@ -241,4 +264,40 @@ export function hostTokenKey(code: string) {
 
 export function participantTokenKey(code: string) {
   return `jukebox:participant:${normalizeRoomCode(code)}`
+}
+
+export type StoredRoomCredentials = {
+  code: string
+  hostToken?: string
+  participantToken?: string
+}
+
+export function getStoredRoomCredentials(): StoredRoomCredentials[] {
+  const credentialsByCode = new Map<string, StoredRoomCredentials>()
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key) continue
+    const [prefix, credentialType, rawCode] = key.split(':')
+    if (
+      prefix !== 'jukebox' ||
+      !['host', 'participant'].includes(credentialType) ||
+      !rawCode
+    ) {
+      continue
+    }
+    const code = normalizeRoomCode(rawCode)
+    if (!/^[A-Z0-9]{6}$/.test(code)) continue
+    const token = localStorage.getItem(key)
+    if (!token) continue
+    const credentials = credentialsByCode.get(code) ?? { code }
+    if (credentialType === 'host') credentials.hostToken = token
+    if (credentialType === 'participant') credentials.participantToken = token
+    credentialsByCode.set(code, credentials)
+  }
+  return [...credentialsByCode.values()]
+}
+
+export function clearStoredRoomCredentials(code: string) {
+  localStorage.removeItem(hostTokenKey(code))
+  localStorage.removeItem(participantTokenKey(code))
 }

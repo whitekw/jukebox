@@ -33,7 +33,6 @@ jukebox:participant:{ROOM_CODE}
 type RoomState = {
   code: string
   expiresAt: number
-  maxSongsPerParticipant: number
   managerParticipantId: string | null
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
@@ -137,12 +136,10 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ```json
 {
-  "maxSongsPerParticipant": 2,
   "playbackMode": "all_devices"
 }
 ```
 
-- 정수 `1..10`만 허용합니다.
 - `playbackMode`는 `host_only` 또는 `all_devices`이며 생략 시 `host_only`입니다.
 - 응답 상태: `201 Created`
 
@@ -196,12 +193,9 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 {
   "id": "uuid",
   "nickname": "Alice",
-  "isManager": true,
-  "songsLeft": 1
+  "isManager": true
 }
 ```
-
-`songsLeft`는 이 참여자의 `current` 및 `queued` 곡 수를 합산해 계산합니다.
 
 ## 7. YouTube 조회
 
@@ -319,15 +313,11 @@ position = playbackPositionSeconds
 
 ```json
 {
-  "maxSongsPerParticipant": 4,
   "hostVolume": 35
 }
 ```
 
-- 두 필드 중 하나 이상이 필요합니다.
-- `maxSongsPerParticipant`: 정수 `1..10`
 - `hostVolume`: 정수 `0..100`
-- 한도를 낮춰도 기존 활성 곡을 자동 삭제하지는 않습니다. 해당 참여자는 활성 곡 수가 새 한도 아래로 내려갈 때까지 추가할 수 없습니다.
 
 ### `POST /api/rooms/:code/manager/transfer`
 
@@ -384,9 +374,8 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 ```json
 {
   "error": {
-    "code": "SONG_LIMIT_REACHED",
-    "details": { "maxSongs": 2 },
-    "message": "한 번에 최대 2곡까지 추가할 수 있습니다."
+    "code": "DUPLICATE_SONG",
+    "message": "이미 재생 중이거나 대기열에 있는 곡입니다."
   }
 }
 ```
@@ -397,8 +386,8 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 | --- | --- |
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `CONTROL_FORBIDDEN` |
-| 방/곡 | `ROOM_NOT_FOUND`, `SONG_LIMIT_REACHED`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/권한 이전 | `INVALID_MAX_SONGS`, `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `ALREADY_MANAGER` |
+| 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
+| 설정/권한 이전 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `ALREADY_MANAGER` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

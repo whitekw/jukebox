@@ -15,7 +15,6 @@ export type Song = {
 export type RoomState = {
   code: string
   expiresAt: number
-  maxSongsPerParticipant: number
   managerParticipantId: string | null
   hostVolume: number
   playbackMode: PlaybackMode
@@ -23,6 +22,7 @@ export type RoomState = {
   playbackBlocked: boolean
   playbackPositionSeconds: number
   playbackAnchorAt: number
+  playbackPending: boolean
   playbackRevision: number
   serverTime: number
   participants: RoomParticipant[]
@@ -40,7 +40,12 @@ export type Participant = {
   id: string
   nickname: string
   isManager?: boolean
-  songsLeft?: number
+}
+
+export type RoomSession = {
+  isHost: boolean
+  participant: Participant | null
+  room: RoomState
 }
 
 export type VideoSearchResult = {

@@ -9,17 +9,18 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 - 설치 없이 URL 또는 QR 코드로 빠르게 참여
 - 방 생성 시 호스트 전용 또는 모든 기기 동기화 재생 선택
 - 여러 참여자의 대기열 변경을 실시간으로 동기화
-- 참여자별 신청 한도와 중복 영상 차단
+- 방 안의 활성 중복 영상 차단
 - 작은 단일 서버에서도 운영 가능한 SQLite 기반 배포
 
 ## 2. 사용자와 주요 흐름
 
 ### 호스트
 
-1. 홈에서 재생 기기 모드와 참여자별 최대 활성 신청곡 수를 선택하고 방을 생성합니다.
-2. 브라우저가 `hostToken`을 `localStorage`에 저장하고 `/host/:code`로 이동합니다.
-3. 호스트 화면은 QR 코드와 참여 URL을 보여주고 YouTube IFrame Player를 렌더링합니다. 모든 기기 모드에서는 서버 기준 타임라인에 맞춰 재생 위치를 보정합니다.
-4. 현재 곡 종료 시 자동으로 다음 곡을 요청하며, 직접 건너뛰기·순서 변경·삭제도 할 수 있습니다.
+1. 홈에서 재생 기기 모드를 선택하고 방을 생성합니다.
+2. 브라우저가 `hostToken`을 `localStorage`에 저장하고 `/room/:code`로 이동합니다.
+3. 방을 만든 사용자도 다른 참여자와 동일하게 닉네임으로 입장하고 신청곡을 검색·추가합니다.
+4. 통합 룸 화면은 호스트 토큰을 감지해 QR 코드, 참여 URL, YouTube IFrame Player와 추가 관리 기능을 표시합니다. 모든 기기 모드에서는 서버 기준 타임라인에 맞춰 재생 위치를 보정합니다.
+5. 현재 곡 종료 시 자동으로 다음 곡을 요청하며, 직접 건너뛰기·순서 변경·삭제도 할 수 있습니다.
 
 ### 참여자
 
@@ -27,12 +28,11 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 2. 닉네임을 입력하면 참여자 레코드와 `participantToken`이 발급됩니다.
 3. YouTube 검색, URL 직접 입력 또는 지역별 인기 음악에서 곡을 추가합니다.
 4. 모든 기기 모드에서는 참여자 화면에도 YouTube Player가 표시되며 서버 기준 재생 위치를 따라갑니다.
-5. 자신의 현재 곡과 대기 곡을 합산한 활성 신청 수가 방 한도를 넘을 수 없습니다.
 
 ### 룸 매니저
 
 - 방에 가장 먼저 입장한 참여자가 자동으로 매니저가 됩니다.
-- 매니저는 참여자 화면에서 재생/일시정지, 건너뛰기, 대기열 편집과 신청 한도 변경을 수행할 수 있습니다. 호스트 볼륨 변경은 호스트 전용 모드에서만 제공되며, 모든 기기 모드에서는 각 기기가 자체 플레이어 볼륨을 사용합니다.
+- 호스트 플레이어의 재생/일시정지는 YouTube 임베드 컨트롤로 조작하고 서버 상태에 반영합니다. 매니저는 건너뛰기와 대기열 편집을 수행할 수 있습니다. 호스트 볼륨 변경은 호스트 전용 모드에서만 제공되며, 모든 기기 모드에서는 각 기기가 자체 플레이어 볼륨을 사용합니다.
 - 매니저 권한은 같은 방의 다른 참여자에게 이전할 수 있습니다.
 - 호스트 토큰은 매니저와 무관하게 방이 살아 있는 동안 계속 제어 권한을 가집니다.
 
@@ -41,7 +41,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 | 영역 | 기술 | 역할 |
 | --- | --- | --- |
 | 프런트엔드 | React 19, TypeScript 6, Vite 8 | SPA 화면과 브라우저 상태 관리 |
-| 라우팅 | React Router 7 | 홈, 호스트, 참여자 화면 라우팅 |
+| 라우팅 | React Router 7 | 홈과 역할 기반 통합 룸 화면 라우팅 |
 | UI | Tailwind CSS 4, tailwind-variants | 반응형 스타일과 공통 스타일 variant |
 | 실시간 | Socket.IO 4 | 룸 단위 전체 상태 브로드캐스트 |
 | 백엔드 | Node.js 24, Express 5 | REST API, 정적 파일, 도메인 서비스 |
@@ -56,7 +56,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 jukebox/
 ├─ frontend/
 │  ├─ src/
-│  │  ├─ pages/              # HomePage, HostPage, RoomPage와 룸 하위 패널
+│  │  ├─ pages/              # HomePage, 통합 RoomPage와 룸 하위 패널
 │  │  ├─ components/         # 플레이어, 곡 목록, 브랜드, 언어 선택기
 │  │  ├─ api.ts              # REST 클라이언트와 토큰 키 규칙
 │  │  ├─ useRoomState.ts     # 최초 조회 + Socket.IO 구독
@@ -118,6 +118,6 @@ jukebox/
 - 전체 요청 조립: `backend/src/server.js`
 - 핵심 도메인 규칙: `backend/src/rooms.js`
 - DB 스키마: `backend/src/db.js`
-- 재생 및 동기화 흐름: `frontend/src/pages/HostPage.tsx`, `frontend/src/pages/room/RoomPage.tsx`, `frontend/src/components/YouTubePlayer.tsx`
+- 재생 및 동기화 흐름: `frontend/src/pages/room/RoomPage.tsx`, `frontend/src/components/YouTubePlayer.tsx`
 - 참여자/매니저 흐름: `frontend/src/pages/room/RoomPage.tsx`
 - 실시간 상태 구독: `frontend/src/useRoomState.ts`

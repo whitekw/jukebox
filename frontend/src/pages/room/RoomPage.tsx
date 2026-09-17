@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import QRCode from 'react-qr-code'
 import { Link, useParams } from 'react-router-dom'
 import {
   ApiError,
   api,
+  hostTokenKey,
   normalizeRoomCode,
   participantTokenKey,
 } from '../../api'
 import { Brand } from '../../components/Brand'
-import { MusicIcon } from '../../components/Icons'
+import { CopyIcon, MusicIcon } from '../../components/Icons'
 import { LocaleSwitcher } from '../../components/LocaleSwitcher'
 import { YouTubePlayer } from '../../components/YouTubePlayer'
 import { getErrorMessage, useI18n } from '../../i18n-context'
@@ -23,8 +25,8 @@ import {
 } from '../../styles'
 import type { Participant } from '../../types'
 import { useRoomState } from '../../useRoomState'
-import { ManagerPanel } from './ManagerPanel'
 import { NowPlaying } from './NowPlaying'
+import { ParticipantsMenu } from './ParticipantsMenu'
 import { QueuePanel } from './QueuePanel'
 import { SearchPanel } from './SearchPanel'
 
@@ -32,6 +34,11 @@ export function RoomPage() {
   const { t } = useI18n()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
+  const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
+  const isHost = Boolean(hostToken)
+  const [participantToken, setParticipantToken] = useState(
+    () => localStorage.getItem(participantTokenKey(code)) ?? '',
+  )
   const {
     room,
     setRoom,
@@ -39,14 +46,13 @@ export function RoomPage() {
     connected,
     serverTimeOffsetMs,
     error: roomError,
-  } = useRoomState(code)
+  } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
-  const [participantToken, setParticipantToken] = useState(
-    () => localStorage.getItem(participantTokenKey(code)) ?? '',
-  )
   const [nickname, setNickname] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
 
   useEffect(() => {
     if (!message) return
@@ -73,15 +79,19 @@ export function RoomPage() {
     }
   }, [code, participantToken])
 
-  const songsLeft = useMemo(() => {
-    if (!room || !participant) return 0
-    const ownActiveSongs = [room.currentSong, ...room.queue].filter(
-      (song) => song?.addedById === participant.id,
-    ).length
-    return Math.max(0, room.maxSongsPerParticipant - ownActiveSongs)
-  }, [participant, room])
   const isManager =
     Boolean(participant) && room?.managerParticipantId === participant?.id
+  const controlCredentials = hostToken
+    ? hostToken
+    : isManager && participantToken
+      ? { participantToken }
+      : null
+  const isController = controlCredentials !== null
+  const songActionCredentials = hostToken
+    ? hostToken
+    : participantToken
+      ? { participantToken }
+      : null
 
   async function join(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -98,7 +108,7 @@ export function RoomPage() {
   }
 
   async function addSong(videoId: string) {
-    if (!participantToken || songsLeft <= 0) return
+    if (!participantToken) return
     const startsPlayingImmediately = !room?.currentSong
     setError('')
     setMessage('')
@@ -114,18 +124,52 @@ export function RoomPage() {
     }
   }
 
-  async function runManagerAction(action: () => Promise<NonNullable<typeof room>>) {
-    if (!participantToken) {
-      throw new ApiError(401, '', 'PARTICIPANT_REQUIRED')
-    }
+  async function runRoomAction(action: () => Promise<NonNullable<typeof room>>) {
     setRoom(await action())
+  }
+
+  async function runControllerAction(action: () => Promise<NonNullable<typeof room>>) {
+    if (!controlCredentials) {
+      throw new ApiError(403, '', 'CONTROL_FORBIDDEN')
+    }
+    await runRoomAction(action)
   }
 
   function runQueueAction(action: () => Promise<NonNullable<typeof room>>) {
     setError('')
-    void runManagerAction(action).catch((requestError) => {
+    void runRoomAction(action).catch((requestError) => {
       setError(getErrorMessage(requestError, t))
     })
+  }
+
+  function reportPlaybackBlocked(blocked: boolean) {
+    if (!hostToken) return
+    void runControllerAction(() =>
+      api.reportPlaybackBlocked(code, hostToken, blocked),
+    ).catch((requestError) => setError(getErrorMessage(requestError, t)))
+  }
+
+  function updatePlaybackFromPlayer(paused: boolean) {
+    if (!hostToken || paused === room?.playbackPaused) return
+    runQueueAction(() => api.setPlaybackPaused(code, hostToken, paused))
+  }
+
+  function reportPlaybackStarted(videoId: string, positionSeconds: number) {
+    if (!controlCredentials || room?.playbackMode !== 'all_devices') return
+    void runControllerAction(() =>
+      api.startPlayback(
+        code,
+        controlCredentials,
+        videoId,
+        positionSeconds,
+      ),
+    ).catch((requestError) => setError(getErrorMessage(requestError, t)))
+  }
+
+  async function copyJoinLink() {
+    await navigator.clipboard.writeText(joinUrl)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1_600)
   }
 
   if (loading) {
@@ -156,113 +200,166 @@ export function RoomPage() {
 
   return (
     <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
-      <header className="mx-auto mb-[22px] flex max-w-[920px] items-center justify-between">
+      <header className="mx-auto mb-[22px] flex max-w-[1500px] items-center justify-between">
         <Brand compactOnMobile />
         <div className="flex items-center gap-2">
-          {participant && (
+          {(participant || isHost) && (
             <LocaleSwitcher className="max-w-[88px] sm:max-w-none" />
           )}
           <div className="flex items-center gap-[9px] text-[11px] font-bold tracking-[0.08em] text-dim">
             <span className={connectionDotStyles({ connected })} />
             ROOM <strong>{code}</strong>
           </div>
+          {(participant || isHost) && (
+            <ParticipantsMenu
+              participants={room.participants}
+              currentParticipantId={participant?.id}
+              onTransfer={
+                isManager
+                  ? (targetParticipantId) =>
+                      runControllerAction(() =>
+                        api.transferManager(
+                          code,
+                          participantToken,
+                          targetParticipantId,
+                        ),
+                      )
+                  : undefined
+              }
+            />
+          )}
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[920px] gap-4">
-        <NowPlaying
-          song={room.currentSong}
-          paused={room.playbackPaused}
-          blocked={
-            room.playbackMode === 'host_only' && room.playbackBlocked
-          }
-          synchronized={room.playbackMode === 'all_devices'}
-          player={
-            participant &&
-            room.playbackMode === 'all_devices' &&
-            room.currentSong ? (
-              <YouTubePlayer
-                videoId={room.currentSong.videoId}
-                volume={100}
-                paused={room.playbackPaused}
-                synchronization={{
-                  positionSeconds: room.playbackPositionSeconds,
-                  anchorAt: room.playbackAnchorAt,
-                  revision: room.playbackRevision,
-                  serverTimeOffsetMs,
-                }}
-              />
-            ) : undefined
-          }
-        />
-        {participant && isManager && (
-          <ManagerPanel
-            room={room}
-            participantId={participant.id}
-            onTogglePlayback={() =>
-              runManagerAction(() =>
-                api.setPlaybackPaused(
-                  code,
-                  { participantToken },
-                  !room.playbackPaused,
-                ),
-              )
+      <section className="mx-auto grid max-w-[1500px] gap-4">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(340px,.8fr)] lg:items-stretch">
+          <NowPlaying
+            song={room.currentSong}
+            paused={room.playbackPaused}
+            blocked={
+              room.playbackMode === 'host_only' && room.playbackBlocked
             }
-            onAdvance={() =>
-              runManagerAction(() =>
-                api.advance(code, { participantToken }),
-              )
+            player={
+              (isHost ||
+                (Boolean(participant) && room.playbackMode === 'all_devices')) &&
+              room.currentSong ? (
+                <YouTubePlayer
+                  videoId={room.currentSong.videoId}
+                  volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
+                  paused={room.playbackPaused}
+                  playbackBlocked={
+                    isHost && room.playbackMode === 'host_only'
+                      ? room.playbackBlocked
+                      : false
+                  }
+                  onPlaybackBlockedChange={
+                    isHost && room.playbackMode === 'host_only'
+                      ? reportPlaybackBlocked
+                      : undefined
+                  }
+                  onPausedChange={
+                    isHost ? updatePlaybackFromPlayer : undefined
+                  }
+                  onPlaybackStarted={
+                    isController && room.playbackMode === 'all_devices'
+                      ? reportPlaybackStarted
+                      : undefined
+                  }
+                  onEnded={
+                    isHost && room.playbackMode === 'host_only'
+                      ? () =>
+                          runQueueAction(() =>
+                            api.advance(code, hostToken),
+                          )
+                      : undefined
+                  }
+                  synchronization={
+                    room.playbackMode === 'all_devices'
+                      ? {
+                          positionSeconds: room.playbackPositionSeconds,
+                          anchorAt: room.playbackAnchorAt,
+                          revision: room.playbackRevision,
+                          serverTimeOffsetMs,
+                          pending: room.playbackPending,
+                        }
+                      : undefined
+                  }
+                />
+              ) : undefined
             }
-            onUpdateSettings={(settings) =>
-              runManagerAction(() =>
-                api.updateRoomSettings(
-                  code,
-                  { participantToken },
-                  settings,
-                ),
-              )
-            }
-            onTransfer={(targetParticipantId) =>
-              runManagerAction(() =>
-                api.transferManager(
-                  code,
-                  participantToken,
-                  targetParticipantId,
-                ),
-              )
+            onAdvance={
+              songActionCredentials &&
+              room.currentSong &&
+              (isController || room.currentSong.addedById === participant?.id)
+                ? () =>
+                    runQueueAction(() =>
+                      api.advance(code, songActionCredentials),
+                    )
+                : undefined
             }
           />
-        )}
-        <QueuePanel
-          songs={room.queue}
-          onMove={
-            isManager
-              ? (songId, direction) =>
-                  runQueueAction(() =>
-                    api.moveSong(
-                      code,
-                      { participantToken },
-                      songId,
-                      direction,
-                    ),
-                  )
-              : undefined
-          }
-          onRemove={
-            isManager
-              ? (songId) =>
-                  runQueueAction(() =>
-                    api.removeSong(
-                      code,
-                      { participantToken },
-                      songId,
-                    ),
-                  )
-              : undefined
-          }
-        />
+          <div className="min-w-0 lg:relative lg:min-h-0">
+            <QueuePanel
+              className="h-full lg:absolute lg:inset-0 lg:overflow-hidden"
+              songs={room.queue}
+              onReorder={
+                isController
+                  ? (songId, targetIndex) =>
+                      runQueueAction(() =>
+                        api.reorderSong(
+                          code,
+                          controlCredentials,
+                          songId,
+                          targetIndex,
+                        ),
+                      )
+                  : undefined
+              }
+              onRemove={
+                songActionCredentials
+                  ? (songId) =>
+                      runQueueAction(() =>
+                        api.removeSong(
+                          code,
+                          songActionCredentials,
+                          songId,
+                        ),
+                      )
+                  : undefined
+              }
+              canRemove={(song) =>
+                isController || song.addedById === participant?.id
+              }
+            />
+          </div>
+        </div>
         {participant && (
-          <SearchPanel songsLeft={songsLeft} onAddSong={addSong} />
+          <SearchPanel onAddSong={addSong} />
+        )}
+        {isHost && (
+          <section className="flex flex-col items-center gap-5 rounded-2xl border border-line bg-[linear-gradient(90deg,rgba(155,123,255,.10),rgba(255,255,255,.025))] px-5 py-5 text-center sm:grid sm:grid-cols-[auto_1fr_auto] sm:text-left">
+            <div className="grid place-items-center rounded-[9px] bg-white p-[7px]">
+              <QRCode value={joinUrl} size={88} />
+            </div>
+            <div className="min-w-0">
+              <span className={sectionKickerStyles}>JOIN THE ROOM</span>
+              <h2 className="my-[5px] text-lg">{t('host.scanDescription')}</h2>
+              <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-dim">
+                {joinUrl}
+              </p>
+            </div>
+            <button
+              className={cn(
+                buttonStyles({ intent: 'outline', size: 'md' }),
+                'shrink-0',
+              )}
+              type="button"
+              onClick={() => void copyJoinLink()}
+            >
+              <CopyIcon size={16} />
+              <span className="font-black tracking-[0.14em]">{code}</span>
+            </button>
+          </section>
         )}
       </section>
 
@@ -325,6 +422,11 @@ export function RoomPage() {
           aria-live="polite"
         >
           {message}
+        </div>
+      )}
+      {copied && (
+        <div className={noticeStyles({ tone: 'success' })}>
+          {t('host.linkCopied')}
         </div>
       )}
     </main>

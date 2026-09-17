@@ -16,6 +16,7 @@
 | `PORT` | `3001` | 선택 | HTTP/Socket.IO 수신 포트 |
 | `DATABASE_PATH` | `./data/jukebox.sqlite` | 선택 | SQLite 파일 경로 |
 | `ROOM_TTL_HOURS` | `24` | 선택 | 방 고정 수명(시간) |
+| `EMPTY_ROOM_TTL_HOURS` | `1` | 선택 | 인증된 접속자가 없는 방의 보존 시간 |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
 | `YOUTUBE_DEFAULT_REGION` | `KR` | 선택 | 국가 감지 실패 또는 차트 미지원 시 기본 지역 |
 | `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
@@ -172,7 +173,8 @@ docker compose logs --tail=200 jukebox
 
 - `jukebox-data` 볼륨 사용 여부와 여유 공간을 확인합니다.
 - 방 수명은 생성 시점부터 고정이며 기본 24시간입니다.
-- 만료 정리는 시작 시와 15분 간격으로 실행됩니다.
+- 인증된 호스트·참여자 연결이 모두 끊긴 방은 기본 1시간 뒤 삭제됩니다.
+- 만료 정리는 시작 시와 1분 간격으로 실행됩니다.
 - 백업 시 WAL 일관성을 고려합니다. 자세한 내용은 [DATA_MODEL.md](./DATA_MODEL.md)를 참고합니다.
 
 ### YouTube 연동

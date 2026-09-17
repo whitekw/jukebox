@@ -1,21 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import { api } from './api'
 import { getErrorMessage, useI18n } from './i18n-context'
 import type { RoomState } from './types'
 
-export function useRoomState(code: string) {
+export function useRoomState(
+  code: string,
+  hostToken = '',
+  participantToken = '',
+) {
   const { t } = useI18n()
   const [room, setRoom] = useState<RoomState | null>(null)
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0)
   const [error, setError] = useState<unknown>(null)
+  const loadedCodeRef = useRef('')
 
   useEffect(() => {
     let active = true
     let clockSynchronized = false
-    setLoading(true)
+    if (loadedCodeRef.current !== code) setLoading(true)
     setError(null)
 
     void api
@@ -23,6 +28,7 @@ export function useRoomState(code: string) {
       .then((state) => {
         if (active) {
           setRoom(state)
+          loadedCodeRef.current = code
           setServerTimeOffsetMs(state.serverTime - Date.now())
         }
       })
@@ -52,7 +58,7 @@ export function useRoomState(code: string) {
       synchronizeClock()
       socket.emit(
         'room:subscribe',
-        { code },
+        { code, hostToken, participantToken },
         (result: {
           ok: boolean
           code?: string
@@ -85,7 +91,7 @@ export function useRoomState(code: string) {
       window.clearInterval(clockTimer)
       socket.disconnect()
     }
-  }, [code])
+  }, [code, hostToken, participantToken])
 
   return {
     room,

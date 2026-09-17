@@ -22,8 +22,10 @@ erDiagram
         integer playback_blocked
         real playback_position_seconds
         integer playback_anchor_at
+        integer playback_pending
         integer playback_revision
         text current_song_id
+        integer empty_since
         integer created_at
         integer expires_at
     }
@@ -60,7 +62,7 @@ erDiagram
 | `id` | TEXT PK | 내부 UUID |
 | `code` | TEXT NOT NULL UNIQUE | 사용자에게 노출하는 6자리 방 코드 |
 | `host_token_hash` | TEXT NOT NULL | 호스트 원본 토큰의 SHA-256 hex |
-| `max_songs_per_participant` | INTEGER NOT NULL, 기본 2 | 참여자별 `current + queued` 최대 수, 서비스 규칙 `1..10` |
+| `max_songs_per_participant` | INTEGER NOT NULL, 기본 2 | 이전 버전 호환을 위해 남겨둔 미사용 컬럼 |
 | `manager_participant_id` | TEXT nullable | 현재 매니저 참여자 ID |
 | `host_volume` | INTEGER, 기본 100, `0..100` | 호스트 IFrame 플레이어 볼륨 |
 | `playback_mode` | TEXT, 기본 `host_only` | `host_only` 또는 `all_devices` |
@@ -68,8 +70,10 @@ erDiagram
 | `playback_blocked` | INTEGER, 기본 0, `0/1` | 호스트 브라우저 자동재생 차단 상태 |
 | `playback_position_seconds` | REAL, 기본 0, 0 이상 | 기준 시각에서의 재생 위치 |
 | `playback_anchor_at` | INTEGER, 기본 0 | 기준 위치가 유효한 서버 epoch ms |
+| `playback_pending` | INTEGER, 기본 0, `0/1` | 실제 플레이어의 재생 시작을 기다리는 상태 |
 | `playback_revision` | INTEGER, 기본 0 | 타임라인 변경 순번 |
 | `current_song_id` | TEXT nullable | 현재 곡 ID |
+| `empty_since` | INTEGER nullable | 인증된 Socket.IO 연결이 0개가 된 서버 epoch ms |
 | `created_at` | INTEGER NOT NULL | 생성 epoch ms |
 | `expires_at` | INTEGER NOT NULL | 만료 epoch ms |
 
@@ -77,6 +81,7 @@ erDiagram
 
 - `rooms.code`의 UNIQUE 인덱스
 - `rooms_by_expiry(expires_at)`
+- `rooms_by_empty_since(empty_since)`
 
 ## 3. `participants`
 
@@ -124,8 +129,8 @@ stateDiagram-v2
     [*] --> current: 현재 곡 없음
     [*] --> queued: 현재 곡 있음
     queued --> current: advance에서 대기열 선두 선택
-    queued --> removed: controller가 삭제
-    current --> played: advance 또는 재생 종료
+    queued --> removed: controller 또는 신청자가 삭제
+    current --> played: controller·신청자의 advance 또는 재생 종료
     played --> [*]
     removed --> [*]
 ```
@@ -151,10 +156,10 @@ stateDiagram-v2
 - 참여자 토큰은 해당 방의 참여자 한 명과 매칭되어야 합니다.
 - 매니저 작업은 참여자 ID가 `manager_participant_id`와 같아야 합니다.
 - controller 작업은 올바른 호스트 토큰 또는 현재 매니저 토큰 중 하나가 필요합니다.
+- 일반 참여자는 `songs.added_by`가 자신의 ID인 현재 곡을 건너뛰거나 대기 곡을 삭제할 수 있습니다.
 
 ### 신청곡
 
-- 한 참여자의 `current + queued` 수는 추가 시점의 방 한도 미만이어야 합니다.
 - 한 방에는 같은 `video_id`의 활성 곡이 둘 이상 존재할 수 없습니다.
 - 직접 추가되는 영상은 YouTube 조회 시 공개·비라이브·임베드 가능 상태여야 합니다.
 - 대기열 조회는 `position ASC, created_at ASC`로 안정적으로 정렬합니다.
@@ -184,14 +189,18 @@ stateDiagram-v2
 - `playback_mode`
 - `playback_position_seconds`
 - `playback_anchor_at`
+- `playback_pending`
 - `playback_revision`
+- `empty_since`
 
 그 뒤 매니저가 없는 기존 방에는 생성 시각이 가장 빠른 참여자를 매니저로 채웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
 
 ## 9. 만료와 삭제
 
 - 방 생성 시 `expires_at = now + ROOM_TTL_HOURS`로 고정합니다.
-- 서버 시작 시와 이후 15분마다 `expires_at <= now`인 방을 삭제합니다.
+- 유효한 호스트 또는 참여자 토큰으로 연결된 Socket.IO 클라이언트가 하나도 없으면 `empty_since`를 기록하고, 다시 연결되면 비웁니다.
+- 서버 시작 시 모든 방을 빈 상태로 표시하며, 재연결된 방은 삭제 대상에서 제외합니다.
+- 서버 시작 시와 이후 1분마다 `expires_at <= now`이거나 `empty_since + EMPTY_ROOM_TTL_HOURS <= now`인 방을 삭제합니다.
 - 방 삭제는 foreign key cascade로 참여자와 곡을 함께 삭제합니다.
 - 방 활동에 따른 TTL 연장 기능은 없습니다.
 

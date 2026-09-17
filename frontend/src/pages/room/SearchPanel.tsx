@@ -19,11 +19,10 @@ import type { VideoSearchResult } from '../../types'
 import { VideoResultList } from './VideoResultList'
 
 type SearchPanelProps = {
-  songsLeft: number
   onAddSong: (videoId: string) => Promise<void>
 }
 
-export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
+export function SearchPanel({ onAddSong }: SearchPanelProps) {
   const { locale, t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<VideoSearchResult[]>([])
@@ -94,7 +93,7 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
   }
 
   async function addSong(videoId: string) {
-    if (addingId || songsLeft <= 0) return
+    if (addingId) return
     setAddingId(videoId)
     try {
       await onAddSong(videoId)
@@ -105,23 +104,13 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
 
   return (
     <section className={panelStyles({ padding: 'responsive' })}>
-      <div className="mx-1 mb-[18px] flex items-end justify-between gap-3 md:mx-[7px]">
+      <div className="mx-1 mb-[18px] md:mx-[7px]">
         <div>
           <span className={sectionKickerStyles}>REQUEST A SONG</span>
           <h2 className="mt-1.5 text-xl tracking-[-0.03em] md:text-[23px]">
             {t('search.title')}
           </h2>
         </div>
-        <span
-          className={cn(
-            'shrink-0 rounded-full border px-2.5 py-[7px] text-[11px]',
-            songsLeft === 0
-              ? 'border-line bg-transparent text-dim'
-              : 'border-lime/20 bg-lime/[0.05] text-lime',
-          )}
-        >
-          {t('search.songsAvailable', { count: songsLeft })}
-        </span>
       </div>
       <form
         className="flex items-center gap-2.5 rounded-xl border border-line bg-white/[0.035] py-1.5 pr-[7px] pl-2.5 text-dim focus-within:border-purple/65 md:pl-3.5"
@@ -225,7 +214,6 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
           {!popularLoading && popularResults.length > 0 && (
             <VideoResultList
               videos={popularResults}
-              songsLeft={songsLeft}
               addingId={addingId}
               ranked
               onAddSong={(videoId) => void addSong(videoId)}
@@ -251,7 +239,6 @@ export function SearchPanel({ songsLeft, onAddSong }: SearchPanelProps) {
           {!searching && results.length > 0 && (
             <VideoResultList
               videos={results}
-              songsLeft={songsLeft}
               addingId={addingId}
               onAddSong={(videoId) => void addSong(videoId)}
             />

@@ -1,11 +1,18 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, hostTokenKey, normalizeRoomCode } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  ApiError,
+  api,
+  clearStoredRoomCredentials,
+  getStoredRoomCredentials,
+  hostTokenKey,
+  normalizeRoomCode,
+} from '../api'
 import { Brand } from '../components/Brand'
 import { MusicIcon, UsersIcon } from '../components/Icons'
 import { LocaleSwitcher } from '../components/LocaleSwitcher'
 import { getErrorMessage, useI18n } from '../i18n-context'
-import type { PlaybackMode } from '../types'
+import type { PlaybackMode, RoomSession } from '../types'
 import {
   buttonStyles,
   cardIconStyles,
@@ -19,20 +26,53 @@ export function HomePage() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const [roomCode, setRoomCode] = useState('')
-  const [maxSongs, setMaxSongs] = useState(2)
   const [playbackMode, setPlaybackMode] =
     useState<PlaybackMode>('host_only')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [roomSessions, setRoomSessions] = useState<RoomSession[]>([])
+
+  useEffect(() => {
+    let active = true
+    const storedRooms = getStoredRoomCredentials()
+    void Promise.all(
+      storedRooms.map(async ({ code, hostToken, participantToken }) => {
+        try {
+          return await api.getRoomSession(code, {
+            hostToken,
+            participantToken,
+          })
+        } catch (requestError) {
+          if (
+            requestError instanceof ApiError &&
+            [401, 403, 404].includes(requestError.status)
+          ) {
+            clearStoredRoomCredentials(code)
+          }
+          return null
+        }
+      }),
+    ).then((sessions) => {
+      if (!active) return
+      setRoomSessions(
+        sessions
+          .filter((session): session is RoomSession => session !== null)
+          .sort((left, right) => right.room.expiresAt - left.room.expiresAt),
+      )
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   async function createRoom(event: FormEvent) {
     event.preventDefault()
     setCreating(true)
     setError('')
     try {
-      const created = await api.createRoom(maxSongs, playbackMode)
+      const created = await api.createRoom(playbackMode)
       localStorage.setItem(hostTokenKey(created.code), created.hostToken)
-      navigate(`/host/${created.code}`)
+      navigate(`/room/${created.code}`)
     } catch (requestError) {
       setError(getErrorMessage(requestError, t))
     } finally {
@@ -59,32 +99,16 @@ export function HomePage() {
       <nav className="relative z-[1] mx-auto flex max-w-[1180px] items-center justify-between">
         <Brand />
         <div className="flex items-center gap-3">
-          <span className="hidden text-xs tracking-[0.08em] text-dim md:inline">
-            {t('home.tagline')}
-          </span>
           <LocaleSwitcher />
         </div>
       </nav>
 
-      <section className="relative z-[1] mx-auto mt-[68px] mb-9 max-w-[1180px] md:mt-[clamp(72px,10vh,118px)] md:mb-12">
-        <div className="flex items-center gap-2.5 text-[11px] font-extrabold tracking-[0.18em] text-lime">
-          <span className="h-px w-[26px] bg-lime" /> NO LOGIN · NO APP · JUST MUSIC
-        </div>
-        <h1 className="my-5 text-[clamp(46px,14.3vw,72px)] leading-[0.97] font-[850] tracking-[-0.065em] md:text-[clamp(48px,7.4vw,98px)]">
-          {t('home.heroLineOne')}
-          <br />
-          <em className="text-purple-light not-italic">
-            {t('home.heroEmphasis')}
-          </em>
-          {t('home.heroLineTwo')}
-        </h1>
-        <p className="text-[clamp(15px,1.5vw,19px)] leading-[1.7] text-muted">
-          {t('home.descriptionOne')}
-          <br className="hidden md:block" /> {t('home.descriptionTwo')}
-        </p>
-      </section>
-
-      <section className="relative z-[1] mx-auto mb-[72px] grid max-w-[920px] grid-cols-1 gap-[18px] md:grid-cols-2">
+      <section
+        className={cn(
+          'relative z-[1] mx-auto mt-12 grid max-w-[920px] grid-cols-1 gap-[18px] md:mt-16 md:grid-cols-2',
+          roomSessions.length > 0 ? 'mb-8' : 'mb-[72px]',
+        )}
+      >
         <form
           className={cn(
             'relative flex min-h-[460px] flex-col rounded-[18px] border border-purple/30',
@@ -101,7 +125,7 @@ export function HomePage() {
             {t('home.createTitle')}
           </h2>
           <p className="mb-5 text-sm text-muted">{t('home.createDescription')}</p>
-          <fieldset className="mb-5 grid gap-2 border-0 p-0">
+          <fieldset className="mt-auto mb-3 grid gap-2 border-0 p-0">
             <legend className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase">
               {t('home.playbackModeLabel')}
             </legend>
@@ -149,26 +173,6 @@ export function HomePage() {
               </label>
             ))}
           </fieldset>
-          <label
-            className="mt-auto mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
-            htmlFor="max-songs"
-          >
-            {t('home.maxSongsLabel')}
-          </label>
-          <select
-            className={cn(formControlStyles({ weight: 'bold' }), 'mb-3 h-[46px]')}
-            id="max-songs"
-            value={maxSongs}
-            onChange={(event) => setMaxSongs(Number(event.target.value))}
-          >
-            {[1, 2, 3, 4, 5].map((value) => (
-              <option key={value} value={value}>
-                {t(value === 1 ? 'common.songCountOne' : 'common.songCount', {
-                  count: value,
-                })}
-              </option>
-            ))}
-          </select>
           <button
             className={buttonStyles({
               intent: 'primary',
@@ -227,6 +231,75 @@ export function HomePage() {
           </button>
         </form>
       </section>
+
+      {roomSessions.length > 0 && (
+        <section className="relative z-[1] mx-auto mb-[72px] max-w-[920px]">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <span className={sectionKickerStyles}>
+                {t('home.activeRoomsTitle')}
+              </span>
+              <p className="mt-1 text-xs text-dim">
+                {t('home.activeRoomsDescription')}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {roomSessions.map((session) => (
+              <Link
+                className={cn(
+                  'group flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-[#12101a]/90 p-3.5',
+                  'shadow-[0_16px_45px_rgba(0,0,0,.18)] transition-colors hover:border-purple/50 hover:bg-purple/[0.08]',
+                )}
+                key={session.room.code}
+                to={`/room/${session.room.code}`}
+              >
+                <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-white/[0.035]">
+                  {session.room.currentSong ? (
+                    <img
+                      className="size-full object-cover"
+                      src={session.room.currentSong.thumbnailUrl}
+                      alt=""
+                    />
+                  ) : (
+                    <MusicIcon className="text-purple-light" size={22} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex min-w-0 items-center gap-2">
+                    <strong className="font-mono text-sm tracking-[0.12em] text-ink">
+                      {session.room.code}
+                    </strong>
+                    <span className="truncate rounded-full border border-line px-2 py-0.5 text-[10px] text-dim">
+                      {session.isHost
+                        ? t('home.activeRoomHost')
+                        : t('home.activeRoomParticipant', {
+                            nickname: session.participant?.nickname ?? '',
+                          })}
+                    </span>
+                  </div>
+                  <p className="truncate text-sm text-muted">
+                    {session.room.currentSong?.title ??
+                      t('home.activeRoomWaiting')}
+                  </p>
+                  <p className="mt-1 text-[10px] text-dim">
+                    {t('home.activeRoomStats', {
+                      participants: session.room.participants.length,
+                      songs: session.room.queue.length,
+                    })}
+                  </p>
+                </div>
+                <span
+                  className="shrink-0 text-lg text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-lime"
+                  aria-label={t('home.rejoinRoom')}
+                >
+                  →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {error && <div className={noticeStyles({ tone: 'error' })}>{error}</div>}
 
