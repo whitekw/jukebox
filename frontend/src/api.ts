@@ -181,18 +181,18 @@ export const api = {
     )
   },
 
-  moveSong(
+  reorderSong(
     code: string,
     credentials: ControlCredentials,
     songId: string,
-    direction: 'up' | 'down',
+    targetIndex: number,
   ) {
     return request<RoomState>(
-      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/move`,
+      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/reorder`,
       {
         method: 'POST',
         headers: controlHeaders(credentials),
-        body: JSON.stringify({ direction }),
+        body: JSON.stringify({ targetIndex }),
       },
     )
   },

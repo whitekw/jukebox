@@ -483,44 +483,46 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function moveSong(code, credentials, songId, direction) {
-    if (!['up', 'down'].includes(direction)) {
-      throw new AppError(400, '이동 방향이 올바르지 않습니다.', 'INVALID_DIRECTION')
+  function reorderSong(code, credentials, songId, targetIndex) {
+    const normalizedTargetIndex = Number(targetIndex)
+    if (!Number.isInteger(normalizedTargetIndex) || normalizedTargetIndex < 0) {
+      throw new AppError(
+        400,
+        '이동할 대기열 위치가 올바르지 않습니다.',
+        'INVALID_QUEUE_POSITION',
+      )
     }
     return transaction(db, () => {
       const room = getRoomRecord(code)
       requireController(room, credentials)
-      const song = db
+      const queuedSongs = db
         .prepare(
-          "SELECT * FROM songs WHERE id = ? AND room_id = ? AND status = 'queued'",
+          `SELECT id FROM songs
+           WHERE room_id = ? AND status = 'queued'
+           ORDER BY position ASC, created_at ASC`,
         )
-        .get(songId, room.id)
-      if (!song) throw new AppError(404, '대기 곡을 찾지 못했습니다.', 'SONG_NOT_FOUND')
-
-      const comparator = direction === 'up' ? '<' : '>'
-      const order = direction === 'up' ? 'DESC' : 'ASC'
-      const neighbor = db
-        .prepare(
-          `SELECT * FROM songs
-           WHERE room_id = ? AND status = 'queued' AND position ${comparator} ?
-           ORDER BY position ${order}, created_at ${order} LIMIT 1`,
+        .all(room.id)
+      const sourceIndex = queuedSongs.findIndex((song) => song.id === songId)
+      if (sourceIndex < 0) {
+        throw new AppError(404, '대기 곡을 찾지 못했습니다.', 'SONG_NOT_FOUND')
+      }
+      if (normalizedTargetIndex >= queuedSongs.length) {
+        throw new AppError(
+          400,
+          '이동할 대기열 위치가 올바르지 않습니다.',
+          'INVALID_QUEUE_POSITION',
         )
-        .get(room.id, song.position)
-      if (!neighbor) return getPublicRoom(code)
+      }
+      if (sourceIndex === normalizedTargetIndex) return getPublicRoom(code)
 
-      const temporaryPosition = -now()
-      db.prepare('UPDATE songs SET position = ? WHERE id = ?').run(
-        temporaryPosition,
-        song.id,
+      const [movedSong] = queuedSongs.splice(sourceIndex, 1)
+      queuedSongs.splice(normalizedTargetIndex, 0, movedSong)
+      const updatePosition = db.prepare(
+        'UPDATE songs SET position = ? WHERE id = ? AND room_id = ?',
       )
-      db.prepare('UPDATE songs SET position = ? WHERE id = ?').run(
-        song.position,
-        neighbor.id,
-      )
-      db.prepare('UPDATE songs SET position = ? WHERE id = ?').run(
-        neighbor.position,
-        song.id,
-      )
+      queuedSongs.forEach((song, index) => {
+        updatePosition.run(index + 1, song.id, room.id)
+      })
       return getPublicRoom(code)
     })
   }
@@ -600,7 +602,7 @@ function createRoomService(db, options = {}) {
     setPlaybackPaused,
     reportPlaybackBlocked,
     removeSong,
-    moveSong,
+    reorderSong,
     updateRoomSettings,
     transferManager,
     deleteExpiredRooms,

@@ -148,12 +148,12 @@ app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
   res.json(state)
 })
 
-app.post('/api/rooms/:code/songs/:songId/move', mutationLimiter, (req, res) => {
-  const state = rooms.moveSong(
+app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) => {
+  const state = rooms.reorderSong(
     req.params.code,
     controlCredentials(req),
     req.params.songId,
-    req.body.direction,
+    req.body.targetIndex,
   )
   emitRoom(req.params.code, state)
   res.json(state)

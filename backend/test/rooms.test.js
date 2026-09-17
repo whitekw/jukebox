@@ -56,6 +56,59 @@ test('allows unlimited requests while enforcing duplicate prevention and host to
   db.close()
 })
 
+test('reorders queued songs by their final index', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+
+  rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One'))
+  rooms.addSong(created.code, alice.participantToken, song('bbbbbbbbbbb', 'Two'))
+  rooms.addSong(created.code, alice.participantToken, song('ccccccccccc', 'Three'))
+  let state = rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('ddddddddddd', 'Four'),
+  )
+
+  const four = state.queue.find((queuedSong) => queuedSong.title === 'Four')
+  state = rooms.reorderSong(
+    created.code,
+    { participantToken: alice.participantToken },
+    four.id,
+    0,
+  )
+  assert.deepEqual(state.queue.map((queuedSong) => queuedSong.title), [
+    'Four',
+    'Two',
+    'Three',
+  ])
+
+  const two = state.queue.find((queuedSong) => queuedSong.title === 'Two')
+  state = rooms.reorderSong(
+    created.code,
+    { participantToken: alice.participantToken },
+    two.id,
+    2,
+  )
+  assert.deepEqual(state.queue.map((queuedSong) => queuedSong.title), [
+    'Four',
+    'Three',
+    'Two',
+  ])
+  assert.throws(
+    () =>
+      rooms.reorderSong(
+        created.code,
+        { participantToken: alice.participantToken },
+        two.id,
+        3,
+      ),
+    /대기열 위치/,
+  )
+  db.close()
+})
+
 test('stores the selected playback mode and maintains a shared timeline', () => {
   const db = createDatabase()
   let currentTime = 1_000_000

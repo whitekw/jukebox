@@ -25,8 +25,8 @@ import {
 } from '../../styles'
 import type { Participant } from '../../types'
 import { useRoomState } from '../../useRoomState'
-import { ManagerPanel } from './ManagerPanel'
 import { NowPlaying } from './NowPlaying'
+import { ParticipantsMenu } from './ParticipantsMenu'
 import { QueuePanel } from './QueuePanel'
 import { SearchPanel } from './SearchPanel'
 
@@ -179,7 +179,7 @@ export function RoomPage() {
 
   return (
     <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
-      <header className="mx-auto mb-[22px] flex max-w-[920px] items-center justify-between">
+      <header className="mx-auto mb-[22px] flex max-w-[1500px] items-center justify-between">
         <Brand compactOnMobile />
         <div className="flex items-center gap-2">
           {(participant || isHost) && (
@@ -189,123 +189,116 @@ export function RoomPage() {
             <span className={connectionDotStyles({ connected })} />
             ROOM <strong>{code}</strong>
           </div>
+          {(participant || isHost) && (
+            <ParticipantsMenu
+              participants={room.participants}
+              currentParticipantId={participant?.id}
+              onTransfer={
+                isManager
+                  ? (targetParticipantId) =>
+                      runControllerAction(() =>
+                        api.transferManager(
+                          code,
+                          participantToken,
+                          targetParticipantId,
+                        ),
+                      )
+                  : undefined
+              }
+            />
+          )}
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[920px] gap-4">
-        <NowPlaying
-          song={room.currentSong}
-          paused={room.playbackPaused}
-          blocked={
-            room.playbackMode === 'host_only' && room.playbackBlocked
-          }
-          player={
-            (isHost ||
-              (Boolean(participant) && room.playbackMode === 'all_devices')) &&
-            room.currentSong ? (
-              <YouTubePlayer
-                videoId={room.currentSong.videoId}
-                volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
-                paused={room.playbackPaused}
-                playbackBlocked={
-                  isHost && room.playbackMode === 'host_only'
-                    ? room.playbackBlocked
-                    : false
-                }
-                onPlaybackBlockedChange={
-                  isHost && room.playbackMode === 'host_only'
-                    ? reportPlaybackBlocked
-                    : undefined
-                }
-                onPausedChange={
-                  isHost ? updatePlaybackFromPlayer : undefined
-                }
-                onEnded={
-                  isHost && room.playbackMode === 'host_only'
-                    ? () =>
-                        runQueueAction(() =>
-                          api.advance(code, hostToken),
-                        )
-                    : undefined
-                }
-                synchronization={
-                  room.playbackMode === 'all_devices'
-                    ? {
-                        positionSeconds: room.playbackPositionSeconds,
-                        anchorAt: room.playbackAnchorAt,
-                        revision: room.playbackRevision,
-                        serverTimeOffsetMs,
-                      }
-                    : undefined
-                }
-              />
-            ) : undefined
-          }
-          onAdvance={
-            isController && room.currentSong
-              ? () =>
-                  runQueueAction(() =>
-                    api.advance(code, controlCredentials),
-                  )
-              : undefined
-          }
-        />
-        {isController && (
-          <ManagerPanel
-            room={room}
-            participantId={isManager ? participant?.id : undefined}
-            isHost={isHost}
-            onUpdateSettings={(settings) =>
-              runControllerAction(() =>
-                api.updateRoomSettings(
-                  code,
-                  controlCredentials,
-                  settings,
-                ),
-              )
+      <section className="mx-auto grid max-w-[1500px] gap-4">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(340px,.8fr)] lg:items-stretch">
+          <NowPlaying
+            song={room.currentSong}
+            paused={room.playbackPaused}
+            blocked={
+              room.playbackMode === 'host_only' && room.playbackBlocked
             }
-            onTransfer={
-              isManager
-                ? (targetParticipantId) =>
-                    runControllerAction(() =>
-                      api.transferManager(
+            player={
+              (isHost ||
+                (Boolean(participant) && room.playbackMode === 'all_devices')) &&
+              room.currentSong ? (
+                <YouTubePlayer
+                  videoId={room.currentSong.videoId}
+                  volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
+                  paused={room.playbackPaused}
+                  playbackBlocked={
+                    isHost && room.playbackMode === 'host_only'
+                      ? room.playbackBlocked
+                      : false
+                  }
+                  onPlaybackBlockedChange={
+                    isHost && room.playbackMode === 'host_only'
+                      ? reportPlaybackBlocked
+                      : undefined
+                  }
+                  onPausedChange={
+                    isHost ? updatePlaybackFromPlayer : undefined
+                  }
+                  onEnded={
+                    isHost && room.playbackMode === 'host_only'
+                      ? () =>
+                          runQueueAction(() =>
+                            api.advance(code, hostToken),
+                          )
+                      : undefined
+                  }
+                  synchronization={
+                    room.playbackMode === 'all_devices'
+                      ? {
+                          positionSeconds: room.playbackPositionSeconds,
+                          anchorAt: room.playbackAnchorAt,
+                          revision: room.playbackRevision,
+                          serverTimeOffsetMs,
+                        }
+                      : undefined
+                  }
+                />
+              ) : undefined
+            }
+            onAdvance={
+              isController && room.currentSong
+                ? () =>
+                    runQueueAction(() =>
+                      api.advance(code, controlCredentials),
+                    )
+                : undefined
+            }
+          />
+          <QueuePanel
+            className="h-full lg:max-h-[640px] lg:overflow-y-auto"
+            songs={room.queue}
+            onReorder={
+              isController
+                ? (songId, targetIndex) =>
+                    runQueueAction(() =>
+                      api.reorderSong(
                         code,
-                        participantToken,
-                        targetParticipantId,
+                        controlCredentials,
+                        songId,
+                        targetIndex,
+                      ),
+                    )
+                : undefined
+            }
+            onRemove={
+              isController
+                ? (songId) =>
+                    runQueueAction(() =>
+                      api.removeSong(
+                        code,
+                        controlCredentials,
+                        songId,
                       ),
                     )
                 : undefined
             }
           />
-        )}
-        <QueuePanel
-          songs={room.queue}
-          onMove={
-            isController
-              ? (songId, direction) =>
-                  runQueueAction(() =>
-                    api.moveSong(
-                      code,
-                      controlCredentials,
-                      songId,
-                      direction,
-                    ),
-                  )
-              : undefined
-          }
-          onRemove={
-            isController
-              ? (songId) =>
-                  runQueueAction(() =>
-                    api.removeSong(
-                      code,
-                      controlCredentials,
-                      songId,
-                    ),
-                  )
-              : undefined
-          }
-        />
+        </div>
         {participant && (
           <SearchPanel onAddSong={addSong} />
         )}

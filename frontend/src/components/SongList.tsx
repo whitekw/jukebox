@@ -1,4 +1,5 @@
-import { ChevronIcon, TrashIcon } from './Icons'
+import { useState, type DragEvent } from 'react'
+import { GripIcon, MusicIcon, TrashIcon } from './Icons'
 import { formatDuration } from '../format'
 import { useI18n } from '../i18n-context'
 import { cn } from '../styles'
@@ -7,34 +8,116 @@ import type { Song } from '../types'
 export function SongList({
   songs,
   emptyMessage,
-  onMove,
+  emptyDescription,
+  onReorder,
   onRemove,
 }: {
   songs: Song[]
   emptyMessage: string
-  onMove?: (songId: string, direction: 'up' | 'down') => void
+  emptyDescription?: string
+  onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
 }) {
   const { t } = useI18n()
+  const [draggedSongId, setDraggedSongId] = useState('')
+  const [dropTarget, setDropTarget] = useState<{
+    songId: string
+    edge: 'before' | 'after'
+  } | null>(null)
+
+  function startDragging(event: DragEvent<HTMLLIElement>, songId: string) {
+    if (!onReorder || songs.length < 2) {
+      event.preventDefault()
+      return
+    }
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', songId)
+    setDraggedSongId(songId)
+  }
+
+  function markDropTarget(event: DragEvent<HTMLLIElement>, songId: string) {
+    if (!onReorder || !draggedSongId || draggedSongId === songId) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const edge = event.clientY < bounds.top + bounds.height / 2
+      ? 'before'
+      : 'after'
+    setDropTarget({ songId, edge })
+  }
+
+  function finishDragging() {
+    setDraggedSongId('')
+    setDropTarget(null)
+  }
+
+  function dropSong(event: DragEvent<HTMLLIElement>, targetSongId: string) {
+    event.preventDefault()
+    const sourceSongId =
+      draggedSongId || event.dataTransfer.getData('text/plain')
+    const edge = dropTarget?.songId === targetSongId
+      ? dropTarget.edge
+      : 'before'
+    const remainingSongs = songs.filter((song) => song.id !== sourceSongId)
+    const targetIndex = remainingSongs.findIndex(
+      (song) => song.id === targetSongId,
+    )
+
+    if (sourceSongId && targetIndex >= 0) {
+      const insertionIndex = targetIndex + (edge === 'after' ? 1 : 0)
+      const sourceIndex = songs.findIndex((song) => song.id === sourceSongId)
+      if (sourceIndex !== insertionIndex) {
+        onReorder?.(sourceSongId, insertionIndex)
+      }
+    }
+    finishDragging()
+  }
 
   if (songs.length === 0) {
     return (
-      <div className="grid min-h-28 place-items-center rounded-[11px] border border-dashed border-line p-5 text-center text-dim">
-        {emptyMessage}
+      <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-4 py-8 text-center md:min-h-[220px]">
+        <div className="mb-4 grid size-12 place-items-center rounded-full border border-line bg-white/[0.035] text-muted">
+          <MusicIcon size={20} />
+        </div>
+        <p className="m-0 text-sm font-semibold text-muted">{emptyMessage}</p>
+        {emptyDescription && (
+          <p className="mt-1.5 mb-0 max-w-[270px] text-[11px] leading-[1.65] text-dim">
+            {emptyDescription}
+          </p>
+        )}
       </div>
     )
   }
 
   return (
     <ol className="m-0 flex list-none flex-col gap-[7px] p-0">
-      {songs.map((song, index) => (
+      {songs.map((song) => (
         <li
-          className="flex min-h-[68px] items-center gap-[11px] rounded-[11px] border border-transparent bg-white/[0.035] p-2 transition-colors hover:border-line hover:bg-white/[0.055]"
+          className={cn(
+            'relative flex min-h-[68px] items-center gap-[11px] rounded-[11px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
+            onReorder && songs.length > 1 &&
+              'cursor-grab select-none active:cursor-grabbing',
+            draggedSongId === song.id && 'opacity-35',
+            dropTarget?.songId === song.id && dropTarget.edge === 'before' &&
+              'before:absolute before:-top-1 before:right-2 before:left-2 before:h-0.5 before:rounded-full before:bg-lime before:shadow-[0_0_10px_rgba(215,255,100,.45)]',
+            dropTarget?.songId === song.id && dropTarget.edge === 'after' &&
+              'after:absolute after:-bottom-1 after:right-2 after:left-2 after:h-0.5 after:rounded-full after:bg-lime after:shadow-[0_0_10px_rgba(215,255,100,.45)]',
+          )}
           key={song.id}
+          draggable={Boolean(onReorder && songs.length > 1)}
+          onDragStart={(event) => startDragging(event, song.id)}
+          onDragOver={(event) => markDropTarget(event, song.id)}
+          onDrop={(event) => dropSong(event, song.id)}
+          onDragEnd={finishDragging}
         >
-          <span className="hidden w-[22px] font-mono text-[10px] text-[#5d5865] md:inline">
-            {String(index + 1).padStart(2, '0')}
-          </span>
+          {onReorder && songs.length > 1 && (
+            <span
+              className="hidden shrink-0 text-[#6f6978] md:block"
+              title={t('song.dragToReorder')}
+            >
+              <GripIcon size={17} />
+            </span>
+          )}
           <img
             src={song.thumbnailUrl}
             alt=""
@@ -54,44 +137,19 @@ export function SongList({
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(song.durationSeconds)}
           </span>
-          {(onMove || onRemove) && (
-            <div className="flex flex-col items-center gap-0.5 md:flex-row">
-              {onMove && (
-                <>
-                  <button
-                    className="grid size-[29px] place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] hover:bg-white/[0.07] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
-                    type="button"
-                    aria-label={t('song.moveUp')}
-                    disabled={index === 0}
-                    onClick={() => onMove(song.id, 'up')}
-                  >
-                    <ChevronIcon direction="up" size={17} />
-                  </button>
-                  <button
-                    className="grid size-[29px] place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] hover:bg-white/[0.07] hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
-                    type="button"
-                    aria-label={t('song.moveDown')}
-                    disabled={index === songs.length - 1}
-                    onClick={() => onMove(song.id, 'down')}
-                  >
-                    <ChevronIcon direction="down" size={17} />
-                  </button>
-                </>
+          {onRemove && (
+            <button
+              className={cn(
+                'grid size-[29px] shrink-0 place-items-center rounded-[7px] border-0 bg-transparent p-0',
+                'text-[#847e8c] hover:bg-danger/[0.08] hover:text-danger',
               )}
-              {onRemove && (
-                <button
-                  className={cn(
-                    'grid size-[29px] place-items-center rounded-[7px] border-0 bg-transparent p-0',
-                    'text-[#847e8c] hover:bg-danger/[0.08] hover:text-danger',
-                  )}
-                  type="button"
-                  aria-label={t('song.removeFromQueue')}
-                  onClick={() => onRemove(song.id)}
-                >
-                  <TrashIcon size={17} />
-                </button>
-              )}
-            </div>
+              type="button"
+              draggable={false}
+              aria-label={t('song.removeFromQueue')}
+              onClick={() => onRemove(song.id)}
+            >
+              <TrashIcon size={17} />
+            </button>
           )}
         </li>
       ))}
