@@ -21,7 +21,7 @@ export function Brand({
         className,
       )}
       to="/"
-      aria-label={`Jukebox · ${t('common.home')}`}
+      aria-label={`B-SIDE · ${t('common.home')}`}
     >
       <span
         className="flex size-6 items-end gap-[3px] rounded-[7px] border border-lime/45 bg-lime/[0.08] p-[5px]"
@@ -37,7 +37,7 @@ export function Brand({
           compactOnMobile && 'sr-only md:not-sr-only',
         )}
       >
-        JUKEBOX
+        B-SIDE
       </span>
     </Link>
   )
