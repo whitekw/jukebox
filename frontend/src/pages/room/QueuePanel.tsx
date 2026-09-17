@@ -8,6 +8,7 @@ type QueuePanelProps = {
   className?: string
   onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
+  canRemove?: (song: Song) => boolean
 }
 
 export function QueuePanel({
@@ -15,6 +16,7 @@ export function QueuePanel({
   className,
   onReorder,
   onRemove,
+  canRemove,
 }: QueuePanelProps) {
   const { t } = useI18n()
 
@@ -35,13 +37,16 @@ export function QueuePanel({
           {songs.length}
         </span>
       </div>
-      <SongList
-        songs={songs}
-        emptyMessage={t('host.emptyQueue')}
-        emptyDescription={t('queue.emptyDescription')}
-        onReorder={onReorder}
-        onRemove={onRemove}
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <SongList
+          songs={songs}
+          emptyMessage={t('host.emptyQueue')}
+          emptyDescription={t('queue.emptyDescription')}
+          onReorder={onReorder}
+          onRemove={onRemove}
+          canRemove={canRemove}
+        />
+      </div>
     </section>
   )
 }

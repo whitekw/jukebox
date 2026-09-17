@@ -13,7 +13,11 @@ type YTPlayer = {
   getCurrentTime(): number
   getPlayerState(): number
   getVideoUrl(): string
+  getVolume(): number
+  isMuted(): boolean
   setVolume(volume: number): void
+  mute(): void
+  unMute(): void
   destroy(): void
 }
 
@@ -45,6 +49,8 @@ declare global {
 let youtubeApiPromise: Promise<YTNamespace> | null = null
 const DRIFT_TOLERANCE_SECONDS = 0.75
 const SYNCHRONIZATION_INTERVAL_MS = 3_000
+const AUDIO_SETTINGS_POLL_INTERVAL_MS = 500
+const PLAYER_AUDIO_SETTINGS_STORAGE_KEY = 'jukebox:player-audio-settings'
 const YOUTUBE_STATE_ENDED = 0
 const YOUTUBE_STATE_PLAYING = 1
 const YOUTUBE_STATE_PAUSED = 2
@@ -56,6 +62,11 @@ type PlaybackSession = {
   started: boolean
   startReported: boolean
   ended: boolean
+}
+
+type PlayerAudioSettings = {
+  volume: number
+  muted: boolean
 }
 
 export type PlaybackSynchronization = {
@@ -99,6 +110,50 @@ function getLoadedVideoId(player: YTPlayer) {
   }
 }
 
+function clampVolume(volume: number) {
+  return Math.min(100, Math.max(0, Math.round(volume)))
+}
+
+function readPlayerAudioSettings(fallbackVolume: number): PlayerAudioSettings {
+  const fallback = {
+    volume: clampVolume(fallbackVolume),
+    muted: false,
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(
+      PLAYER_AUDIO_SETTINGS_STORAGE_KEY,
+    )
+    if (!storedValue) return fallback
+
+    const parsed = JSON.parse(storedValue) as Partial<PlayerAudioSettings>
+    if (
+      !Number.isFinite(parsed.volume) ||
+      typeof parsed.muted !== 'boolean'
+    ) {
+      return fallback
+    }
+
+    return {
+      volume: clampVolume(parsed.volume as number),
+      muted: parsed.muted,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function writePlayerAudioSettings(settings: PlayerAudioSettings) {
+  try {
+    window.localStorage.setItem(
+      PLAYER_AUDIO_SETTINGS_STORAGE_KEY,
+      JSON.stringify(settings),
+    )
+  } catch {
+    // 저장 공간이 차단된 브라우저에서도 재생 자체는 계속 동작해야 한다.
+  }
+}
+
 export function YouTubePlayer({
   videoId,
   volume,
@@ -123,8 +178,15 @@ export function YouTubePlayer({
   const { t } = useI18n()
   const mountRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
+  const playerReadyRef = useRef(false)
   const videoIdRef = useRef(videoId)
-  const volumeRef = useRef(volume)
+  const initialAudioSettingsRef = useRef<PlayerAudioSettings | null>(null)
+  if (initialAudioSettingsRef.current === null) {
+    initialAudioSettingsRef.current = readPlayerAudioSettings(volume)
+  }
+  const volumeRef = useRef(initialAudioSettingsRef.current.volume)
+  const mutedRef = useRef(initialAudioSettingsRef.current.muted)
+  const volumePropRef = useRef(volume)
   const pausedRef = useRef(paused)
   const synchronizationRef = useRef(synchronization)
   const playbackBlockedRef = useRef(playbackBlocked)
@@ -146,6 +208,37 @@ export function YouTubePlayer({
   const [playbackError, setPlaybackError] = useState<number | null>(null)
   const synchronizationRevision = synchronization?.revision
   synchronizationRef.current = synchronization
+
+  function applyPlayerAudioSettings(player: YTPlayer) {
+    player.setVolume(volumeRef.current)
+    if (mutedRef.current) {
+      player.mute()
+    } else {
+      player.unMute()
+    }
+  }
+
+  function capturePlayerAudioSettings(player: YTPlayer) {
+    try {
+      const currentVolume = player.getVolume()
+      if (!Number.isFinite(currentVolume)) return
+
+      const nextVolume = clampVolume(currentVolume)
+      const nextMuted = player.isMuted()
+      if (
+        nextVolume === volumeRef.current &&
+        nextMuted === mutedRef.current
+      ) {
+        return
+      }
+
+      volumeRef.current = nextVolume
+      mutedRef.current = nextMuted
+      writePlayerAudioSettings({ volume: nextVolume, muted: nextMuted })
+    } catch {
+      // 아직 준비되지 않았거나 제거 중인 iframe의 값은 읽을 수 없다.
+    }
+  }
 
   function expectedPosition() {
     const sync = synchronizationRef.current
@@ -262,8 +355,15 @@ export function YouTubePlayer({
   }, [onPlaybackBlockedChange, playbackBlocked])
 
   useEffect(() => {
-    volumeRef.current = volume
-    playerRef.current?.setVolume(volume)
+    if (volumePropRef.current === volume) return
+
+    volumePropRef.current = volume
+    volumeRef.current = clampVolume(volume)
+    writePlayerAudioSettings({
+      volume: volumeRef.current,
+      muted: mutedRef.current,
+    })
+    playerRef.current?.setVolume(volumeRef.current)
   }, [volume])
 
   useEffect(() => {
@@ -304,6 +404,16 @@ export function YouTubePlayer({
   }, [])
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      const player = playerRef.current
+      if (player && playerReadyRef.current) {
+        capturePlayerAudioSettings(player)
+      }
+    }, AUDIO_SETTINGS_POLL_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     const container = mountRef.current
     if (!container) return
@@ -328,7 +438,8 @@ export function YouTubePlayer({
         },
         events: {
           onReady: (event) => {
-            event.target.setVolume(volumeRef.current)
+            playerReadyRef.current = true
+            applyPlayerAudioSettings(event.target)
             alignPlayer(event.target, Boolean(synchronizationRef.current))
           },
           onStateChange: (event) => {
@@ -344,6 +455,7 @@ export function YouTubePlayer({
               // 새 영상을 로드하는 도중 이전 영상의 ENDED 이벤트가 늦게
               // 도착할 수 있다. 로드 직후 보호 구간이 지난 현재 영상의
               // 종료 이벤트만 방의 다음 곡 처리로 전달한다.
+              capturePlayerAudioSettings(event.target)
               session.ended = true
               onEndedRef.current?.()
             }
@@ -426,6 +538,10 @@ export function YouTubePlayer({
         window.clearTimeout(transitionRetryTimerRef.current)
         transitionRetryTimerRef.current = null
       }
+      if (player && playerReadyRef.current) {
+        capturePlayerAudioSettings(player)
+      }
+      playerReadyRef.current = false
       if (playerRef.current === player) playerRef.current = null
       try {
         player?.destroy()

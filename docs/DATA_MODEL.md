@@ -129,8 +129,8 @@ stateDiagram-v2
     [*] --> current: 현재 곡 없음
     [*] --> queued: 현재 곡 있음
     queued --> current: advance에서 대기열 선두 선택
-    queued --> removed: controller가 삭제
-    current --> played: advance 또는 재생 종료
+    queued --> removed: controller 또는 신청자가 삭제
+    current --> played: controller·신청자의 advance 또는 재생 종료
     played --> [*]
     removed --> [*]
 ```
@@ -156,6 +156,7 @@ stateDiagram-v2
 - 참여자 토큰은 해당 방의 참여자 한 명과 매칭되어야 합니다.
 - 매니저 작업은 참여자 ID가 `manager_participant_id`와 같아야 합니다.
 - controller 작업은 올바른 호스트 토큰 또는 현재 매니저 토큰 중 하나가 필요합니다.
+- 일반 참여자는 `songs.added_by`가 자신의 ID인 현재 곡을 건너뛰거나 대기 곡을 삭제할 수 있습니다.
 
 ### 신청곡
 

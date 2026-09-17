@@ -87,6 +87,11 @@ export function RoomPage() {
       ? { participantToken }
       : null
   const isController = controlCredentials !== null
+  const songActionCredentials = hostToken
+    ? hostToken
+    : participantToken
+      ? { participantToken }
+      : null
 
   async function join(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -119,16 +124,20 @@ export function RoomPage() {
     }
   }
 
+  async function runRoomAction(action: () => Promise<NonNullable<typeof room>>) {
+    setRoom(await action())
+  }
+
   async function runControllerAction(action: () => Promise<NonNullable<typeof room>>) {
     if (!controlCredentials) {
       throw new ApiError(403, '', 'CONTROL_FORBIDDEN')
     }
-    setRoom(await action())
+    await runRoomAction(action)
   }
 
   function runQueueAction(action: () => Promise<NonNullable<typeof room>>) {
     setError('')
-    void runControllerAction(action).catch((requestError) => {
+    void runRoomAction(action).catch((requestError) => {
       setError(getErrorMessage(requestError, t))
     })
   }
@@ -279,43 +288,50 @@ export function RoomPage() {
               ) : undefined
             }
             onAdvance={
-              isController && room.currentSong
+              songActionCredentials &&
+              room.currentSong &&
+              (isController || room.currentSong.addedById === participant?.id)
                 ? () =>
                     runQueueAction(() =>
-                      api.advance(code, controlCredentials),
+                      api.advance(code, songActionCredentials),
                     )
                 : undefined
             }
           />
-          <QueuePanel
-            className="h-full lg:max-h-[640px] lg:overflow-y-auto"
-            songs={room.queue}
-            onReorder={
-              isController
-                ? (songId, targetIndex) =>
-                    runQueueAction(() =>
-                      api.reorderSong(
-                        code,
-                        controlCredentials,
-                        songId,
-                        targetIndex,
-                      ),
-                    )
-                : undefined
-            }
-            onRemove={
-              isController
-                ? (songId) =>
-                    runQueueAction(() =>
-                      api.removeSong(
-                        code,
-                        controlCredentials,
-                        songId,
-                      ),
-                    )
-                : undefined
-            }
-          />
+          <div className="min-w-0 lg:relative lg:min-h-0">
+            <QueuePanel
+              className="h-full lg:absolute lg:inset-0 lg:overflow-hidden"
+              songs={room.queue}
+              onReorder={
+                isController
+                  ? (songId, targetIndex) =>
+                      runQueueAction(() =>
+                        api.reorderSong(
+                          code,
+                          controlCredentials,
+                          songId,
+                          targetIndex,
+                        ),
+                      )
+                  : undefined
+              }
+              onRemove={
+                songActionCredentials
+                  ? (songId) =>
+                      runQueueAction(() =>
+                        api.removeSong(
+                          code,
+                          songActionCredentials,
+                          songId,
+                        ),
+                      )
+                  : undefined
+              }
+              canRemove={(song) =>
+                isController || song.addedById === participant?.id
+              }
+            />
+          </div>
         </div>
         {participant && (
           <SearchPanel onAddSong={addSong} />

@@ -333,6 +333,74 @@ test('deletes a room after it remains empty for one hour', () => {
   db.close()
 })
 
+test('allows participants to remove and skip only their own songs', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
+
+  rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'Alice current'))
+  let state = rooms.addSong(
+    created.code,
+    bob.participantToken,
+    song('bbbbbbbbbbb', 'Bob queued'),
+  )
+  state = rooms.addSong(
+    created.code,
+    alice.participantToken,
+    song('ccccccccccc', 'Alice queued'),
+  )
+  const bobSong = state.queue.find((queuedSong) => queuedSong.title === 'Bob queued')
+  const aliceSong = state.queue.find(
+    (queuedSong) => queuedSong.title === 'Alice queued',
+  )
+
+  assert.throws(
+    () =>
+      rooms.removeSong(
+        created.code,
+        { participantToken: bob.participantToken },
+        aliceSong.id,
+      ),
+    /본인이 신청한 곡/,
+  )
+  state = rooms.removeSong(
+    created.code,
+    { participantToken: bob.participantToken },
+    bobSong.id,
+  )
+  assert.deepEqual(state.queue.map((queuedSong) => queuedSong.title), [
+    'Alice queued',
+  ])
+
+  state = rooms.addSong(
+    created.code,
+    bob.participantToken,
+    song('ddddddddddd', 'Bob next'),
+  )
+  assert.throws(
+    () =>
+      rooms.advance(created.code, {
+        participantToken: bob.participantToken,
+      }),
+    /본인이 신청한 곡/,
+  )
+  state = rooms.advance(created.code, {
+    participantToken: alice.participantToken,
+  })
+  assert.equal(state.currentSong.title, 'Alice queued')
+  state = rooms.advance(created.code, {
+    participantToken: alice.participantToken,
+  })
+  assert.equal(state.currentSong.title, 'Bob next')
+  state = rooms.advance(created.code, {
+    participantToken: bob.participantToken,
+  })
+  assert.equal(state.currentSong, null)
+  db.close()
+})
+
 test('assigns, transfers and enforces participant manager controls', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
@@ -364,7 +432,7 @@ test('assigns, transfers and enforces participant manager controls', () => {
       rooms.advance(created.code, {
         participantToken: bob.participantToken,
       }),
-    /관리 권한/,
+    /본인이 신청한 곡/,
   )
   assert.throws(
     () =>

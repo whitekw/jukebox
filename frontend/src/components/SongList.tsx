@@ -11,12 +11,14 @@ export function SongList({
   emptyDescription,
   onReorder,
   onRemove,
+  canRemove,
 }: {
   songs: Song[]
   emptyMessage: string
   emptyDescription?: string
   onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
+  canRemove?: (song: Song) => boolean
 }) {
   const { t } = useI18n()
   const [draggedSongId, setDraggedSongId] = useState('')
@@ -137,7 +139,7 @@ export function SongList({
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(song.durationSeconds)}
           </span>
-          {onRemove && (
+          {onRemove && (canRemove?.(song) ?? true) && (
             <button
               className={cn(
                 'grid size-[29px] shrink-0 place-items-center rounded-[7px] border-0 bg-transparent p-0',

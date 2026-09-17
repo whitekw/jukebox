@@ -96,6 +96,35 @@ function createRoomService(db, options = {}) {
     throw new AppError(403, '관리 권한이 없습니다.', 'CONTROL_FORBIDDEN')
   }
 
+  function requireSongControl(room, credentials, addedByParticipantId) {
+    const normalizedCredentials =
+      typeof credentials === 'string'
+        ? { hostToken: credentials }
+        : credentials ?? {}
+    if (hasHostAccess(room, normalizedCredentials.hostToken)) return
+    if (normalizedCredentials.participantToken) {
+      const participant = requireParticipant(
+        room,
+        normalizedCredentials.participantToken,
+      )
+      if (
+        participant.id === room.manager_participant_id ||
+        participant.id === addedByParticipantId
+      ) {
+        return
+      }
+      throw new AppError(
+        403,
+        '본인이 신청한 곡만 삭제하거나 건너뛸 수 있습니다.',
+        'SONG_CONTROL_FORBIDDEN',
+      )
+    }
+    if (normalizedCredentials.hostToken) {
+      throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
+    }
+    throw new AppError(401, '이 방에 다시 참여해주세요.', 'PARTICIPANT_REQUIRED')
+  }
+
   function getSessionIdentity(room, credentials = {}) {
     const normalizedCredentials =
       typeof credentials === 'string'
@@ -413,7 +442,27 @@ function createRoomService(db, options = {}) {
   function advance(code, credentials) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      requireController(room, credentials)
+      if (!room.current_song_id) {
+        throw new AppError(
+          409,
+          '현재 재생 중인 곡이 없습니다.',
+          'NO_CURRENT_SONG',
+        )
+      }
+      const currentSong = db
+        .prepare(
+          `SELECT added_by FROM songs
+           WHERE id = ? AND room_id = ? AND status = 'current'`,
+        )
+        .get(room.current_song_id, room.id)
+      if (!currentSong) {
+        throw new AppError(
+          409,
+          '현재 재생 중인 곡이 없습니다.',
+          'NO_CURRENT_SONG',
+        )
+      }
+      requireSongControl(room, credentials, currentSong.added_by)
       return advanceRoom(room, code)
     })
   }
@@ -532,7 +581,16 @@ function createRoomService(db, options = {}) {
   function removeSong(code, credentials, songId) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      requireController(room, credentials)
+      const song = db
+        .prepare(
+          `SELECT id, added_by FROM songs
+           WHERE id = ? AND room_id = ? AND status = 'queued'`,
+        )
+        .get(songId, room.id)
+      if (!song) {
+        throw new AppError(404, '삭제할 대기 곡을 찾지 못했습니다.', 'SONG_NOT_FOUND')
+      }
+      requireSongControl(room, credentials, song.added_by)
       const result = db
         .prepare(
           `UPDATE songs SET status = 'removed'
