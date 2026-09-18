@@ -401,7 +401,7 @@ test('allows participants to remove and skip only their own songs', () => {
   db.close()
 })
 
-test('assigns, transfers and enforces participant manager controls', () => {
+test('assigns multiple managers and enforces participant manager controls', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
   const created = rooms.createRoom()
@@ -409,7 +409,6 @@ test('assigns, transfers and enforces participant manager controls', () => {
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
   let state = rooms.getPublicRoom(created.code)
-  assert.equal(state.managerParticipantId, alice.participant.id)
   assert.equal(state.hostVolume, 100)
   assert.equal(state.playbackPaused, false)
   assert.equal(state.playbackBlocked, false)
@@ -504,16 +503,32 @@ test('assigns, transfers and enforces participant manager controls', () => {
   assert.equal(state.playbackPaused, false)
   assert.equal(state.playbackBlocked, false)
 
-  state = rooms.transferManager(
+  state = rooms.setManager(
     created.code,
     alice.participantToken,
     bob.participant.id,
-  )
-  assert.equal(state.managerParticipantId, bob.participant.id)
-  assert.equal(
-    state.participants.find((participant) => participant.id === bob.participant.id)
-      .isManager,
     true,
+  )
+  assert.deepEqual(
+    state.participants.map(({ nickname, isManager }) => ({ nickname, isManager })),
+    [
+      { nickname: 'Alice', isManager: true },
+      { nickname: 'Bob', isManager: true },
+    ],
+  )
+
+  state = rooms.updateRoomSettings(
+    created.code,
+    { participantToken: alice.participantToken },
+    { hostVolume: 45 },
+  )
+  assert.equal(state.hostVolume, 45)
+
+  state = rooms.setManager(
+    created.code,
+    bob.participantToken,
+    alice.participant.id,
+    false,
   )
   assert.throws(
     () =>
@@ -531,10 +546,20 @@ test('assigns, transfers and enforces participant manager controls', () => {
     { hostVolume: 50 },
   )
   assert.equal(state.hostVolume, 50)
+  assert.throws(
+    () =>
+      rooms.setManager(
+        created.code,
+        bob.participantToken,
+        bob.participant.id,
+        false,
+      ),
+    /최소 한 명/,
+  )
   db.close()
 })
 
-test('moves manager access to the oldest online participant', () => {
+test('adds the oldest online participant when every manager is offline', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
   const created = rooms.createRoom()
@@ -547,18 +572,36 @@ test('moves manager access to the oldest online participant', () => {
     bob.participant.id,
     charlie.participant.id,
   ])
-  assert.equal(state.managerParticipantId, alice.participant.id)
+  assert.deepEqual(
+    state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
+    [alice.participant.id],
+  )
 
   state = rooms.ensureOnlineManager(created.code, [
     bob.participant.id,
     charlie.participant.id,
   ])
-  assert.equal(state.managerParticipantId, bob.participant.id)
+  assert.deepEqual(
+    state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
+    [alice.participant.id, bob.participant.id],
+  )
 
   state = rooms.ensureOnlineManager(created.code, [])
-  assert.equal(state.managerParticipantId, bob.participant.id)
+  assert.deepEqual(
+    state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
+    [alice.participant.id, bob.participant.id],
+  )
 
   state = rooms.ensureOnlineManager(created.code, [charlie.participant.id])
-  assert.equal(state.managerParticipantId, charlie.participant.id)
+  assert.deepEqual(
+    state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
+    [alice.participant.id, bob.participant.id, charlie.participant.id],
+  )
+
+  state = rooms.ensureOnlineManager(created.code, [alice.participant.id])
+  assert.deepEqual(
+    state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
+    [alice.participant.id, bob.participant.id, charlie.participant.id],
+  )
   db.close()
 })

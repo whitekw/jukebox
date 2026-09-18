@@ -15,7 +15,6 @@ export type Song = {
 export type RoomState = {
   code: string
   expiresAt: number
-  managerParticipantId: string | null
   hostVolume: number
   playbackMode: PlaybackMode
   playbackPaused: boolean
@@ -39,7 +38,7 @@ export type RoomParticipant = {
 export type Participant = {
   id: string
   nickname: string
-  isManager?: boolean
+  isManager: boolean
 }
 
 export type RoomSession = {

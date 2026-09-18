@@ -7,13 +7,16 @@ import type { RoomParticipant } from '../../types'
 type ParticipantsMenuProps = {
   participants: RoomParticipant[]
   currentParticipantId?: string
-  onTransfer?: (targetParticipantId: string) => Promise<void>
+  onSetManager?: (
+    targetParticipantId: string,
+    isManager: boolean,
+  ) => Promise<void>
 }
 
 export function ParticipantsMenu({
   participants,
   currentParticipantId,
-  onTransfer,
+  onSetManager,
 }: ParticipantsMenuProps) {
   const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -42,11 +45,17 @@ export function ParticipantsMenu({
     }
   }, [open])
 
-  async function transferManager(participant: RoomParticipant) {
-    if (!onTransfer || participant.isManager || busyParticipantId) return
+  async function setManager(participant: RoomParticipant) {
+    if (!onSetManager || busyParticipantId) return
+    const nextIsManager = !participant.isManager
     if (
       !window.confirm(
-        t('manager.transferConfirm', { nickname: participant.nickname }),
+        t(
+          nextIsManager
+            ? 'manager.addConfirm'
+            : 'manager.removeConfirm',
+          { nickname: participant.nickname },
+        ),
       )
     ) {
       return
@@ -55,8 +64,7 @@ export function ParticipantsMenu({
     setBusyParticipantId(participant.id)
     setError('')
     try {
-      await onTransfer(participant.id)
-      setOpen(false)
+      await onSetManager(participant.id, nextIsManager)
     } catch (requestError) {
       setError(getErrorMessage(requestError, t))
     } finally {
@@ -135,19 +143,24 @@ export function ParticipantsMenu({
                       </span>
                     )}
                   </div>
-                  {onTransfer && !roomParticipant.isManager && (
+                  {onSetManager && (
                     <button
                       className={cn(
                         buttonStyles({ intent: 'outline', size: 'sm' }),
                         'min-h-8 shrink-0 px-2.5 text-[10px]',
+                        roomParticipant.isManager
+                          ? 'border-danger/30 text-[#ff9cab] hover:bg-danger/[0.08]'
+                          : 'border-lime/25 text-lime hover:bg-lime/[0.08]',
                       )}
                       type="button"
                       disabled={Boolean(busyParticipantId)}
-                      onClick={() => void transferManager(roomParticipant)}
+                      onClick={() => void setManager(roomParticipant)}
                     >
                       {busyParticipantId === roomParticipant.id
-                        ? t('participants.transferring')
-                        : t('manager.transferButton')}
+                        ? t('participants.updatingManager')
+                        : roomParticipant.isManager
+                          ? t('manager.removeButton')
+                          : t('manager.addButton')}
                     </button>
                   )}
                 </li>

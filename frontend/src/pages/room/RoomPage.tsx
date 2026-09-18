@@ -80,7 +80,12 @@ export function RoomPage() {
   }, [code, participantToken])
 
   const isManager =
-    Boolean(participant) && room?.managerParticipantId === participant?.id
+    Boolean(participant) &&
+    Boolean(
+      room?.participants.find(
+        (roomParticipant) => roomParticipant.id === participant?.id,
+      )?.isManager,
+    )
   const controlCredentials = hostToken
     ? hostToken
     : isManager && participantToken
@@ -150,8 +155,10 @@ export function RoomPage() {
   }
 
   function updatePlaybackFromPlayer(paused: boolean) {
-    if (!hostToken || paused === room?.playbackPaused) return
-    runQueueAction(() => api.setPlaybackPaused(code, hostToken, paused))
+    if (!controlCredentials || paused === room?.playbackPaused) return
+    runQueueAction(() =>
+      api.setPlaybackPaused(code, controlCredentials, paused),
+    )
   }
 
   function reportPlaybackStarted(videoId: string, positionSeconds: number) {
@@ -214,14 +221,15 @@ export function RoomPage() {
             <ParticipantsMenu
               participants={room.participants}
               currentParticipantId={participant?.id}
-              onTransfer={
+              onSetManager={
                 isManager
-                  ? (targetParticipantId) =>
+                  ? (targetParticipantId, nextIsManager) =>
                       runControllerAction(() =>
-                        api.transferManager(
+                        api.setManager(
                           code,
                           participantToken,
                           targetParticipantId,
+                          nextIsManager,
                         ),
                       )
                   : undefined
@@ -258,7 +266,7 @@ export function RoomPage() {
                       : undefined
                   }
                   onPausedChange={
-                    isHost ? updatePlaybackFromPlayer : undefined
+                    isController ? updatePlaybackFromPlayer : undefined
                   }
                   onPlaybackStarted={
                     isController && room.playbackMode === 'all_devices'
@@ -294,6 +302,18 @@ export function RoomPage() {
                 ? () =>
                     runQueueAction(() =>
                       api.advance(code, songActionCredentials),
+                    )
+                : undefined
+            }
+            onPlaybackToggle={
+              isController
+                ? () =>
+                    runQueueAction(() =>
+                      api.setPlaybackPaused(
+                        code,
+                        controlCredentials,
+                        !room.playbackPaused,
+                      ),
                     )
                 : undefined
             }

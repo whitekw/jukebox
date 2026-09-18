@@ -232,17 +232,18 @@ export const api = {
     )
   },
 
-  transferManager(
+  setManager(
     code: string,
     participantToken: string,
     targetParticipantId: string,
+    isManager: boolean,
   ) {
     return request<RoomState>(
-      `/api/rooms/${encodeURIComponent(code)}/manager/transfer`,
+      `/api/rooms/${encodeURIComponent(code)}/managers/${encodeURIComponent(targetParticipantId)}`,
       {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'x-participant-token': participantToken },
-        body: JSON.stringify({ targetParticipantId }),
+        body: JSON.stringify({ isManager }),
       },
     )
   },

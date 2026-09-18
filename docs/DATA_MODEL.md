@@ -15,7 +15,7 @@ erDiagram
         text code UK
         text host_token_hash
         integer max_songs_per_participant
-        text manager_participant_id
+        text manager_participant_id "legacy unused"
         integer host_volume
         text playback_mode
         integer playback_paused
@@ -35,6 +35,7 @@ erDiagram
         text room_id FK
         text token_hash
         text nickname
+        integer is_manager
         integer created_at
     }
 
@@ -53,7 +54,7 @@ erDiagram
     }
 ```
 
-`rooms.manager_participant_id`와 `rooms.current_song_id`는 논리적 참조이지만 현재 스키마에는 foreign key 제약이 선언되어 있지 않습니다.
+`rooms.manager_participant_id`는 단일 관리자 버전에서 남은 미사용 호환 컬럼입니다. `rooms.current_song_id`는 논리적 참조이지만 현재 스키마에는 foreign key 제약이 선언되어 있지 않습니다.
 
 ## 2. `rooms`
 
@@ -63,7 +64,7 @@ erDiagram
 | `code` | TEXT NOT NULL UNIQUE | 사용자에게 노출하는 6자리 방 코드 |
 | `host_token_hash` | TEXT NOT NULL | 호스트 원본 토큰의 SHA-256 hex |
 | `max_songs_per_participant` | INTEGER NOT NULL, 기본 2 | 이전 버전 호환을 위해 남겨둔 미사용 컬럼 |
-| `manager_participant_id` | TEXT nullable | 현재 매니저 참여자 ID |
+| `manager_participant_id` | TEXT nullable | 이전 버전 호환을 위해 남겨둔 미사용 컬럼 |
 | `host_volume` | INTEGER, 기본 100, `0..100` | 호스트 IFrame 플레이어 볼륨 |
 | `playback_mode` | TEXT, 기본 `host_only` | `host_only` 또는 `all_devices` |
 | `playback_paused` | INTEGER, 기본 0, `0/1` | 논리적 일시정지 상태 |
@@ -91,6 +92,7 @@ erDiagram
 | `room_id` | TEXT FK → `rooms.id`, ON DELETE CASCADE | 소속 방 |
 | `token_hash` | TEXT NOT NULL | 참여자 원본 토큰의 SHA-256 hex |
 | `nickname` | TEXT NOT NULL | 표시 이름, 서비스 규칙상 공백 제거 후 `2..20`자 |
+| `is_manager` | INTEGER, 기본 0, `0/1` | 공동 관리자 여부 |
 | `created_at` | INTEGER NOT NULL | 참여 시각 epoch ms |
 
 제약과 인덱스:
@@ -146,7 +148,8 @@ stateDiagram-v2
 
 - 코드 문자는 혼동하기 쉬운 `I`, `O`, `0`, `1`을 제외한 알파벳/숫자 집합에서 생성합니다.
 - 만료된 방은 조회·변경할 수 없습니다.
-- 첫 참여자가 매니저가 되며, 명시적 이전 또는 현재 매니저의 접속 종료 시 온라인 참여자에게 이전됩니다.
+- 첫 참여자가 매니저가 되며 관리자는 다른 참여자의 관리자 상태를 추가하거나 해제할 수 있습니다.
+- 최소 한 명의 관리자를 유지하고, 온라인 관리자가 없으면 가장 오래 접속 중인 일반 참여자를 추가 관리자로 승격합니다.
 - 재생 모드는 방 생성 시 `host_only` 또는 `all_devices`로 고정됩니다.
 - 재생 중 예상 위치는 기준 위치에 `현재 서버 시각 - playback_anchor_at`을 더해 계산합니다.
 
@@ -154,8 +157,8 @@ stateDiagram-v2
 
 - 원본 토큰은 저장하지 않고 해시만 저장합니다.
 - 참여자 토큰은 해당 방의 참여자 한 명과 매칭되어야 합니다.
-- 매니저 작업은 참여자 ID가 `manager_participant_id`와 같아야 합니다.
-- controller 작업은 올바른 호스트 토큰 또는 현재 매니저 토큰 중 하나가 필요합니다.
+- 매니저 작업은 참여자의 `is_manager`가 1이어야 합니다.
+- controller 작업은 올바른 호스트 토큰 또는 관리자 토큰 중 하나가 필요합니다.
 - 일반 참여자는 `songs.added_by`가 자신의 ID인 현재 곡을 건너뛰거나 대기 곡을 삭제할 수 있습니다.
 
 ### 신청곡
@@ -174,8 +177,8 @@ stateDiagram-v2
 - 재생/자동재생 차단 상태 변경
 - 곡 삭제 및 순서 변경
 - 방 설정 변경
-- 매니저 이전
-- 오프라인 매니저의 자동 이전
+- 매니저 추가·해제
+- 온라인 매니저 부재 시 자동 승격
 
 `BEGIN IMMEDIATE`는 쓰기 예약 잠금을 먼저 획득하므로 한도 및 중복 검사 뒤 삽입 사이의 동시 쓰기 경쟁을 줄입니다. 현재 모든 DB 작업은 단일 Node.js 프로세스 안에서 동기 실행됩니다.
 
@@ -194,7 +197,7 @@ stateDiagram-v2
 - `playback_revision`
 - `empty_since`
 
-그 뒤 매니저가 없는 기존 방에는 생성 시각이 가장 빠른 참여자를 매니저로 채웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
+기존 `participants` 테이블에 `is_manager`가 없으면 컬럼을 추가하고, 레거시 `manager_participant_id`가 가리키던 참여자를 관리자로 변환합니다. 레거시 포인터가 없는 방은 생성 시각이 가장 빠른 참여자를 관리자로 지정한 뒤 포인터를 비웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
 
 ## 9. 만료와 삭제
 

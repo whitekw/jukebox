@@ -224,20 +224,17 @@ app.patch('/api/rooms/:code/settings', mutationLimiter, (req, res) => {
   res.json(emitRoom(req.params.code, state))
 })
 
-app.post('/api/rooms/:code/manager/transfer', mutationLimiter, (req, res) => {
+app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res) => {
   const normalizedCode = normalizeCode(req.params.code)
-  const targetParticipantId = String(req.body.targetParticipantId ?? '')
-  if (!presence.getParticipantIds(normalizedCode).has(targetParticipantId)) {
-    throw new AppError(
-      409,
-      '현재 접속 중인 참여자에게만 관리 권한을 넘길 수 있습니다.',
-      'PARTICIPANT_OFFLINE',
-    )
-  }
-  const state = rooms.transferManager(
+  rooms.setManager(
     normalizedCode,
     req.get('x-participant-token'),
-    targetParticipantId,
+    req.params.participantId,
+    req.body.isManager,
+  )
+  const state = rooms.ensureOnlineManager(
+    normalizedCode,
+    presence.getParticipantIds(normalizedCode),
   )
   res.json(emitRoom(normalizedCode, state))
 })
