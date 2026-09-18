@@ -92,7 +92,6 @@ type VideoSearchResult = {
 | POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
-| GET | `/api/youtube/charts/music` | 공개 | 검색 | 지역별 인기 음악 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/advance` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
@@ -217,20 +216,6 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
       "embeddable": true
     }
   ]
-}
-```
-
-### `GET /api/youtube/charts/music`
-
-- `CF-IPCountry`가 유효하면 해당 국가, 아니면 `YOUTUBE_DEFAULT_REGION`을 사용합니다.
-- 해당 국가 차트가 없으면 기본 지역 차트로 폴백합니다.
-- 결과는 지역별 30분간 캐시합니다.
-- 최대 15개를 반환하며, 비임베드 영상도 `embeddable: false`로 표시할 수 있습니다.
-
-```json
-{
-  "regionCode": "KR",
-  "items": []
 }
 ```
 

@@ -28,7 +28,7 @@
                 ▼
 Express + Room Service
 ├─ SQLite: 방, 참여자, 신청곡 및 재생 제어 상태
-└─ YouTube Data API v3: 검색, 영상 검증, 지역별 인기 음악
+└─ YouTube Data API v3: 검색, 영상 검증
 ```
 
 새 기능을 추가할 때는 다음 문서도 함께 갱신합니다.

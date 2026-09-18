@@ -19,7 +19,6 @@
 | `EMPTY_ROOM_TTL_HOURS` | `1` | 선택 | 인증된 접속자가 없는 방의 보존 시간 |
 | `PARTICIPANT_LEAVE_GRACE_MS` | `5000` | 선택 | 마지막 연결 종료 후 참여자를 오프라인 처리하기까지의 유예 시간(ms) |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
-| `YOUTUBE_DEFAULT_REGION` | `KR` | 선택 | 국가 감지 실패 또는 차트 미지원 시 기본 지역 |
 | `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
 | `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
 
@@ -180,9 +179,8 @@ docker compose logs --tail=200 jukebox
 
 ### YouTube 연동
 
-- 키가 없으면 YouTube 검색·차트·곡 추가가 `YOUTUBE_NOT_CONFIGURED`로 실패하지만 방 생성/조회는 동작합니다.
+- 키가 없으면 YouTube 검색·곡 추가가 `YOUTUBE_NOT_CONFIGURED`로 실패하지만 방 생성/조회는 동작합니다.
 - 외부 연결 실패는 `YOUTUBE_UNAVAILABLE`, API 응답 오류는 `YOUTUBE_API_ERROR`입니다.
-- 인기 음악은 프로세스 메모리에 30분 캐시되므로 재시작 시 초기화됩니다.
 
 ## 10. 장애 대응 메모
 

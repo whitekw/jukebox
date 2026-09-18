@@ -22,7 +22,6 @@ const participantLeaveGraceMs =
   configuredParticipantLeaveGraceMs >= 0
     ? configuredParticipantLeaveGraceMs
     : 5_000
-const youtubeDefaultRegion = process.env.YOUTUBE_DEFAULT_REGION ?? 'KR'
 
 const db = createDatabase(databasePath)
 const rooms = createRoomService(db, { roomTtlHours, emptyRoomTtlHours })
@@ -143,15 +142,6 @@ app.get(
   searchLimiter,
   asyncRoute(async (req, res) => {
     res.json({ items: await youtube.search(req.query.q) })
-  }),
-)
-
-app.get(
-  '/api/youtube/charts/music',
-  searchLimiter,
-  asyncRoute(async (req, res) => {
-    const { countryCode } = getLocaleConfig(req)
-    res.json(await youtube.getPopularMusic(countryCode, youtubeDefaultRegion))
   }),
 )
 

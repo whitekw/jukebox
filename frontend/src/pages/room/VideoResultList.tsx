@@ -6,21 +6,19 @@ import type { VideoSearchResult } from '../../types'
 type VideoResultListProps = {
   videos: VideoSearchResult[]
   addingId: string
-  ranked?: boolean
   onAddSong: (videoId: string) => void
 }
 
 export function VideoResultList({
   videos,
   addingId,
-  ranked = false,
   onAddSong,
 }: VideoResultListProps) {
   const { t } = useI18n()
 
   return (
     <ol className="mt-[18px] flex min-w-0 list-none flex-col gap-1.5 p-0">
-      {videos.map((video, index) => (
+      {videos.map((video) => (
         <li
           className={cn(
             'grid min-w-0 grid-cols-[minmax(0,1fr)_36px] gap-x-3 gap-y-2 overflow-hidden',
@@ -35,14 +33,6 @@ export function VideoResultList({
               src={video.thumbnailUrl}
               alt=""
             />
-            {ranked && (
-              <span
-                className="absolute top-1 left-1 grid min-w-5 place-items-center rounded bg-black/75 px-1 py-0.5 text-[10px] font-black text-white shadow-sm"
-                aria-label={t('search.rank', { rank: index + 1 })}
-              >
-                {index + 1}
-              </span>
-            )}
           </div>
           <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-col md:col-span-1 md:row-auto">
             <strong
