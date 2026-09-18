@@ -5,6 +5,7 @@ const { Server } = require('socket.io')
 const { createDatabase } = require('./db')
 const { AppError } = require('./errors')
 const { getLocaleConfig } = require('./locale')
+const { createRoomPresence } = require('./presence')
 const { createRateLimiter } = require('./rate-limit')
 const { createRoomService, normalizeCode } = require('./rooms')
 const { createYouTubeService } = require('./youtube')
@@ -13,6 +14,14 @@ const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
 const roomTtlHours = Number(process.env.ROOM_TTL_HOURS ?? 24)
 const emptyRoomTtlHours = Number(process.env.EMPTY_ROOM_TTL_HOURS ?? 1)
+const configuredParticipantLeaveGraceMs = Number(
+  process.env.PARTICIPANT_LEAVE_GRACE_MS ?? 5_000,
+)
+const participantLeaveGraceMs =
+  Number.isFinite(configuredParticipantLeaveGraceMs) &&
+  configuredParticipantLeaveGraceMs >= 0
+    ? configuredParticipantLeaveGraceMs
+    : 5_000
 const youtubeDefaultRegion = process.env.YOUTUBE_DEFAULT_REGION ?? 'KR'
 
 const db = createDatabase(databasePath)
@@ -37,8 +46,42 @@ function activeRoomChannel(code) {
   return `active-room:${normalizeCode(code)}`
 }
 
+const presence = createRoomPresence({
+  graceMs: participantLeaveGraceMs,
+  onParticipantOffline: ({ code }) => {
+    try {
+      const state = rooms.ensureOnlineManager(
+        code,
+        presence.getParticipantIds(code),
+      )
+      emitRoom(code, state)
+    } catch (error) {
+      if (error?.code !== 'ROOM_NOT_FOUND') {
+        console.error('Failed to update participant presence.', error)
+      }
+    }
+  },
+})
+
+function withOnlineParticipants(state, additionalParticipantIds = []) {
+  const onlineParticipantIds = presence.getParticipantIds(state.code)
+  for (const participantId of additionalParticipantIds) {
+    onlineParticipantIds.add(participantId)
+  }
+  return {
+    ...state,
+    participants: state.participants.filter((participant) =>
+      onlineParticipantIds.has(participant.id),
+    ),
+  }
+}
+
 function emitRoom(code, state) {
-  io.to(roomChannel(code)).emit('room:state', state ?? rooms.getPublicRoom(code))
+  const visibleState = withOnlineParticipants(
+    state ?? rooms.getPublicRoom(code),
+  )
+  io.to(roomChannel(code)).emit('room:state', visibleState)
+  return visibleState
 }
 
 function asyncRoute(handler) {
@@ -66,17 +109,27 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
 })
 
 app.get('/api/rooms/:code', (req, res) => {
-  res.json(rooms.getPublicRoom(req.params.code))
+  res.json(withOnlineParticipants(rooms.getPublicRoom(req.params.code)))
 })
 
 app.get('/api/rooms/:code/session', (req, res) => {
-  res.json(rooms.getRoomSession(req.params.code, controlCredentials(req)))
+  const session = rooms.getRoomSession(
+    req.params.code,
+    controlCredentials(req),
+  )
+  res.json({
+    ...session,
+    room: withOnlineParticipants(session.room),
+  })
 })
 
 app.post('/api/rooms/:code/join', mutationLimiter, (req, res) => {
   const result = rooms.joinRoom(req.params.code, req.body)
   emitRoom(req.params.code, result.room)
-  res.status(201).json(result)
+  res.status(201).json({
+    ...result,
+    room: withOnlineParticipants(result.room, [result.participant.id]),
+  })
 })
 
 app.get('/api/rooms/:code/me', (req, res) => {
@@ -112,15 +165,13 @@ app.post(
       req.get('x-participant-token'),
       song,
     )
-    emitRoom(req.params.code, state)
-    res.status(201).json(state)
+    res.status(201).json(emitRoom(req.params.code, state))
   }),
 )
 
 app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   const state = rooms.advance(req.params.code, controlCredentials(req))
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
@@ -129,8 +180,7 @@ app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
     controlCredentials(req),
     req.body.paused,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.post('/api/rooms/:code/playback/start', mutationLimiter, (req, res) => {
@@ -140,8 +190,7 @@ app.post('/api/rooms/:code/playback/start', mutationLimiter, (req, res) => {
     req.body.videoId,
     req.body.positionSeconds,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.patch(
@@ -153,8 +202,7 @@ app.patch(
       req.get('x-host-token'),
       req.body.blocked,
     )
-    emitRoom(req.params.code, state)
-    res.json(state)
+    res.json(emitRoom(req.params.code, state))
   },
 )
 
@@ -164,8 +212,7 @@ app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
     controlCredentials(req),
     req.params.songId,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) => {
@@ -175,8 +222,7 @@ app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) =
     req.params.songId,
     req.body.targetIndex,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.patch('/api/rooms/:code/settings', mutationLimiter, (req, res) => {
@@ -185,18 +231,25 @@ app.patch('/api/rooms/:code/settings', mutationLimiter, (req, res) => {
     controlCredentials(req),
     req.body,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(req.params.code, state))
 })
 
 app.post('/api/rooms/:code/manager/transfer', mutationLimiter, (req, res) => {
+  const normalizedCode = normalizeCode(req.params.code)
+  const targetParticipantId = String(req.body.targetParticipantId ?? '')
+  if (!presence.getParticipantIds(normalizedCode).has(targetParticipantId)) {
+    throw new AppError(
+      409,
+      '현재 접속 중인 참여자에게만 관리 권한을 넘길 수 있습니다.',
+      'PARTICIPANT_OFFLINE',
+    )
+  }
   const state = rooms.transferManager(
-    req.params.code,
+    normalizedCode,
     req.get('x-participant-token'),
-    req.body.targetParticipantId,
+    targetParticipantId,
   )
-  emitRoom(req.params.code, state)
-  res.json(state)
+  res.json(emitRoom(normalizedCode, state))
 })
 
 io.on('connection', (socket) => {
@@ -211,18 +264,32 @@ io.on('connection', (socket) => {
     ({ code, hostToken, participantToken } = {}, acknowledge) => {
       try {
         const normalizedCode = normalizeCode(code)
-        const state = rooms.getPublicRoom(normalizedCode)
+        let state = rooms.getPublicRoom(normalizedCode)
+        const identity = rooms.getPresenceIdentity(normalizedCode, {
+          hostToken,
+          participantToken,
+        })
         socket.join(roomChannel(normalizedCode))
-        if (
-          rooms.hasActiveSession(normalizedCode, {
-            hostToken,
-            participantToken,
-          })
-        ) {
+        if (identity.isHost || identity.participantId) {
           socket.join(activeRoomChannel(normalizedCode))
           rooms.markRoomOccupied(normalizedCode)
         }
-        socket.emit('room:state', state)
+        if (identity.participantId) {
+          presence.connect(
+            normalizedCode,
+            identity.participantId,
+            socket.id,
+          )
+          socket.data.roomPresence = {
+            code: normalizedCode,
+            participantId: identity.participantId,
+          }
+          state = rooms.ensureOnlineManager(
+            normalizedCode,
+            presence.getParticipantIds(normalizedCode),
+          )
+        }
+        emitRoom(normalizedCode, state)
         if (typeof acknowledge === 'function') acknowledge({ ok: true })
       } catch (error) {
         if (typeof acknowledge === 'function') {
@@ -238,6 +305,15 @@ io.on('connection', (socket) => {
   )
 
   socket.on('disconnecting', () => {
+    const roomPresence = socket.data.roomPresence
+    if (roomPresence) {
+      presence.disconnect(
+        roomPresence.code,
+        roomPresence.participantId,
+        socket.id,
+      )
+      socket.data.roomPresence = null
+    }
     for (const channel of socket.rooms) {
       if (!channel.startsWith('active-room:')) continue
       if (io.sockets.adapter.rooms.get(channel)?.size !== 1) continue
@@ -300,6 +376,7 @@ server.listen(port, () => {
 function shutdown() {
   clearInterval(playbackTimer)
   clearInterval(cleanupTimer)
+  presence.clear()
   server.close(() => {
     db.close()
     process.exit(0)

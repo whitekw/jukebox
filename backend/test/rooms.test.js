@@ -533,3 +533,32 @@ test('assigns, transfers and enforces participant manager controls', () => {
   assert.equal(state.hostVolume, 50)
   db.close()
 })
+
+test('moves manager access to the oldest online participant', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
+  const charlie = rooms.joinRoom(created.code, { nickname: 'Charlie' })
+
+  let state = rooms.ensureOnlineManager(created.code, [
+    alice.participant.id,
+    bob.participant.id,
+    charlie.participant.id,
+  ])
+  assert.equal(state.managerParticipantId, alice.participant.id)
+
+  state = rooms.ensureOnlineManager(created.code, [
+    bob.participant.id,
+    charlie.participant.id,
+  ])
+  assert.equal(state.managerParticipantId, bob.participant.id)
+
+  state = rooms.ensureOnlineManager(created.code, [])
+  assert.equal(state.managerParticipantId, bob.participant.id)
+
+  state = rooms.ensureOnlineManager(created.code, [charlie.participant.id])
+  assert.equal(state.managerParticipantId, charlie.participant.id)
+  db.close()
+})

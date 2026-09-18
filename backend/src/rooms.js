@@ -146,6 +146,15 @@ function createRoomService(db, options = {}) {
     return identity.isHost || Boolean(identity.participant)
   }
 
+  function getPresenceIdentity(code, credentials = {}) {
+    const room = getRoomRecord(code)
+    const identity = getSessionIdentity(room, credentials)
+    return {
+      isHost: identity.isHost,
+      participantId: identity.participant?.id ?? null,
+    }
+  }
+
   function serializeSong(row) {
     if (!row) return null
     return {
@@ -756,6 +765,39 @@ function createRoomService(db, options = {}) {
     })
   }
 
+  function ensureOnlineManager(code, onlineParticipantIds = []) {
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const onlineIds = new Set(
+        Array.from(onlineParticipantIds, (participantId) =>
+          String(participantId),
+        ),
+      )
+      if (
+        onlineIds.size === 0 ||
+        onlineIds.has(room.manager_participant_id)
+      ) {
+        return getPublicRoom(code)
+      }
+
+      const nextManager = db
+        .prepare(
+          `SELECT id
+           FROM participants
+           WHERE room_id = ?
+           ORDER BY created_at ASC, rowid ASC`,
+        )
+        .all(room.id)
+        .find((participant) => onlineIds.has(participant.id))
+      if (!nextManager) return getPublicRoom(code)
+
+      db.prepare(
+        'UPDATE rooms SET manager_participant_id = ? WHERE id = ?',
+      ).run(nextManager.id, room.id)
+      return getPublicRoom(code)
+    })
+  }
+
   function markRoomOccupied(code) {
     return db
       .prepare('UPDATE rooms SET empty_since = NULL WHERE code = ? AND expires_at > ?')
@@ -802,6 +844,7 @@ function createRoomService(db, options = {}) {
     getParticipantStatus,
     getRoomSession,
     hasActiveSession,
+    getPresenceIdentity,
     addSong,
     advance,
     advanceCompletedAllDeviceRooms,
@@ -812,6 +855,7 @@ function createRoomService(db, options = {}) {
     reorderSong,
     updateRoomSettings,
     transferManager,
+    ensureOnlineManager,
     markRoomOccupied,
     markRoomEmpty,
     markAllRoomsEmpty,

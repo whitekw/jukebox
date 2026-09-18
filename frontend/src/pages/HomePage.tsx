@@ -34,34 +34,40 @@ export function HomePage() {
 
   useEffect(() => {
     let active = true
-    const storedRooms = getStoredRoomCredentials()
-    void Promise.all(
-      storedRooms.map(async ({ code, hostToken, participantToken }) => {
-        try {
-          return await api.getRoomSession(code, {
-            hostToken,
-            participantToken,
-          })
-        } catch (requestError) {
-          if (
-            requestError instanceof ApiError &&
-            [401, 403, 404].includes(requestError.status)
-          ) {
-            clearStoredRoomCredentials(code)
+    function loadRoomSessions() {
+      const storedRooms = getStoredRoomCredentials()
+      void Promise.all(
+        storedRooms.map(async ({ code, hostToken, participantToken }) => {
+          try {
+            return await api.getRoomSession(code, {
+              hostToken,
+              participantToken,
+            })
+          } catch (requestError) {
+            if (
+              requestError instanceof ApiError &&
+              [401, 403, 404].includes(requestError.status)
+            ) {
+              clearStoredRoomCredentials(code)
+            }
+            return null
           }
-          return null
-        }
-      }),
-    ).then((sessions) => {
-      if (!active) return
-      setRoomSessions(
-        sessions
-          .filter((session): session is RoomSession => session !== null)
-          .sort((left, right) => right.room.expiresAt - left.room.expiresAt),
-      )
-    })
+        }),
+      ).then((sessions) => {
+        if (!active) return
+        setRoomSessions(
+          sessions
+            .filter((session): session is RoomSession => session !== null)
+            .sort((left, right) => right.room.expiresAt - left.room.expiresAt),
+        )
+      })
+    }
+
+    loadRoomSessions()
+    const presenceRefreshTimer = window.setTimeout(loadRoomSessions, 6_000)
     return () => {
       active = false
+      window.clearTimeout(presenceRefreshTimer)
     }
   }, [])
 

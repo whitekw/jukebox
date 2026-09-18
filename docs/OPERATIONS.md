@@ -17,6 +17,7 @@
 | `DATABASE_PATH` | `./data/jukebox.sqlite` | 선택 | SQLite 파일 경로 |
 | `ROOM_TTL_HOURS` | `24` | 선택 | 방 고정 수명(시간) |
 | `EMPTY_ROOM_TTL_HOURS` | `1` | 선택 | 인증된 접속자가 없는 방의 보존 시간 |
+| `PARTICIPANT_LEAVE_GRACE_MS` | `5000` | 선택 | 마지막 연결 종료 후 참여자를 오프라인 처리하기까지의 유예 시간(ms) |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
 | `YOUTUBE_DEFAULT_REGION` | `KR` | 선택 | 국가 감지 실패 또는 차트 미지원 시 기본 지역 |
 | `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
