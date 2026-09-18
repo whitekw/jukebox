@@ -41,6 +41,7 @@ function createDatabase(databasePath = ':memory:') {
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL,
       nickname TEXT NOT NULL,
+      is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1)),
       created_at INTEGER NOT NULL,
       UNIQUE(room_id, token_hash)
     );
@@ -117,6 +118,19 @@ function createDatabase(databasePath = ':memory:') {
   if (!roomColumns.has('empty_since')) {
     db.exec('ALTER TABLE rooms ADD COLUMN empty_since INTEGER')
   }
+
+  const participantColumns = new Set(
+    db
+      .prepare('PRAGMA table_info(participants)')
+      .all()
+      .map((column) => column.name),
+  )
+  const shouldMigrateManagers = !participantColumns.has('is_manager')
+  if (shouldMigrateManagers) {
+    db.exec(
+      'ALTER TABLE participants ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1))',
+    )
+  }
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
   )
@@ -127,20 +141,54 @@ function createDatabase(databasePath = ':memory:') {
      WHERE playback_anchor_at = 0 AND current_song_id IS NOT NULL`,
   ).run(Date.now())
 
-  db.exec(`
-    UPDATE rooms
-    SET manager_participant_id = (
-      SELECT participants.id
-      FROM participants
-      WHERE participants.room_id = rooms.id
-      ORDER BY participants.created_at ASC, participants.rowid ASC
-      LIMIT 1
-    )
-    WHERE manager_participant_id IS NULL
-      AND EXISTS (
-        SELECT 1 FROM participants WHERE participants.room_id = rooms.id
+  if (shouldMigrateManagers) {
+    db.exec(`
+      UPDATE rooms
+      SET manager_participant_id = (
+        SELECT participants.id
+        FROM participants
+        WHERE participants.room_id = rooms.id
+        ORDER BY participants.created_at ASC, participants.rowid ASC
+        LIMIT 1
+      )
+      WHERE manager_participant_id IS NULL
+        AND EXISTS (
+          SELECT 1 FROM participants WHERE participants.room_id = rooms.id
+        );
+
+      UPDATE participants
+      SET is_manager = 1
+      WHERE id IN (
+        SELECT manager_participant_id
+        FROM rooms
+        WHERE manager_participant_id IS NOT NULL
       );
-  `)
+
+      UPDATE participants
+      SET is_manager = 1
+      WHERE id IN (
+        SELECT (
+          SELECT candidate.id
+          FROM participants AS candidate
+          WHERE candidate.room_id = rooms.id
+          ORDER BY candidate.created_at ASC, candidate.rowid ASC
+          LIMIT 1
+        )
+        FROM rooms
+        WHERE EXISTS (
+          SELECT 1 FROM participants WHERE participants.room_id = rooms.id
+        )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM participants
+            WHERE participants.room_id = rooms.id
+              AND participants.is_manager = 1
+          )
+      );
+
+      UPDATE rooms SET manager_participant_id = NULL;
+    `)
+  }
 
   return db
 }

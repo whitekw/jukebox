@@ -6,7 +6,7 @@ const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 const { createDatabase } = require('../src/db')
 
-test('migrates existing rooms and assigns the earliest participant as manager', () => {
+test('migrates the earliest legacy participant to a manager', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
   let db
@@ -71,6 +71,10 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
       .prepare('PRAGMA table_info(rooms)')
       .all()
       .map((column) => column.name)
+    const participantColumns = db
+      .prepare('PRAGMA table_info(participants)')
+      .all()
+      .map((column) => column.name)
     const migratedRoom = db
       .prepare(
         `SELECT manager_participant_id, host_volume, playback_paused,
@@ -80,8 +84,12 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
          FROM rooms WHERE id = ?`,
       )
       .get('room-1')
+    const migratedParticipant = db
+      .prepare('SELECT is_manager FROM participants WHERE id = ?')
+      .get('participant-1')
 
     assert.ok(columns.includes('manager_participant_id'))
+    assert.ok(participantColumns.includes('is_manager'))
     assert.ok(columns.includes('host_volume'))
     assert.ok(columns.includes('playback_paused'))
     assert.ok(columns.includes('playback_blocked'))
@@ -91,7 +99,7 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     assert.ok(columns.includes('playback_pending'))
     assert.ok(columns.includes('empty_since'))
     assert.ok(columns.includes('playback_revision'))
-    assert.equal(migratedRoom.manager_participant_id, 'participant-1')
+    assert.equal(migratedRoom.manager_participant_id, null)
     assert.equal(migratedRoom.host_volume, 100)
     assert.equal(migratedRoom.playback_paused, 0)
     assert.equal(migratedRoom.playback_blocked, 0)
@@ -101,6 +109,19 @@ test('migrates existing rooms and assigns the earliest participant as manager', 
     assert.equal(migratedRoom.playback_pending, 0)
     assert.equal(migratedRoom.playback_revision, 0)
     assert.equal(migratedRoom.empty_since, null)
+    assert.equal(migratedParticipant.is_manager, 1)
+
+    db.prepare('UPDATE participants SET is_manager = 0 WHERE id = ?').run(
+      'participant-1',
+    )
+    db.close()
+    db = createDatabase(databasePath)
+    assert.equal(
+      db
+        .prepare('SELECT is_manager FROM participants WHERE id = ?')
+        .get('participant-1').is_manager,
+      0,
+    )
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

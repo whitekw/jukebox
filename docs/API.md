@@ -14,7 +14,7 @@
 | 헤더 | 발급 시점 | 용도 |
 | --- | --- | --- |
 | `x-host-token` | 방 생성 응답 | 호스트 제어, 자동재생 차단 상태 보고 |
-| `x-participant-token` | 방 참여 응답 | 참여자 확인, 곡 추가, 매니저 제어 및 이전 |
+| `x-participant-token` | 방 참여 응답 | 참여자 확인, 곡 추가, 매니저 제어 및 지정 |
 
 두 토큰은 브라우저 `localStorage`에 다음 키로 저장됩니다.
 
@@ -23,7 +23,7 @@ jukebox:host:{ROOM_CODE}
 jukebox:participant:{ROOM_CODE}
 ```
 
-`controller` 권한이 필요한 API는 올바른 호스트 토큰 또는 현재 매니저의 참여자 토큰 중 하나를 받습니다.
+`controller` 권한이 필요한 API는 올바른 호스트 토큰 또는 매니저 중 한 명의 참여자 토큰을 받습니다.
 
 ## 3. 공통 데이터 형식
 
@@ -33,7 +33,6 @@ jukebox:participant:{ROOM_CODE}
 type RoomState = {
   code: string
   expiresAt: number
-  managerParticipantId: string | null
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -99,7 +98,7 @@ type VideoSearchResult = {
 | DELETE | `/api/rooms/:code/songs/:songId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
-| POST | `/api/rooms/:code/manager/transfer` | 매니저 | 변경 | `RoomState` |
+| PATCH | `/api/rooms/:code/managers/:participantId` | 매니저 | 변경 | `RoomState` |
 
 요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다.
 
@@ -304,15 +303,15 @@ position = playbackPositionSeconds
 
 - `hostVolume`: 정수 `0..100`
 
-### `POST /api/rooms/:code/manager/transfer`
+### `PATCH /api/rooms/:code/managers/:participantId`
 
-필수 헤더: 현재 매니저의 `x-participant-token`
+필수 헤더: 관리자 중 한 명의 `x-participant-token`
 
 ```json
-{ "targetParticipantId": "uuid" }
+{ "isManager": true }
 ```
 
-대상은 같은 방에 존재하고 현재 매니저와 다른 참여자여야 합니다.
+같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 최소 한 명의 관리자는 반드시 유지됩니다.
 
 ## 9. Socket.IO 계약
 
@@ -352,7 +351,7 @@ socket.emit(
 
 ### 서버 → 클라이언트: `room:state`
 
-payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생 상태, 방 설정, 매니저 이전 후 해당 방의 모든 구독자에게 전달됩니다.
+payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생 상태, 방 설정, 매니저 변경 후 해당 방의 모든 구독자에게 전달됩니다.
 
 ## 10. 오류 계약
 
@@ -372,7 +371,7 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/권한 이전 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `ALREADY_MANAGER` |
+| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE`, `LAST_MANAGER_REQUIRED` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

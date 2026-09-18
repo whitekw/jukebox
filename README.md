@@ -11,7 +11,8 @@
 - YouTube 키워드 검색(최대 15개)
 - YouTube, YouTube Music, `youtu.be`, Shorts URL 직접 추가
 - 중복 영상과 임베드 불가 영상 차단
-- 호스트 전용 건너뛰기, 순서 변경, 삭제
+- 공동 관리자의 재생·정지, 건너뛰기, 순서 변경, 삭제
+- 관리자 추가·해제와 전원 오프라인 시 자동 승격
 - YouTube 공식 IFrame Player 자동 재생 및 종료 후 다음 곡 처리
 - Socket.IO 룸 단위 실시간 동기화
 - SQLite 영속 저장과 만료 방 정리

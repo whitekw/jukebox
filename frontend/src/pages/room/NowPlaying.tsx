@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react'
 import type { Song } from '../../types'
-import { MusicIcon, SkipIcon } from '../../components/Icons'
+import {
+  MusicIcon,
+  PauseIcon,
+  PlayIcon,
+  SkipIcon,
+} from '../../components/Icons'
 import { useI18n } from '../../i18n-context'
 import { buttonStyles, cn, panelStyles, vinylStyles } from '../../styles'
 
@@ -10,12 +15,14 @@ export const NowPlaying = ({
   blocked,
   player,
   onAdvance,
+  onPlaybackToggle,
 }: {
   song: Song | null
   paused: boolean
   blocked: boolean
   player?: ReactNode
   onAdvance?: () => void
+  onPlaybackToggle?: () => void
 }) => {
   const { t } = useI18n()
 
@@ -55,11 +62,27 @@ export const NowPlaying = ({
           <div className="mt-[13px] flex items-end justify-between gap-3 md:gap-4">
             <div className="flex min-w-0 items-center gap-3 md:gap-4">
               {!player && (
-                <img
-                  className="aspect-video w-[108px] shrink-0 rounded-[10px] object-cover md:w-[142px]"
-                  src={song.thumbnailUrl}
-                  alt=""
-                />
+                <div className="relative aspect-video w-[108px] shrink-0 overflow-hidden rounded-[10px] md:w-[142px]">
+                  <img
+                    className="size-full object-cover"
+                    src={song.thumbnailUrl}
+                    alt=""
+                  />
+                  {onPlaybackToggle && (
+                    <button
+                      className="absolute inset-0 grid place-items-center bg-black/35 text-white transition-colors hover:bg-black/50 focus-visible:outline-2 focus-visible:outline-purple-light"
+                      type="button"
+                      aria-label={
+                        paused ? t('manager.play') : t('manager.pause')
+                      }
+                      onClick={onPlaybackToggle}
+                    >
+                      <span className="grid size-10 place-items-center rounded-full bg-black/65 shadow-lg">
+                        {paused ? <PlayIcon size={19} /> : <PauseIcon size={19} />}
+                      </span>
+                    </button>
+                  )}
+                </div>
               )}
               <div className="min-w-0">
                 <h1 className="mb-[5px] overflow-hidden text-ellipsis whitespace-nowrap text-[17px] md:text-[22px]">

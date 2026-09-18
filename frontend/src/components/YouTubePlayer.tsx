@@ -383,7 +383,11 @@ export function YouTubePlayer({
     const player = playerRef.current
     const session = playbackSessionRef.current
     if (player && session.videoId === videoIdRef.current && session.started) {
-      alignPlayer(player, true)
+      // 새 곡이 실제로 재생되었다는 확인 응답도 revision을 변경한다.
+      // 이때 현재 위치가 이미 서버 타임라인과 맞는데 강제로 seek하면 곡의
+      // 첫 부분이 잠깐 재생된 뒤 다시 들리는 현상이 생기므로, 실제 drift가
+      // 허용 범위를 넘었을 때만 위치를 보정한다.
+      alignPlayer(player, false)
     }
   }, [synchronizationRevision])
 
@@ -486,8 +490,16 @@ export function YouTubePlayer({
                 onPlaybackBlockedChangeRef.current?.(false)
               }
               if (pausedRef.current) {
-                requestedPausedStateRef.current = true
-                event.target.pauseVideo()
+                if (
+                  requestedPausedStateRef.current === true ||
+                  !onPausedChangeRef.current
+                ) {
+                  requestedPausedStateRef.current = true
+                  event.target.pauseVideo()
+                  return
+                }
+                requestedPausedStateRef.current = false
+                onPausedChangeRef.current(false)
                 return
               }
             }

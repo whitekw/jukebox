@@ -74,7 +74,7 @@ function createRoomService(db, options = {}) {
 
   function requireManager(room, token) {
     const participant = requireParticipant(room, token)
-    if (participant.id !== room.manager_participant_id) {
+    if (!participant.is_manager) {
       throw new AppError(403, '관리 권한이 없습니다.', 'MANAGER_FORBIDDEN')
     }
     return participant
@@ -108,7 +108,7 @@ function createRoomService(db, options = {}) {
         normalizedCredentials.participantToken,
       )
       if (
-        participant.id === room.manager_participant_id ||
+        participant.is_manager ||
         participant.id === addedByParticipantId
       ) {
         return
@@ -204,7 +204,7 @@ function createRoomService(db, options = {}) {
       .all(room.id)
     const participants = db
       .prepare(
-        `SELECT id, nickname
+        `SELECT id, nickname, is_manager
          FROM participants
          WHERE room_id = ?
          ORDER BY created_at ASC, rowid ASC`,
@@ -214,7 +214,6 @@ function createRoomService(db, options = {}) {
     return {
       code: room.code,
       expiresAt: room.expires_at,
-      managerParticipantId: room.manager_participant_id,
       hostVolume: room.host_volume,
       playbackMode: room.playback_mode,
       playbackPaused: Boolean(room.playback_paused),
@@ -227,7 +226,7 @@ function createRoomService(db, options = {}) {
       participants: participants.map((participant) => ({
         id: participant.id,
         nickname: participant.nickname,
-        isManager: participant.id === room.manager_participant_id,
+        isManager: Boolean(participant.is_manager),
       })),
       currentSong: serializeSong(current),
       queue: queue.map(serializeSong),
@@ -284,28 +283,31 @@ function createRoomService(db, options = {}) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
       const participantToken = createToken()
+      const isManager = !db
+        .prepare(
+          'SELECT 1 FROM participants WHERE room_id = ? AND is_manager = 1 LIMIT 1',
+        )
+        .get(room.id)
       const participant = {
         id: crypto.randomUUID(),
         roomId: room.id,
         tokenHash: hashToken(participantToken),
         nickname: normalizedNickname,
+        isManager,
         createdAt: now(),
       }
       db.prepare(
-        `INSERT INTO participants (id, room_id, token_hash, nickname, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO participants (
+          id, room_id, token_hash, nickname, is_manager, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
       ).run(
         participant.id,
         participant.roomId,
         participant.tokenHash,
         participant.nickname,
+        participant.isManager ? 1 : 0,
         participant.createdAt,
       )
-      db.prepare(
-        `UPDATE rooms
-         SET manager_participant_id = COALESCE(manager_participant_id, ?)
-         WHERE id = ?`,
-      ).run(participant.id, room.id)
 
       const state = getPublicRoom(code)
       return {
@@ -313,7 +315,7 @@ function createRoomService(db, options = {}) {
         participant: {
           id: participant.id,
           nickname: participant.nickname,
-          isManager: state.managerParticipantId === participant.id,
+          isManager: participant.isManager,
         },
         room: state,
       }
@@ -326,7 +328,7 @@ function createRoomService(db, options = {}) {
     return {
       id: participant.id,
       nickname: participant.nickname,
-      isManager: participant.id === room.manager_participant_id,
+      isManager: Boolean(participant.is_manager),
     }
   }
 
@@ -346,7 +348,7 @@ function createRoomService(db, options = {}) {
         ? {
             id: participant.id,
             nickname: participant.nickname,
-            isManager: participant.id === room.manager_participant_id,
+            isManager: Boolean(participant.is_manager),
           }
         : null,
       room: getPublicRoom(code),
@@ -734,33 +736,54 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function transferManager(code, participantToken, targetParticipantId) {
+  function setManager(code, participantToken, targetParticipantId, isManager) {
+    if (typeof isManager !== 'boolean') {
+      throw new AppError(
+        400,
+        '관리자 상태가 올바르지 않습니다.',
+        'INVALID_MANAGER_STATE',
+      )
+    }
+
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      const manager = requireManager(room, participantToken)
+      requireManager(room, participantToken)
       const target = db
         .prepare(
-          'SELECT id FROM participants WHERE id = ? AND room_id = ?',
+          'SELECT id, is_manager FROM participants WHERE id = ? AND room_id = ?',
         )
         .get(String(targetParticipantId ?? ''), room.id)
       if (!target) {
         throw new AppError(
           404,
-          '권한을 넘길 참여자를 찾지 못했습니다.',
+          '참여자를 찾지 못했습니다.',
           'PARTICIPANT_NOT_FOUND',
         )
       }
-      if (target.id === manager.id) {
-        throw new AppError(
-          400,
-          '이미 관리 권한을 가진 참여자입니다.',
-          'ALREADY_MANAGER',
+      if (Boolean(target.is_manager) === isManager) {
+        return getPublicRoom(code)
+      }
+
+      if (!isManager) {
+        const managerCount = Number(
+          db
+            .prepare(
+              'SELECT COUNT(*) AS count FROM participants WHERE room_id = ? AND is_manager = 1',
+            )
+            .get(room.id).count,
         )
+        if (managerCount <= 1) {
+          throw new AppError(
+            409,
+            '최소 한 명의 관리자가 필요합니다.',
+            'LAST_MANAGER_REQUIRED',
+          )
+        }
       }
 
       db.prepare(
-        'UPDATE rooms SET manager_participant_id = ? WHERE id = ?',
-      ).run(target.id, room.id)
+        'UPDATE participants SET is_manager = ? WHERE id = ? AND room_id = ?',
+      ).run(isManager ? 1 : 0, target.id, room.id)
       return getPublicRoom(code)
     })
   }
@@ -773,26 +796,32 @@ function createRoomService(db, options = {}) {
           String(participantId),
         ),
       )
-      if (
-        onlineIds.size === 0 ||
-        onlineIds.has(room.manager_participant_id)
-      ) {
-        return getPublicRoom(code)
-      }
+      if (onlineIds.size === 0) return getPublicRoom(code)
 
-      const nextManager = db
+      const participants = db
         .prepare(
-          `SELECT id
+          `SELECT id, is_manager
            FROM participants
            WHERE room_id = ?
            ORDER BY created_at ASC, rowid ASC`,
         )
         .all(room.id)
-        .find((participant) => onlineIds.has(participant.id))
+      if (
+        participants.some(
+          (participant) =>
+            participant.is_manager && onlineIds.has(participant.id),
+        )
+      ) {
+        return getPublicRoom(code)
+      }
+
+      const nextManager = participants.find((participant) =>
+        onlineIds.has(participant.id),
+      )
       if (!nextManager) return getPublicRoom(code)
 
       db.prepare(
-        'UPDATE rooms SET manager_participant_id = ? WHERE id = ?',
+        'UPDATE participants SET is_manager = 1 WHERE id = ? AND room_id = ?',
       ).run(nextManager.id, room.id)
       return getPublicRoom(code)
     })
@@ -854,7 +883,7 @@ function createRoomService(db, options = {}) {
     removeSong,
     reorderSong,
     updateRoomSettings,
-    transferManager,
+    setManager,
     ensureOnlineManager,
     markRoomOccupied,
     markRoomEmpty,
