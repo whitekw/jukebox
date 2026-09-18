@@ -1,6 +1,6 @@
 services:
   jukebox:
-    image: "ghcr.io/whitekw/jukebox:sha-21789206489101765a63e1bc159040f7ba6174dd"
+    image: "ghcr.io/whitekw/jukebox:sha-5465e2a75a66eaf083e106ffa2d7214eb47ce521"
     restart: unless-stopped
     init: true
     environment:
