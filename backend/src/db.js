@@ -68,6 +68,21 @@ function createDatabase(databasePath = ':memory:') {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS room_feed_entries (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT NOT NULL UNIQUE,
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      entry_type TEXT NOT NULL CHECK(entry_type IN ('message', 'system')),
+      participant_id TEXT REFERENCES participants(id) ON DELETE SET NULL,
+      nickname TEXT,
+      actor_type TEXT NOT NULL DEFAULT 'participant'
+        CHECK(actor_type IN ('participant', 'host', 'system')),
+      content TEXT,
+      event_type TEXT,
+      event_data TEXT,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS rooms_by_expiry ON rooms(expires_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
@@ -77,6 +92,23 @@ function createDatabase(databasePath = ':memory:') {
       WHERE status IN ('queued', 'current');
     CREATE INDEX IF NOT EXISTS chat_messages_by_room_created_at
       ON chat_messages(room_id, created_at);
+    CREATE INDEX IF NOT EXISTS room_feed_entries_by_room_sequence
+      ON room_feed_entries(room_id, sequence);
+  `)
+
+  // 채팅 피드 도입 전에 저장된 메시지를 보존한다. 기존 테이블은 이전
+  // 버전으로 롤백할 때를 위해 그대로 두고 이후 쓰기는 통합 피드에만 한다.
+  db.exec(`
+    INSERT OR IGNORE INTO room_feed_entries (
+      id, room_id, entry_type, participant_id, nickname, actor_type,
+      content, created_at
+    )
+    SELECT chat_messages.id, chat_messages.room_id, 'message',
+           chat_messages.participant_id, participants.nickname, 'participant',
+           chat_messages.content, chat_messages.created_at
+    FROM chat_messages
+    JOIN participants ON participants.id = chat_messages.participant_id
+    ORDER BY chat_messages.created_at ASC, chat_messages.rowid ASC;
   `)
 
   const roomColumns = new Set(

@@ -11,7 +11,7 @@ function createRoomPresence(options = {}) {
   }
 
   function connect(code, participantId, socketId) {
-    if (!participantId) return
+    if (!participantId) return false
 
     const key = participantKey(code, participantId)
     const pendingTimer = pendingOfflineTimers.get(key)
@@ -30,7 +30,9 @@ function createRoomPresence(options = {}) {
       participantSockets = new Set()
       roomParticipants.set(participantId, participantSockets)
     }
+    const becameOnline = participantSockets.size === 0 && !pendingTimer
     participantSockets.add(socketId)
+    return becameOnline
   }
 
   function disconnect(code, participantId, socketId) {

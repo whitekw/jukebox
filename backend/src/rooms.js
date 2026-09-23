@@ -6,6 +6,18 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
 const CHAT_MESSAGE_MAX_LENGTH = 300
 const CHAT_HISTORY_LIMIT = 100
+const ROOM_EVENT_TYPES = new Set([
+  'song_added',
+  'song_skipped',
+  'song_removed',
+  'queue_reordered',
+  'playback_paused',
+  'playback_resumed',
+  'participant_joined',
+  'participant_left',
+  'manager_added',
+  'manager_removed',
+])
 
 function createToken() {
   return crypto.randomBytes(32).toString('base64url')
@@ -172,13 +184,25 @@ function createRoomService(db, options = {}) {
     }
   }
 
-  function serializeChatMessage(row) {
+  function serializeFeedEntry(row) {
+    let eventData = {}
+    if (row.event_data) {
+      try {
+        eventData = JSON.parse(row.event_data)
+      } catch {
+        eventData = {}
+      }
+    }
     return {
       id: row.id,
-      sequence: Number(row.message_order),
-      participantId: row.participant_id,
-      nickname: row.nickname,
-      content: row.content,
+      sequence: Number(row.sequence),
+      type: row.entry_type,
+      participantId: row.participant_id ?? null,
+      nickname: row.nickname ?? null,
+      actorType: row.actor_type,
+      ...(row.entry_type === 'message'
+        ? { content: row.content }
+        : { eventType: row.event_type, data: eventData }),
       createdAt: Number(row.created_at),
     }
   }
@@ -189,20 +213,16 @@ function createRoomService(db, options = {}) {
     return db
       .prepare(
         `SELECT * FROM (
-           SELECT chat_messages.id, chat_messages.participant_id,
-                  participants.nickname, chat_messages.content,
-                  chat_messages.created_at,
-                  chat_messages.rowid AS message_order
-           FROM chat_messages
-           JOIN participants ON participants.id = chat_messages.participant_id
-           WHERE chat_messages.room_id = ?
-           ORDER BY chat_messages.created_at DESC, chat_messages.rowid DESC
+           SELECT *
+           FROM room_feed_entries
+           WHERE room_id = ?
+           ORDER BY sequence DESC
            LIMIT ?
          )
-         ORDER BY created_at ASC, message_order ASC`,
+         ORDER BY sequence ASC`,
       )
       .all(room.id, CHAT_HISTORY_LIMIT)
-      .map(serializeChatMessage)
+      .map(serializeFeedEntry)
   }
 
   function addChatMessage(code, participantToken, content) {
@@ -230,20 +250,85 @@ function createRoomService(db, options = {}) {
         createdAt: now(),
       }
       const result = db.prepare(
-        `INSERT INTO chat_messages (
-           id, room_id, participant_id, content, created_at
-         ) VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO room_feed_entries (
+           id, room_id, entry_type, participant_id, nickname, actor_type,
+           content, created_at
+         ) VALUES (?, ?, 'message', ?, ?, 'participant', ?, ?)`,
       ).run(
         message.id,
         room.id,
         message.participantId,
+        message.nickname,
         message.content,
         message.createdAt,
       )
       return {
         ...message,
+        type: 'message',
+        actorType: 'participant',
         sequence: Number(result.lastInsertRowid),
       }
+    })
+  }
+
+  function addRoomEvent(code, eventType, actor = {}, data = {}) {
+    if (!ROOM_EVENT_TYPES.has(eventType)) {
+      throw new Error(`Unsupported room event type: ${eventType}`)
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      let participant = null
+      let actorType = 'system'
+
+      if (actor.participantToken) {
+        participant = requireParticipant(room, actor.participantToken)
+        actorType = 'participant'
+      } else if (actor.participantId) {
+        participant = db
+          .prepare('SELECT * FROM participants WHERE id = ? AND room_id = ?')
+          .get(String(actor.participantId), room.id)
+        if (!participant) {
+          throw new AppError(
+            404,
+            '참여자를 찾지 못했습니다.',
+            'PARTICIPANT_NOT_FOUND',
+          )
+        }
+        actorType = 'participant'
+      } else if (actor.hostToken) {
+        if (!hasHostAccess(room, actor.hostToken)) {
+          throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
+        }
+        actorType = 'host'
+      }
+
+      const entry = {
+        id: crypto.randomUUID(),
+        type: 'system',
+        participantId: participant?.id ?? null,
+        nickname: participant?.nickname ?? null,
+        actorType,
+        eventType,
+        data: data && typeof data === 'object' ? data : {},
+        createdAt: now(),
+      }
+      const result = db.prepare(
+        `INSERT INTO room_feed_entries (
+           id, room_id, entry_type, participant_id, nickname, actor_type,
+           event_type, event_data, created_at
+         ) VALUES (?, ?, 'system', ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        entry.id,
+        room.id,
+        entry.participantId,
+        entry.nickname,
+        entry.actorType,
+        entry.eventType,
+        JSON.stringify(entry.data),
+        entry.createdAt,
+      )
+      return { ...entry, sequence: Number(result.lastInsertRowid) }
     })
   }
 
@@ -958,6 +1043,7 @@ function createRoomService(db, options = {}) {
     getRoomSession,
     listChatMessages,
     addChatMessage,
+    addRoomEvent,
     hasActiveSession,
     getPresenceIdentity,
     addSong,

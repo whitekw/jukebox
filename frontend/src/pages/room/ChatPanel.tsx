@@ -8,7 +8,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { CloseIcon, MessageCircleIcon } from '../../components/Icons'
-import { getErrorMessage, useI18n } from '../../i18n-context'
+import {
+  getErrorMessage,
+  useI18n,
+  type Translate,
+} from '../../i18n-context'
 import {
   buttonStyles,
   cn,
@@ -17,6 +21,8 @@ import {
   sectionKickerStyles,
 } from '../../styles'
 import type { ChatMessage } from '../../types'
+
+type SystemChatMessage = Extract<ChatMessage, { type: 'system' }>
 
 type ChatPanelProps = {
   messages: ChatMessage[]
@@ -97,6 +103,43 @@ function getInitialWindowRect() {
   }
 
   return fallback
+}
+
+function formatSystemMessage(message: SystemChatMessage, t: Translate) {
+  const actor =
+    message.actorType === 'host'
+      ? t('chat.actor.host')
+      : message.actorType === 'participant' && message.nickname
+        ? message.nickname
+        : t('chat.actor.system')
+  const title = String(message.data.title ?? '')
+  const target = String(message.data.target ?? '')
+  const position = Number(message.data.position ?? 0)
+
+  switch (message.eventType) {
+    case 'song_added':
+      return t('chat.event.songAdded', { actor, title })
+    case 'song_skipped':
+      return t('chat.event.songSkipped', { actor, title })
+    case 'song_removed':
+      return t('chat.event.songRemoved', { actor, title })
+    case 'queue_reordered':
+      return t('chat.event.queueReordered', { actor, title, position })
+    case 'playback_paused':
+      return t('chat.event.playbackPaused', { actor })
+    case 'playback_resumed':
+      return t('chat.event.playbackResumed', { actor })
+    case 'participant_joined':
+      return t('chat.event.participantJoined', { actor })
+    case 'participant_left':
+      return t('chat.event.participantLeft', { actor })
+    case 'manager_added':
+      return message.data.automatic
+        ? t('chat.event.managerAutoAdded', { target })
+        : t('chat.event.managerAdded', { actor, target })
+    case 'manager_removed':
+      return t('chat.event.managerRemoved', { actor, target })
+  }
 }
 
 export function ChatPanel({
@@ -352,6 +395,26 @@ export function ChatPanel({
                 </div>
               ) : (
                 messages.map((message) => {
+                  if (message.type === 'system') {
+                    return (
+                      <div
+                        key={message.id}
+                        className="flex w-full items-center gap-2 py-1 text-[11px] leading-4 text-dim"
+                      >
+                        <span className="h-px min-w-3 flex-1 bg-line/70" />
+                        <p className="m-0 max-w-[78%] text-center [overflow-wrap:anywhere]">
+                          {formatSystemMessage(message, t)}
+                          <time
+                            className="ml-1.5 whitespace-nowrap text-[9px] text-dim/70"
+                            dateTime={new Date(message.createdAt).toISOString()}
+                          >
+                            {timeFormatter.format(message.createdAt)}
+                          </time>
+                        </p>
+                        <span className="h-px min-w-3 flex-1 bg-line/70" />
+                      </div>
+                    )
+                  }
                   const isMine = message.participantId === currentParticipantId
                   return (
                     <article

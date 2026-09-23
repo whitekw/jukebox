@@ -58,8 +58,10 @@ test('stores and returns the latest room chat messages for participants', () => 
   assert.deepEqual(first, {
     id: first.id,
     sequence: first.sequence,
+    type: 'message',
     participantId: alice.participant.id,
     nickname: 'Alice',
+    actorType: 'participant',
     content: '안녕하세요',
     createdAt: 1_000,
   })
@@ -101,6 +103,67 @@ test('stores and returns the latest room chat messages for participants', () => 
   assert.equal(latestMessages.length, 100)
   assert.equal(latestMessages[0].content, 'message-1')
   assert.equal(latestMessages.at(-1).content, 'message-100')
+
+  db.close()
+})
+
+test('stores structured room events in the chat timeline', () => {
+  const db = createDatabase()
+  let currentTime = 2_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+
+  const joined = rooms.addRoomEvent(
+    created.code,
+    'participant_joined',
+    { participantId: alice.participant.id },
+  )
+  currentTime += 1
+  const added = rooms.addRoomEvent(
+    created.code,
+    'song_added',
+    { participantToken: alice.participantToken },
+    { title: 'One' },
+  )
+  currentTime += 1
+  const paused = rooms.addRoomEvent(
+    created.code,
+    'playback_paused',
+    { hostToken: created.hostToken },
+  )
+  currentTime += 1
+  const promoted = rooms.addRoomEvent(
+    created.code,
+    'manager_added',
+    {},
+    { target: 'Alice', automatic: true },
+  )
+
+  assert.deepEqual(joined, {
+    id: joined.id,
+    sequence: joined.sequence,
+    type: 'system',
+    participantId: alice.participant.id,
+    nickname: 'Alice',
+    actorType: 'participant',
+    eventType: 'participant_joined',
+    data: {},
+    createdAt: 2_000,
+  })
+  assert.ok(added.sequence > joined.sequence)
+  assert.equal(added.data.title, 'One')
+  assert.equal(paused.actorType, 'host')
+  assert.equal(paused.nickname, null)
+  assert.equal(promoted.actorType, 'system')
+  assert.deepEqual(
+    rooms.listChatMessages(created.code, alice.participantToken),
+    [joined, added, paused, promoted],
+  )
+  assert.throws(
+    () => rooms.addRoomEvent(created.code, 'unknown_event'),
+    /Unsupported room event type/,
+  )
 
   db.close()
 })

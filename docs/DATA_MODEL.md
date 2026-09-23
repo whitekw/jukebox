@@ -8,9 +8,9 @@
 erDiagram
     ROOMS ||--o{ PARTICIPANTS : contains
     ROOMS ||--o{ SONGS : owns
-    ROOMS ||--o{ CHAT_MESSAGES : owns
+    ROOMS ||--o{ ROOM_FEED_ENTRIES : owns
     PARTICIPANTS ||--o{ SONGS : requests
-    PARTICIPANTS ||--o{ CHAT_MESSAGES : writes
+    PARTICIPANTS o|--o{ ROOM_FEED_ENTRIES : acts
 
     ROOMS {
         text id PK
@@ -55,11 +55,17 @@ erDiagram
         integer created_at
     }
 
-    CHAT_MESSAGES {
-        text id PK
+    ROOM_FEED_ENTRIES {
+        integer sequence PK
+        text id UK
         text room_id FK
-        text participant_id FK
+        text entry_type
+        text participant_id FK "nullable"
+        text nickname
+        text actor_type
         text content
+        text event_type
+        text event_data
         integer created_at
     }
 ```
@@ -134,17 +140,27 @@ erDiagram
 
 부분 UNIQUE 인덱스가 애플리케이션의 사전 중복 검사와 별개로 활성 곡 중복을 DB 수준에서도 방지합니다. 이미 `played` 또는 `removed`인 영상은 같은 방에 다시 추가할 수 있습니다.
 
-## 5. `chat_messages`
+## 5. `room_feed_entries`
 
 | 컬럼 | 타입/제약 | 의미 |
 | --- | --- | --- |
-| `id` | TEXT PK | 메시지 UUID |
+| `sequence` | INTEGER PK AUTOINCREMENT | 채팅과 활동 로그를 함께 정렬하는 전역 순번 |
+| `id` | TEXT NOT NULL UNIQUE | 피드 항목 UUID |
 | `room_id` | TEXT FK → `rooms.id`, ON DELETE CASCADE | 소속 방 |
-| `participant_id` | TEXT FK → `participants.id`, ON DELETE CASCADE | 작성 참여자 |
-| `content` | TEXT NOT NULL | 공백 제거 후 `1..300`자인 일반 텍스트 |
-| `created_at` | INTEGER NOT NULL | 작성 시각 epoch ms |
+| `entry_type` | TEXT CHECK | `message` 또는 `system` |
+| `participant_id` | TEXT nullable FK → `participants.id`, ON DELETE SET NULL | 메시지 작성자 또는 동작 수행 참여자 |
+| `nickname` | TEXT nullable | 로그가 생성될 당시 참여자 닉네임 스냅샷 |
+| `actor_type` | TEXT CHECK | `participant`, `host`, `system` |
+| `content` | TEXT nullable | 사용자 메시지 본문 |
+| `event_type` | TEXT nullable | 구조화된 방 활동 종류 |
+| `event_data` | TEXT nullable | 곡명, 대상 참여자, 이동 위치 등의 JSON |
+| `created_at` | INTEGER NOT NULL | 생성 시각 epoch ms |
 
-`chat_messages_by_room_created_at(room_id, created_at)` 인덱스를 사용합니다. 조회는 최신 100개를 선택한 뒤 생성 시각과 SQLite `rowid` 순으로 반환하며, API의 `sequence`는 이 `rowid`를 숫자로 직렬화한 값입니다. 방 삭제 시 메시지도 함께 삭제됩니다.
+`room_feed_entries_by_room_sequence(room_id, sequence)` 인덱스를 사용합니다. 조회는 최신 100개를 선택한 뒤 `sequence` 오름차순으로 반환합니다. `sequence`는 일반 메시지와 시스템 로그에 공통으로 발급되므로 같은 밀리초에 생성되어도 순서가 보존됩니다.
+
+시스템 로그 종류는 건너뛰기·대기열 삭제·순서 변경, 전체 일시정지·재개, 참여자 입장·퇴장, 관리자 지정·해제입니다. 곡 추가는 대기열에 신청자가 표시되므로 새 활동 로그를 만들지 않습니다. 표시 문장은 DB에 저장하지 않고 `event_type`과 `event_data`를 프런트에서 현재 언어에 맞게 번역합니다.
+
+`chat_messages`는 이전 버전의 채팅을 마이그레이션하기 위해 유지하는 레거시 테이블입니다. 서버 시작 시 아직 통합 피드에 없는 기존 메시지를 `room_feed_entries`로 복사하며, 새 메시지는 통합 피드에만 기록합니다.
 
 ## 6. 곡 상태 전이
 
@@ -193,6 +209,8 @@ stateDiagram-v2
 
 - 유효한 참여자 토큰이 있는 사용자만 기록을 조회하거나 메시지를 전송할 수 있습니다.
 - 메시지는 일반 텍스트로 저장하며 앞뒤 공백을 제거한 뒤 `1..300`자를 검증합니다.
+- 사용자 메시지와 시스템 활동 로그는 하나의 증가 순번을 공유합니다.
+- 로그의 참여자가 사라져도 당시 닉네임 스냅샷과 로그 내용은 유지합니다.
 - 삭제 기능과 채팅 전용 요청 제한은 제공하지 않습니다.
 
 ## 8. 트랜잭션 경계
@@ -208,6 +226,7 @@ stateDiagram-v2
 - 매니저 추가·해제
 - 온라인 매니저 부재 시 자동 승격
 - 채팅 메시지 추가
+- 시스템 활동 로그 추가
 
 `BEGIN IMMEDIATE`는 쓰기 예약 잠금을 먼저 획득하므로 한도 및 중복 검사 뒤 삽입 사이의 동시 쓰기 경쟁을 줄입니다. 현재 모든 DB 작업은 단일 Node.js 프로세스 안에서 동기 실행됩니다.
 
@@ -228,6 +247,8 @@ stateDiagram-v2
 
 기존 `participants` 테이블에 `is_manager`가 없으면 컬럼을 추가하고, 레거시 `manager_participant_id`가 가리키던 참여자를 관리자로 변환합니다. 레거시 포인터가 없는 방은 생성 시각이 가장 빠른 참여자를 관리자로 지정한 뒤 포인터를 비웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
 
+`room_feed_entries`가 생성되면 기존 `chat_messages` 중 동일한 ID가 없는 행을 생성 시각과 레거시 `rowid` 순서로 복사합니다. `INSERT OR IGNORE` 방식이므로 서버를 다시 시작해도 중복되지 않습니다.
+
 ## 10. 만료와 삭제
 
 - 방 생성 시 `expires_at = now + ROOM_TTL_HOURS`로 고정합니다.
@@ -235,7 +256,7 @@ stateDiagram-v2
 - 참여자 온라인 상태는 DB에 저장하지 않고 Socket.IO 연결을 기준으로 메모리에서 관리합니다. 마지막 소켓 종료 후 `PARTICIPANT_LEAVE_GRACE_MS` 동안 재연결되지 않으면 참여자 목록에서 제외합니다.
 - 서버 시작 시 모든 방을 빈 상태로 표시하며, 재연결된 방은 삭제 대상에서 제외합니다.
 - 서버 시작 시와 이후 1분마다 `expires_at <= now`이거나 `empty_since + EMPTY_ROOM_TTL_HOURS <= now`인 방을 삭제합니다.
-- 방 삭제는 foreign key cascade로 참여자와 곡을 함께 삭제합니다.
+- 방 삭제는 foreign key cascade로 참여자, 곡, 채팅 피드를 함께 삭제합니다.
 - 방 활동에 따른 TTL 연장 기능은 없습니다.
 
 ## 11. 백업 고려사항

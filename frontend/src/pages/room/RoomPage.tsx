@@ -90,13 +90,19 @@ export function RoomPage() {
       )?.isManager,
     )
   const controlCredentials = hostToken
-    ? hostToken
+    ? {
+        hostToken,
+        ...(participantToken ? { participantToken } : {}),
+      }
     : isManager && participantToken
       ? { participantToken }
       : null
   const isController = controlCredentials !== null
   const songActionCredentials = hostToken
-    ? hostToken
+    ? {
+        hostToken,
+        ...(participantToken ? { participantToken } : {}),
+      }
     : participantToken
       ? { participantToken }
       : null
