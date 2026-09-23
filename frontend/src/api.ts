@@ -98,7 +98,6 @@ export const api = {
 
   createRoom(
     playbackMode: PlaybackMode,
-    nickname: string,
   ) {
     return request<{
       code: string
@@ -114,7 +113,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({
           playbackMode,
-          nickname,
         }),
       },
     )

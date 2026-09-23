@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6">
+  <title>B-SIDE — Linked Records</title>
+  <circle cx="23" cy="26" r="17"/>
+  <circle cx="41" cy="38" r="17"/>
+  <circle cx="23" cy="26" r="3" fill="currentColor" stroke="none"/>
+  <circle cx="41" cy="38" r="3" fill="currentColor" stroke="none"/>
+</svg>

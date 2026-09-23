@@ -23,14 +23,19 @@ export function Brand({
       to="/"
       aria-label={`B-SIDE · ${t('common.home')}`}
     >
-      <span
-        className="flex size-6 items-end gap-[3px] rounded-[7px] border border-lime/45 bg-lime/[0.08] p-[5px]"
+      <svg
+        className="size-7 shrink-0 text-purple-light"
+        viewBox="0 0 64 64"
+        fill="currentColor"
         aria-hidden="true"
+        focusable="false"
       >
-        <span className="h-[7px] w-[3px] rounded-[3px] bg-lime" />
-        <span className="h-[13px] w-[3px] rounded-[3px] bg-lime" />
-        <span className="h-[10px] w-[3px] rounded-[3px] bg-lime" />
-      </span>
+        <rect x="7" y="24" width="6" height="16" rx="3" />
+        <rect x="18" y="15" width="6" height="34" rx="3" />
+        <rect x="29" y="8" width="6" height="48" rx="3" />
+        <rect x="40" y="15" width="6" height="34" rx="3" />
+        <rect x="51" y="24" width="6" height="16" rx="3" />
+      </svg>
       <span
         className={cn(
           compact && 'sr-only',

@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useAuth } from '../auth'
 import { useI18n } from '../i18n-context'
 import { buttonStyles, cn } from '../styles'
 import {
-  ArrowUpRightIcon,
   DiscordIcon,
   LogoutIcon,
   UserCircleIcon,
@@ -15,14 +14,20 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuId = useId()
 
   useEffect(() => {
     if (!open) return
     function closeOnOutsideClick(event: PointerEvent) {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
     }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false)
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
     }
     document.addEventListener('pointerdown', closeOnOutsideClick)
     window.addEventListener('keydown', closeOnEscape)
@@ -31,6 +36,20 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [open])
+
+  useEffect(() => {
+    if (open) menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [open])
+
+  function handleMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])
+    if (!items.length) return
+    event.preventDefault()
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[next]?.focus()
+  }
 
   if (loading || !enabled) return null
 
@@ -63,17 +82,30 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className="relative flex min-w-0 items-center gap-2.5" ref={containerRef}>
+    <div className="relative flex min-w-0 items-center gap-2.5" ref={containerRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+    >
       <button
+        ref={triggerRef}
         className={cn(
-          'grid size-9 shrink-0 place-items-center rounded-full',
-          'transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:opacity-70',
+          'grid size-10 shrink-0 place-items-center rounded-full transition-shadow',
+          'hover:ring-2 hover:ring-purple/30 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light',
+          open && 'ring-2 ring-purple/50',
         )}
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-controls={open ? menuId : undefined}
         aria-label={t('auth.accountMenu')}
         onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
       >
         {user.avatarUrl ? (
           <img
@@ -90,63 +122,58 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
 
       {open && (
         <div
+          id={menuId}
+          ref={menuRef}
           className={cn(
-            'absolute top-[calc(100%+12px)] right-0 z-[80] w-[min(290px,calc(100vw-24px))] overflow-hidden rounded-[22px]',
-            'border border-purple/25 bg-[#17141e]/98 shadow-[0_28px_90px_rgba(0,0,0,.58),inset_0_1px_0_rgba(255,255,255,.05)] backdrop-blur-2xl',
+            'fixed top-[72px] right-5 z-[80] w-[min(240px,calc(100vw-40px))] overflow-hidden rounded-2xl sm:absolute sm:top-[calc(100%+10px)] sm:right-0',
+            'border border-white/[0.12] bg-[#17141e] p-1.5 shadow-[0_12px_36px_rgba(0,0,0,.35)]',
           )}
           role="menu"
+          aria-label={t('auth.accountMenu')}
+          onKeyDown={handleMenuKeyDown}
         >
-          <div className="relative overflow-hidden border-b border-white/[0.08] p-5">
-            <div className="pointer-events-none absolute -top-14 -right-10 size-32 rounded-full bg-purple/[0.10] blur-2xl" />
-            <span className="relative text-[9px] font-black tracking-[0.18em] text-purple-light">
-              ACCOUNT
-            </span>
-            <div className="relative mt-3 flex items-center gap-3.5">
+          <div className="mx-1 mb-1 flex items-center gap-3 border-b border-white/[0.08] px-2 py-3">
               {user.avatarUrl ? (
                 <img
-                  className="size-14 shrink-0 rounded-full border border-purple/50 object-cover shadow-[0_0_0_4px_rgba(155,123,255,.09)]"
+                  className="size-9 shrink-0 rounded-full bg-white/[0.04] object-cover"
                   src={user.avatarUrl}
                   alt=""
                 />
               ) : (
-                <span className="grid size-14 shrink-0 place-items-center rounded-full border border-purple/50 bg-[#5865f2] text-lg font-black text-white shadow-[0_0_0_4px_rgba(155,123,255,.09)]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#5865f2] text-sm font-bold text-white">
                   {user.displayName.slice(0, 1).toUpperCase()}
                 </span>
               )}
               <div className="min-w-0">
-                <strong className="block truncate text-[17px] tracking-[-0.02em] text-ink">
+                <strong className="block truncate text-sm font-semibold text-ink" title={user.displayName}>
                   {user.displayName}
                 </strong>
+                <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted"><DiscordIcon size={12} />Discord</span>
               </div>
-            </div>
           </div>
 
-          <div className="grid gap-1 p-2.5">
+          <div className="grid gap-0.5">
             <button
-              className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold text-muted transition-colors hover:bg-purple/[0.09] hover:text-ink"
+              className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-ink transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-purple-light"
               role="menuitem"
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false)
+                triggerRef.current?.focus()
+              }}
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-purple-light transition-colors group-hover:border-purple/30">
-                <UserCircleIcon size={16} />
-              </span>
+              <UserCircleIcon className="shrink-0 text-muted" size={18} />
               <span className="flex-1">{t('auth.editProfile')}</span>
-              <ArrowUpRightIcon className="text-dim" size={17} />
             </button>
 
-            <div className="mx-3 my-1 h-px bg-white/[0.07]" />
-
           <button
-            className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold text-[#ff9aa8] transition-colors hover:bg-danger/[0.10] hover:text-[#ffc0ca] disabled:cursor-wait disabled:opacity-50"
+            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-[#ed9ba7] transition-colors hover:bg-danger/[0.08] focus-visible:bg-danger/[0.08] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-danger disabled:cursor-wait disabled:opacity-50"
             disabled={loggingOut}
             role="menuitem"
             type="button"
             onClick={() => void handleLogout()}
           >
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-danger/20 bg-danger/[0.06]">
-              <LogoutIcon size={16} />
-            </span>
+            <LogoutIcon className="shrink-0" size={18} />
             <span className="flex-1">
               {loggingOut ? t('auth.loggingOut') : t('auth.logout')}
             </span>
