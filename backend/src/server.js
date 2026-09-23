@@ -269,15 +269,21 @@ app.post('/api/auth/logout', mutationLimiter, (req, res) => {
 
 app.post('/api/rooms', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
-  const nickname = String(req.body?.nickname ?? '').trim()
+  const profileSource = user ? 'account' : 'custom'
+  const nickname = profileSource === 'account'
+    ? user.displayName.slice(0, 20)
+    : String(req.body?.nickname ?? '').trim()
   if (nickname.length < 2 || nickname.length > 20) {
     throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
   }
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
-    retentionMode: req.body?.retentionMode,
+    retentionMode: user ? 'permanent' : 'temporary',
     ownerUserId: user?.id ?? null,
     nickname,
+    participantUserId: user?.id ?? null,
+    profileSource,
+    avatarUrl: profileSource === 'account' ? user.avatarUrl : null,
   })
   res.status(201).json(created)
 })
@@ -292,6 +298,24 @@ app.get('/api/rooms/owned', (req, res) => {
       .listOwnedRooms(user.id)
       .map((room) => withOnlineParticipants(room)),
   })
+})
+
+app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
+  const user = requestAuthUser(req)
+  const normalizedCode = normalizeCode(req.params.code)
+  rooms.deleteOwnedRoom(normalizedCode, user?.id)
+  io.to(roomChannel(normalizedCode)).emit('room:deleted', {
+    code: normalizedCode,
+  })
+  presence.removeRoom(normalizedCode)
+  io.in(roomChannel(normalizedCode)).socketsLeave(roomChannel(normalizedCode))
+  io.in(chatRoomChannel(normalizedCode)).socketsLeave(
+    chatRoomChannel(normalizedCode),
+  )
+  io.in(activeRoomChannel(normalizedCode)).socketsLeave(
+    activeRoomChannel(normalizedCode),
+  )
+  res.status(204).end()
 })
 
 app.get('/api/rooms/:code', (req, res) => {

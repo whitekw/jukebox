@@ -5,6 +5,7 @@ const { AppError } = require('./errors')
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
 const RETENTION_MODES = new Set(['temporary', 'permanent'])
+const PROFILE_SOURCES = new Set(['account', 'custom'])
 const CHAT_MESSAGE_MAX_LENGTH = 300
 const CHAT_HISTORY_LIMIT = 100
 const ROOM_EVENT_TYPES = new Set([
@@ -377,7 +378,7 @@ function createRoomService(db, options = {}) {
       .all(room.id)
     const participants = db
       .prepare(
-        `SELECT id, nickname, is_manager
+        `SELECT id, nickname, avatar_url, is_manager
          FROM participants
          WHERE room_id = ?
          ORDER BY created_at ASC, rowid ASC`,
@@ -402,6 +403,7 @@ function createRoomService(db, options = {}) {
       participants: participants.map((participant) => ({
         id: participant.id,
         nickname: participant.nickname,
+        avatarUrl: participant.avatar_url ?? null,
         isManager: Boolean(participant.is_manager),
       })),
       currentSong: serializeSong(current),
@@ -417,7 +419,29 @@ function createRoomService(db, options = {}) {
     return normalizedNickname
   }
 
-  function insertParticipant(room, normalizedNickname) {
+  function insertParticipant(
+    room,
+    {
+      nickname: normalizedNickname,
+      userId = null,
+      profileSource = 'custom',
+      avatarUrl = null,
+    },
+  ) {
+    if (!PROFILE_SOURCES.has(profileSource)) {
+      throw new AppError(
+        400,
+        '프로필 방식이 올바르지 않습니다.',
+        'INVALID_PROFILE_SOURCE',
+      )
+    }
+    if (profileSource === 'account' && !userId) {
+      throw new AppError(
+        401,
+        '계정 프로필을 사용하려면 로그인해주세요.',
+        'AUTH_REQUIRED',
+      )
+    }
     const participantToken = createToken()
     const isManager = !db
       .prepare(
@@ -429,18 +453,26 @@ function createRoomService(db, options = {}) {
       roomId: room.id,
       tokenHash: hashToken(participantToken),
       nickname: normalizedNickname,
+      userId: userId ? String(userId) : null,
+      profileSource,
+      avatarUrl:
+        profileSource === 'account' && avatarUrl ? String(avatarUrl) : null,
       isManager,
       createdAt: now(),
     }
     db.prepare(
       `INSERT INTO participants (
-        id, room_id, token_hash, nickname, is_manager, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
+        id, room_id, token_hash, nickname, user_id, profile_source,
+        avatar_url, is_manager, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       participant.id,
       participant.roomId,
       participant.tokenHash,
       participant.nickname,
+      participant.userId,
+      participant.profileSource,
+      participant.avatarUrl,
       participant.isManager ? 1 : 0,
       participant.createdAt,
     )
@@ -449,6 +481,7 @@ function createRoomService(db, options = {}) {
       participant: {
         id: participant.id,
         nickname: participant.nickname,
+        avatarUrl: participant.avatarUrl,
         isManager: participant.isManager,
       },
     }
@@ -459,6 +492,9 @@ function createRoomService(db, options = {}) {
     retentionMode = 'temporary',
     ownerUserId = null,
     nickname,
+    participantUserId = null,
+    profileSource = 'custom',
+    avatarUrl = null,
   } = {}) {
     if (!PLAYBACK_MODES.has(playbackMode)) {
       throw new AppError(
@@ -516,7 +552,12 @@ function createRoomService(db, options = {}) {
       )
 
       const joined = normalizedNickname
-        ? insertParticipant(getRoomRecord(code), normalizedNickname)
+        ? insertParticipant(getRoomRecord(code), {
+            nickname: normalizedNickname,
+            userId: participantUserId,
+            profileSource,
+            avatarUrl,
+          })
         : null
       return {
         code,
@@ -542,12 +583,30 @@ function createRoomService(db, options = {}) {
       .map(({ code }) => getPublicRoom(code))
   }
 
+  function deleteOwnedRoom(code, userId) {
+    if (!userId) {
+      throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+    }
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      if (room.owner_user_id !== String(userId)) {
+        throw new AppError(
+          403,
+          '방 소유자만 방을 삭제할 수 있습니다.',
+          'OWNER_FORBIDDEN',
+        )
+      }
+      db.prepare('DELETE FROM rooms WHERE id = ?').run(room.id)
+      return { code: room.code }
+    })
+  }
+
   function joinRoom(code, { nickname }) {
     const normalizedNickname = normalizeNickname(nickname)
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      const joined = insertParticipant(room, normalizedNickname)
+      const joined = insertParticipant(room, { nickname: normalizedNickname })
 
       const state = getPublicRoom(code)
       return {
@@ -563,6 +622,7 @@ function createRoomService(db, options = {}) {
     return {
       id: participant.id,
       nickname: participant.nickname,
+      avatarUrl: participant.avatar_url ?? null,
       isManager: Boolean(participant.is_manager),
     }
   }
@@ -584,6 +644,7 @@ function createRoomService(db, options = {}) {
         ? {
             id: participant.id,
             nickname: participant.nickname,
+            avatarUrl: participant.avatar_url ?? null,
             isManager: Boolean(participant.is_manager),
           }
         : null,
@@ -1141,6 +1202,7 @@ function createRoomService(db, options = {}) {
     getParticipantStatus,
     getRoomSession,
     listOwnedRooms,
+    deleteOwnedRoom,
     listChatMessages,
     addChatMessage,
     addRoomEvent,

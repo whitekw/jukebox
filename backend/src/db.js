@@ -64,6 +64,10 @@ function createDatabase(databasePath = ':memory:') {
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL,
       nickname TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      profile_source TEXT NOT NULL DEFAULT 'custom'
+        CHECK(profile_source IN ('account', 'custom')),
+      avatar_url TEXT,
       is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1)),
       created_at INTEGER NOT NULL,
       UNIQUE(room_id, token_hash)
@@ -211,12 +215,36 @@ function createDatabase(databasePath = ':memory:') {
       'ALTER TABLE participants ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1))',
     )
   }
+  if (!participantColumns.has('user_id')) {
+    db.exec(
+      'ALTER TABLE participants ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
+    )
+  }
+  if (!participantColumns.has('profile_source')) {
+    db.exec(
+      "ALTER TABLE participants ADD COLUMN profile_source TEXT NOT NULL DEFAULT 'custom' CHECK(profile_source IN ('account', 'custom'))",
+    )
+  }
+  if (!participantColumns.has('avatar_url')) {
+    db.exec('ALTER TABLE participants ADD COLUMN avatar_url TEXT')
+  }
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
   )
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_owner_retention ON rooms(owner_user_id, retention_mode)',
   )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id)',
+  )
+
+  // 계정 소유권이 있는 기존 임시 방도 새 정책에 맞춰 수동 삭제 전까지 유지한다.
+  db.exec(`
+    UPDATE rooms
+    SET retention_mode = 'permanent', empty_ttl_hours = NULL
+    WHERE owner_user_id IS NOT NULL
+      AND retention_mode = 'temporary';
+  `)
 
   db.prepare(
     `UPDATE rooms

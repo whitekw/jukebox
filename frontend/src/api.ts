@@ -98,7 +98,6 @@ export const api = {
 
   createRoom(
     playbackMode: PlaybackMode,
-    retentionMode: RoomRetentionMode,
     nickname: string,
   ) {
     return request<{
@@ -113,13 +112,22 @@ export const api = {
       '/api/rooms',
       {
         method: 'POST',
-        body: JSON.stringify({ playbackMode, retentionMode, nickname }),
+        body: JSON.stringify({
+          playbackMode,
+          nickname,
+        }),
       },
     )
   },
 
   getOwnedRooms() {
     return request<{ items: RoomState[] }>('/api/rooms/owned')
+  },
+
+  deleteRoom(code: string) {
+    return request<void>(`/api/rooms/${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+    })
   },
 
   getRoom(code: string) {

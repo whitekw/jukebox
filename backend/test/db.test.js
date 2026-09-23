@@ -98,6 +98,9 @@ test('migrates the earliest legacy participant to a manager', () => {
 
     assert.ok(columns.includes('manager_participant_id'))
     assert.ok(participantColumns.includes('is_manager'))
+    assert.ok(participantColumns.includes('user_id'))
+    assert.ok(participantColumns.includes('profile_source'))
+    assert.ok(participantColumns.includes('avatar_url'))
     assert.deepEqual(chatMessageColumns, [
       'id',
       'room_id',
@@ -206,6 +209,41 @@ test('copies legacy chat messages into the unified room feed once', () => {
         content: 'legacy',
       },
     ])
+  } finally {
+    db?.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('converts existing account-owned temporary rooms to permanent rooms', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  let db
+
+  try {
+    db = createDatabase(databasePath)
+    db.prepare(
+      `INSERT INTO users (
+         id, discord_id, username, global_name, avatar_hash,
+         created_at, updated_at, last_login_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('user-1', 'discord-1', 'owner', 'Owner', null, 1, 1, 1)
+    db.prepare(
+      `INSERT INTO rooms (
+         id, code, host_token_hash, owner_user_id, retention_mode,
+         empty_ttl_hours, playback_anchor_at, created_at, expires_at
+       ) VALUES (?, ?, ?, ?, 'temporary', 1, ?, ?, ?)`,
+    ).run('room-1', 'ABC234', '0'.repeat(64), 'user-1', 1, 1, 2)
+    db.close()
+
+    db = createDatabase(databasePath)
+    const room = db
+      .prepare(
+        'SELECT retention_mode, empty_ttl_hours FROM rooms WHERE id = ?',
+      )
+      .get('room-1')
+    assert.equal(room.retention_mode, 'permanent')
+    assert.equal(room.empty_ttl_hours, null)
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

@@ -143,3 +143,29 @@ export function CopyIcon(props: IconProps) {
     </IconBase>
   )
 }
+
+export function UserCircleIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </IconBase>
+  )
+}
+
+export function ArrowUpRightIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M7 17 17 7M7 7h10v10" />
+    </IconBase>
+  )
+}
+
+export function LogoutIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M10 17l5-5-5-5M15 12H3" />
+      <path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" />
+    </IconBase>
+  )
+}

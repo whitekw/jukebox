@@ -498,6 +498,48 @@ test('creates a room and its first participant together', () => {
   db.close()
 })
 
+test('stores an account profile snapshot for the room participant', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  db.prepare(
+    `INSERT INTO users (
+       id, discord_id, username, global_name, avatar_hash,
+       created_at, updated_at, last_login_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run('user-1', 'discord-1', 'owner', 'Owner', null, 1, 1, 1)
+
+  const created = rooms.createRoom({
+    nickname: 'Owner',
+    participantUserId: 'user-1',
+    profileSource: 'account',
+    avatarUrl: 'https://cdn.example.com/avatar.webp',
+  })
+  const state = rooms.getPublicRoom(created.code)
+
+  assert.equal(created.participant.nickname, 'Owner')
+  assert.equal(
+    created.participant.avatarUrl,
+    'https://cdn.example.com/avatar.webp',
+  )
+  assert.equal(
+    state.participants[0].avatarUrl,
+    'https://cdn.example.com/avatar.webp',
+  )
+  const storedProfile = db
+    .prepare(
+      `SELECT user_id, profile_source, avatar_url
+       FROM participants WHERE id = ?`,
+    )
+    .get(created.participant.id)
+  assert.equal(storedProfile.user_id, 'user-1')
+  assert.equal(storedProfile.profile_source, 'account')
+  assert.equal(
+    storedProfile.avatar_url,
+    'https://cdn.example.com/avatar.webp',
+  )
+  db.close()
+})
+
 test('keeps permanent rooms and grants their account owner control', () => {
   const db = createDatabase()
   let currentTime = 1_000_000
@@ -555,6 +597,15 @@ test('keeps permanent rooms and grants their account owner control', () => {
   currentTime += 7 * 24 * 60 * 60 * 1000
   assert.equal(rooms.deleteExpiredRooms(), 0)
   assert.equal(rooms.getPublicRoom(created.code).code, created.code)
+  assert.throws(
+    () => rooms.deleteOwnedRoom(created.code, 'someone-else'),
+    /소유자/,
+  )
+  assert.deepEqual(rooms.deleteOwnedRoom(created.code, 'owner-1'), {
+    code: created.code,
+  })
+  assert.equal(rooms.listOwnedRooms('owner-1').length, 0)
+  assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않거나 만료/)
   db.close()
 })
 

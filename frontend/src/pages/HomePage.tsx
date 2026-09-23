@@ -1,25 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   ApiError,
   api,
   clearStoredRoomCredentials,
   getStoredRoomCredentials,
-  hostTokenKey,
   normalizeRoomCode,
-  participantTokenKey,
 } from '../api'
 import { Brand } from '../components/Brand'
 import { AccountMenu } from '../components/AccountMenu'
-import { MusicIcon, UsersIcon } from '../components/Icons'
+import { MusicIcon, TrashIcon, UsersIcon } from '../components/Icons'
 import { useAuth } from '../auth'
 import { getErrorMessage, useI18n } from '../i18n-context'
-import type {
-  PlaybackMode,
-  RoomRetentionMode,
-  RoomSession,
-  RoomState,
-} from '../types'
+import type { RoomSession, RoomState } from '../types'
 import {
   buttonStyles,
   cardIconStyles,
@@ -33,17 +26,26 @@ export function HomePage() {
   const { t } = useI18n()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [roomCode, setRoomCode] = useState('')
-  const [nickname, setNickname] = useState('')
-  const [playbackMode, setPlaybackMode] =
-    useState<PlaybackMode>('host_only')
-  const [retentionMode, setRetentionMode] =
-    useState<RoomRetentionMode>('temporary')
-  const [nicknameDialogOpen, setNicknameDialogOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState('')
   const [roomSessions, setRoomSessions] = useState<RoomSession[]>([])
   const [ownedRooms, setOwnedRooms] = useState<RoomState[]>([])
+  const [deletingRoomCode, setDeletingRoomCode] = useState('')
+  const [notice, setNotice] = useState('')
+  const [ownedRoomError, setOwnedRoomError] = useState('')
+
+  useEffect(() => {
+    const state = location.state as { roomDeleted?: boolean } | null
+    if (!state?.roomDeleted) return
+    setNotice(t('home.roomDeleted'))
+    navigate('/', { replace: true, state: null })
+  }, [location.state, navigate, t])
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(''), 3_000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   useEffect(() => {
     let active = true
@@ -108,53 +110,36 @@ export function HomePage() {
     }
   }, [user])
 
-  useEffect(() => {
-    if (!user) return
-    setNickname((current) => current || user.displayName.slice(0, 20))
-  }, [user])
-
-  useEffect(() => {
-    if (!nicknameDialogOpen) return
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !creating) setNicknameDialogOpen(false)
-    }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [creating, nicknameDialogOpen])
-
-  function openNicknameDialog(event: FormEvent) {
-    event.preventDefault()
-    setError('')
-    setNicknameDialogOpen(true)
-  }
-
-  async function createRoom(event: FormEvent) {
-    event.preventDefault()
-    setCreating(true)
-    setError('')
-    try {
-      const created = await api.createRoom(
-        playbackMode,
-        user ? retentionMode : 'temporary',
-        nickname,
-      )
-      localStorage.setItem(hostTokenKey(created.code), created.hostToken)
-      localStorage.setItem(
-        participantTokenKey(created.code),
-        created.participantToken,
-      )
-      navigate(`/room/${created.code}`)
-    } catch (requestError) {
-      setError(getErrorMessage(requestError, t))
-    } finally {
-      setCreating(false)
-    }
-  }
-
   function joinRoom(event: FormEvent) {
     event.preventDefault()
     const code = normalizeRoomCode(roomCode)
     if (code) navigate(`/room/${code}`)
+  }
+
+  async function deleteOwnedRoom(room: RoomState) {
+    if (
+      deletingRoomCode ||
+      !window.confirm(t('home.deleteRoomConfirm', { code: room.code }))
+    ) {
+      return
+    }
+    setDeletingRoomCode(room.code)
+    setOwnedRoomError('')
+    try {
+      await api.deleteRoom(room.code)
+      clearStoredRoomCredentials(room.code)
+      setOwnedRooms((current) =>
+        current.filter((item) => item.code !== room.code),
+      )
+      setRoomSessions((current) =>
+        current.filter((session) => session.room.code !== room.code),
+      )
+      setNotice(t('home.roomDeleted'))
+    } catch (requestError) {
+      setOwnedRoomError(getErrorMessage(requestError, t))
+    } finally {
+      setDeletingRoomCode('')
+    }
   }
 
   const recentRoomSessions = roomSessions.filter(
@@ -187,13 +172,12 @@ export function HomePage() {
             : 'mb-[72px]',
         )}
       >
-        <form
+        <article
           className={cn(
-            'relative flex min-h-[460px] flex-col rounded-[18px] border border-purple/30',
+            'relative flex min-h-[350px] flex-col rounded-[18px] border border-purple/30',
             'bg-[#12101a]/90 p-6 shadow-[0_24px_70px_rgba(0,0,0,.25)] backdrop-blur-2xl',
-            'motion-safe:animate-rise md:min-h-[500px] md:p-[30px]',
+            'motion-safe:animate-rise md:min-h-[380px] md:p-[30px]',
           )}
-          onSubmit={openNicknameDialog}
         >
           <div className={cardIconStyles()}><MusicIcon size={26} /></div>
           <span className={cn(sectionKickerStyles, 'mb-[7px] text-purple-light')}>
@@ -202,118 +186,24 @@ export function HomePage() {
           <h2 className="mb-2 text-[27px] tracking-[-0.03em]">
             {t('home.createTitle')}
           </h2>
-          <p className="mb-5 text-sm text-muted">{t('home.createDescription')}</p>
-          <fieldset className={cn('mb-3 grid gap-2 border-0 p-0', !user && 'mt-auto')}>
-            <legend className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase">
-              {t('home.playbackModeLabel')}
-            </legend>
-            {([
-              {
-                value: 'host_only',
-                title: t('home.playbackModeHostOnly'),
-                description: t('home.playbackModeHostOnlyDescription'),
-              },
-              {
-                value: 'all_devices',
-                title: t('home.playbackModeAllDevices'),
-                description: t('home.playbackModeAllDevicesDescription'),
-              },
-            ] satisfies Array<{
-              value: PlaybackMode
-              title: string
-              description: string
-            }>).map((option) => (
-              <label
-                className={cn(
-                  'flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors',
-                  playbackMode === option.value
-                    ? 'border-purple/60 bg-purple/[0.10]'
-                    : 'border-line bg-white/[0.025] hover:bg-white/[0.045]',
-                )}
-                key={option.value}
-              >
-                <input
-                  className="mt-1 accent-purple"
-                  type="radio"
-                  name="playback-mode"
-                  value={option.value}
-                  checked={playbackMode === option.value}
-                  onChange={() => setPlaybackMode(option.value)}
-                />
-                <span className="min-w-0">
-                  <strong className="block text-sm text-ink">
-                    {option.title}
-                  </strong>
-                  <small className="mt-0.5 block leading-4 text-dim">
-                    {option.description}
-                  </small>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          {user && (
-            <fieldset className="mb-3 grid grid-cols-2 gap-2 border-0 p-0">
-              <legend className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase">
-                {t('home.retentionModeLabel')}
-              </legend>
-              {([
-                {
-                  value: 'temporary',
-                  title: t('home.retentionTemporary'),
-                  description: t('home.retentionTemporaryDescription'),
-                },
-                {
-                  value: 'permanent',
-                  title: t('home.retentionPermanent'),
-                  description: t('home.retentionPermanentDescription'),
-                },
-              ] satisfies Array<{
-                value: RoomRetentionMode
-                title: string
-                description: string
-              }>).map((option) => (
-                <label
-                  className={cn(
-                    'flex min-w-0 cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-3 transition-colors',
-                    retentionMode === option.value
-                      ? 'border-purple/60 bg-purple/[0.10]'
-                      : 'border-line bg-white/[0.025] hover:bg-white/[0.045]',
-                  )}
-                  key={option.value}
-                >
-                  <input
-                    className="mt-1 shrink-0 accent-purple"
-                    type="radio"
-                    name="retention-mode"
-                    value={option.value}
-                    checked={retentionMode === option.value}
-                    onChange={() => setRetentionMode(option.value)}
-                  />
-                  <span className="min-w-0">
-                    <strong className="block text-sm text-ink">
-                      {option.title}
-                    </strong>
-                    <small className="mt-0.5 block text-[10px] leading-4 text-dim">
-                      {option.description}
-                    </small>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-          <button
-            className={buttonStyles({
-              intent: 'primary',
-              size: 'lg',
-              spread: true,
-              fullWidth: true,
-            })}
-            disabled={creating}
-            type="submit"
+          <p className="mb-7 text-sm leading-6 text-muted">
+            {t('home.createDescription')}
+          </p>
+          <Link
+            className={cn(
+              buttonStyles({
+                intent: 'primary',
+                size: 'lg',
+                spread: true,
+                fullWidth: true,
+              }),
+              'mt-auto',
+            )}
+            to="/rooms/new"
           >
-            {creating ? t('home.creating') : t('home.create')} <span>→</span>
-          </button>
-        </form>
+            {t('home.create')} <span>→</span>
+          </Link>
+        </article>
 
         <form
           className={cn(
@@ -369,52 +259,69 @@ export function HomePage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {ownedRooms.map((room) => (
-              <Link
+              <article
                 className={cn(
                   'group flex min-w-0 items-center gap-3 rounded-2xl border border-purple/30 bg-[#12101a]/90 p-3.5',
                   'shadow-[0_16px_45px_rgba(0,0,0,.18)] transition-colors hover:border-purple/60 hover:bg-purple/[0.08]',
                 )}
                 key={room.code}
-                to={`/room/${room.code}`}
               >
-                <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-white/[0.035]">
-                  {room.currentSong ? (
-                    <img
-                      className="size-full object-cover"
-                      src={room.currentSong.thumbnailUrl}
-                      alt=""
-                    />
-                  ) : (
-                    <MusicIcon className="text-purple-light" size={22} />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex min-w-0 items-center gap-2">
-                    <strong className="font-mono text-sm tracking-[0.12em] text-ink">
+                <Link
+                  className="flex min-w-0 flex-1 items-center gap-3"
+                  to={`/room/${room.code}`}
+                >
+                  <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-white/[0.035]">
+                    {room.currentSong ? (
+                      <img
+                        className="size-full object-cover"
+                        src={room.currentSong.thumbnailUrl}
+                        alt=""
+                      />
+                    ) : (
+                      <MusicIcon className="text-purple-light" size={22} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <strong className="mb-1 block font-mono text-sm tracking-[0.12em] text-ink">
                       {room.code}
                     </strong>
+                    <p className="truncate text-sm text-muted">
+                      {room.currentSong?.title ?? t('home.activeRoomWaiting')}
+                    </p>
+                    <p className="mt-1 text-[10px] text-dim">
+                      {t('home.activeRoomStats', {
+                        participants: room.participants.length,
+                        songs: room.queue.length,
+                      })}
+                    </p>
                   </div>
-                  <p className="truncate text-sm text-muted">
-                    {room.currentSong?.title ?? t('home.activeRoomWaiting')}
-                  </p>
-                  <p className="mt-1 text-[10px] text-dim">
-                    {t('home.activeRoomStats', {
-                      participants: room.participants.length,
-                      songs: room.queue.length,
-                    })}
-                  </p>
-                </div>
-                <span
-                  className="shrink-0 text-lg text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-lime"
-                  aria-label={t('home.rejoinRoom')}
+                  <span
+                    className="shrink-0 text-lg text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-lime"
+                    aria-label={t('home.rejoinRoom')}
+                  >
+                    →
+                  </span>
+                </Link>
+                <button
+                  className="grid size-9 shrink-0 place-items-center rounded-xl border border-line text-dim transition-colors hover:border-danger/40 hover:bg-danger/[0.08] hover:text-[#ff9cab] disabled:cursor-wait disabled:opacity-40"
+                  type="button"
+                  title={t('home.deleteRoom')}
+                  aria-label={t('home.deleteRoom')}
+                  disabled={Boolean(deletingRoomCode)}
+                  onClick={() => void deleteOwnedRoom(room)}
                 >
-                  →
-                </span>
-              </Link>
+                  <TrashIcon size={16} />
+                </button>
+              </article>
             ))}
           </div>
         </section>
       )}
+
+      {ownedRoomError && (
+        <div className={noticeStyles({ tone: 'error' })}>{ownedRoomError}</div>
+      )}
+      {notice && <div className={noticeStyles()}>{notice}</div>}
 
       {recentRoomSessions.length > 0 && (
         <section className="relative z-[1] mx-auto mb-[72px] max-w-[920px]">
@@ -480,85 +387,6 @@ export function HomePage() {
             ))}
           </div>
         </section>
-      )}
-
-      {nicknameDialogOpen && (
-        <div
-          className="fixed inset-0 z-[80] grid place-items-center bg-[#040307]/75 p-5 backdrop-blur-[18px]"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-room-nickname-title"
-        >
-          <form
-            className="relative flex w-full max-w-[420px] flex-col rounded-[18px] border border-purple/30 bg-[#121017] p-6 shadow-[0_30px_100px_rgba(0,0,0,.5)] md:p-[30px]"
-            onSubmit={createRoom}
-          >
-            <div className={cardIconStyles()}><MusicIcon size={25} /></div>
-            <span className={sectionKickerStyles}>CREATE A ROOM</span>
-            <h1
-              className="mt-2.5 mb-2 text-[27px] tracking-[-0.04em]"
-              id="create-room-nickname-title"
-            >
-              {t('room.askNickname')}
-            </h1>
-            <p className="mb-7 text-[13px] text-muted">
-              {t('room.nicknameDescription')}
-            </p>
-            <label
-              className="mb-2 text-[11px] font-extrabold tracking-[0.12em] text-dim uppercase"
-              htmlFor="creator-nickname"
-            >
-              {t('room.nicknameLabel')}
-            </label>
-            <input
-              className={cn(formControlStyles({ size: 'large' }), 'mb-3')}
-              id="creator-nickname"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-              minLength={2}
-              maxLength={20}
-              autoComplete="nickname"
-              autoFocus
-              required
-            />
-            {error && (
-              <p className="mb-3 rounded-[9px] border border-danger/30 bg-danger/[0.08] px-3 py-2 text-xs leading-5 text-[#ffd4db]">
-                {error}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={buttonStyles({
-                  intent: 'outline',
-                  size: 'lg',
-                  fullWidth: true,
-                })}
-                disabled={creating}
-                type="button"
-                onClick={() => setNicknameDialogOpen(false)}
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                className={buttonStyles({
-                  intent: 'primary',
-                  size: 'lg',
-                  spread: true,
-                  fullWidth: true,
-                })}
-                disabled={creating}
-                type="submit"
-              >
-                {creating ? t('home.creating') : t('home.create')}
-                <span>→</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {error && !nicknameDialogOpen && (
-        <div className={noticeStyles({ tone: 'error' })}>{error}</div>
       )}
 
       <footer className="relative z-[1] mx-auto flex max-w-[1180px] flex-col gap-4 text-[10px] tracking-[0.16em] text-[#56515e] md:flex-row md:justify-between">

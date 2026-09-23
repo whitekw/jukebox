@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import QRCode from 'react-qr-code'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ApiError,
   api,
+  clearStoredRoomCredentials,
   hostTokenKey,
   normalizeRoomCode,
   participantTokenKey,
@@ -36,6 +37,7 @@ export function RoomPage() {
   const { t } = useI18n()
   const { user } = useAuth()
   const params = useParams()
+  const navigate = useNavigate()
   const code = normalizeRoomCode(params.code)
   const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
   const isHost = Boolean(hostToken)
@@ -50,6 +52,7 @@ export function RoomPage() {
     serverTimeOffsetMs,
     chatMessages,
     appendChatMessage,
+    deleted,
     error: roomError,
   } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
@@ -62,6 +65,12 @@ export function RoomPage() {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
+
+  useEffect(() => {
+    if (!deleted) return
+    clearStoredRoomCredentials(code)
+    navigate('/', { replace: true, state: { roomDeleted: true } })
+  }, [code, deleted, navigate])
 
   useEffect(() => {
     if (!message) return

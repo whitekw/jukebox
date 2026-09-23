@@ -32,6 +32,7 @@ export function useRoomState(
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [error, setError] = useState<unknown>(null)
+  const [deleted, setDeleted] = useState(false)
   const loadedCodeRef = useRef('')
 
   const appendChatMessage = useCallback((message: ChatMessage) => {
@@ -43,6 +44,7 @@ export function useRoomState(
     let clockSynchronized = false
     if (loadedCodeRef.current !== code) setLoading(true)
     setError(null)
+    setDeleted(false)
     setChatMessages([])
 
     void api
@@ -116,6 +118,11 @@ export function useRoomState(
     socket.on('chat:message', (message: ChatMessage) => {
       if (active && participantToken) appendChatMessage(message)
     })
+    socket.on('room:deleted', (payload: { code?: string }) => {
+      if (!active || payload?.code !== code) return
+      setDeleted(true)
+      setRoom(null)
+    })
     socket.on('connect_error', () => {
       if (active) setConnected(false)
     })
@@ -139,6 +146,7 @@ export function useRoomState(
     serverTimeOffsetMs,
     chatMessages,
     appendChatMessage,
+    deleted,
     error: error === null ? '' : getErrorMessage(error, t),
   }
 }
