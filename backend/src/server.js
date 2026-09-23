@@ -2,6 +2,13 @@ const path = require('node:path')
 const http = require('node:http')
 const express = require('express')
 const { Server } = require('socket.io')
+const {
+  createDiscordAuth,
+  parseCookies,
+  safeReturnTo,
+  serializeCookie,
+  tokensMatch,
+} = require('./auth')
 const { createDatabase } = require('./db')
 const { AppError } = require('./errors')
 const { getLocaleConfig } = require('./locale')
@@ -22,10 +29,32 @@ const participantLeaveGraceMs =
   configuredParticipantLeaveGraceMs >= 0
     ? configuredParticipantLeaveGraceMs
     : 5_000
+const configuredAuthSessionTtlDays = Number(
+  process.env.AUTH_SESSION_TTL_DAYS ?? 30,
+)
+const authSessionTtlDays =
+  Number.isFinite(configuredAuthSessionTtlDays) &&
+  configuredAuthSessionTtlDays > 0
+    ? configuredAuthSessionTtlDays
+    : 30
+const authSessionTtlMs = authSessionTtlDays * 24 * 60 * 60 * 1_000
+const authCookieSecure = process.env.AUTH_COOKIE_SECURE === undefined
+  ? process.env.NODE_ENV === 'production'
+  : process.env.AUTH_COOKIE_SECURE === 'true'
+const authSessionCookie = 'jukebox_session'
+const oauthStateCookie = 'jukebox_oauth_state'
+const oauthReturnCookie = 'jukebox_oauth_return_to'
+const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
 const rooms = createRoomService(db, { roomTtlHours, emptyRoomTtlHours })
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
+const auth = createDiscordAuth(db, {
+  clientId: process.env.DISCORD_CLIENT_ID,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET,
+  redirectUri: process.env.DISCORD_REDIRECT_URI,
+  sessionTtlMs: authSessionTtlMs,
+})
 const app = express()
 const server = http.createServer(app)
 const io = new Server(server, { serveClient: false })
@@ -36,6 +65,32 @@ app.use(express.json({ limit: '32kb' }))
 
 const searchLimiter = createRateLimiter({ windowMs: 60_000, limit: 30 })
 const mutationLimiter = createRateLimiter({ windowMs: 60_000, limit: 120 })
+const authLimiter = createRateLimiter({ windowMs: 60_000, limit: 30 })
+
+function appendCookie(res, name, value, options = {}) {
+  res.append(
+    'Set-Cookie',
+    serializeCookie(name, value, {
+      secure: authCookieSecure,
+      ...options,
+    }),
+  )
+}
+
+function clearCookie(res, name, path = '/') {
+  appendCookie(res, name, '', { maxAge: 0, path })
+}
+
+function clearOAuthCookies(res) {
+  clearCookie(res, oauthStateCookie, '/api/auth/discord/callback')
+  clearCookie(res, oauthReturnCookie, '/api/auth/discord/callback')
+}
+
+function addAuthError(returnTo, error) {
+  const url = new URL(safeReturnTo(returnTo), 'http://localhost')
+  url.searchParams.set('authError', error)
+  return `${url.pathname}${url.search}${url.hash}`
+}
 
 function roomChannel(code) {
   return `room:${normalizeCode(code)}`
@@ -131,10 +186,16 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next)
 }
 
+function requestAuthUser(req) {
+  const cookies = parseCookies(req.get('cookie'))
+  return auth.getSessionUser(cookies[authSessionCookie])
+}
+
 function controlCredentials(req) {
   return {
     hostToken: req.get('x-host-token'),
     participantToken: req.get('x-participant-token'),
+    userId: requestAuthUser(req)?.id,
   }
 }
 
@@ -146,9 +207,91 @@ app.get('/api/config', (req, res) => {
   res.json(getLocaleConfig(req))
 })
 
+app.get('/api/auth/session', (req, res) => {
+  const cookies = parseCookies(req.get('cookie'))
+  res.json({
+    enabled: auth.enabled,
+    user: auth.getSessionUser(cookies[authSessionCookie]),
+  })
+})
+
+app.get('/api/auth/discord', authLimiter, (req, res) => {
+  const authorization = auth.createAuthorization()
+  const returnTo = safeReturnTo(req.query.returnTo)
+  appendCookie(res, oauthStateCookie, authorization.state, {
+    maxAge: oauthStateMaxAgeSeconds,
+    path: '/api/auth/discord/callback',
+  })
+  appendCookie(res, oauthReturnCookie, returnTo, {
+    maxAge: oauthStateMaxAgeSeconds,
+    path: '/api/auth/discord/callback',
+  })
+  res.redirect(302, authorization.url)
+})
+
+app.get(
+  '/api/auth/discord/callback',
+  authLimiter,
+  asyncRoute(async (req, res) => {
+    const cookies = parseCookies(req.get('cookie'))
+    const returnTo = safeReturnTo(cookies[oauthReturnCookie])
+    clearOAuthCookies(res)
+
+    if (req.query.error) {
+      return res.redirect(302, addAuthError(returnTo, 'cancelled'))
+    }
+    if (!tokensMatch(req.query.state, cookies[oauthStateCookie])) {
+      return res.redirect(302, addAuthError(returnTo, 'invalid_state'))
+    }
+
+    try {
+      const session = await auth.completeAuthorization(req.query.code)
+      appendCookie(res, authSessionCookie, session.sessionToken, {
+        maxAge: Math.floor(authSessionTtlMs / 1_000),
+        path: '/',
+      })
+      return res.redirect(302, returnTo)
+    } catch (error) {
+      if (error?.status >= 500) {
+        console.error('Discord authentication failed.', error)
+      }
+      return res.redirect(302, addAuthError(returnTo, 'failed'))
+    }
+  }),
+)
+
+app.post('/api/auth/logout', mutationLimiter, (req, res) => {
+  const cookies = parseCookies(req.get('cookie'))
+  auth.deleteSession(cookies[authSessionCookie])
+  clearCookie(res, authSessionCookie)
+  res.status(204).end()
+})
+
 app.post('/api/rooms', mutationLimiter, (req, res) => {
-  const created = rooms.createRoom(req.body)
+  const user = requestAuthUser(req)
+  const nickname = String(req.body?.nickname ?? '').trim()
+  if (nickname.length < 2 || nickname.length > 20) {
+    throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
+  }
+  const created = rooms.createRoom({
+    playbackMode: req.body?.playbackMode,
+    retentionMode: req.body?.retentionMode,
+    ownerUserId: user?.id ?? null,
+    nickname,
+  })
   res.status(201).json(created)
+})
+
+app.get('/api/rooms/owned', (req, res) => {
+  const user = requestAuthUser(req)
+  if (!user) {
+    throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+  }
+  res.json({
+    items: rooms
+      .listOwnedRooms(user.id)
+      .map((room) => withOnlineParticipants(room)),
+  })
 })
 
 app.get('/api/rooms/:code', (req, res) => {
@@ -338,7 +481,7 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
     )
   rooms.setManager(
     normalizedCode,
-    req.get('x-participant-token'),
+    controlCredentials(req),
     req.params.participantId,
     req.body.isManager,
   )
@@ -355,6 +498,10 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
 })
 
 io.on('connection', (socket) => {
+  const socketUser = auth.getSessionUser(
+    parseCookies(socket.handshake.headers.cookie)[authSessionCookie],
+  )
+
   socket.on('time:sync', (acknowledge) => {
     if (typeof acknowledge === 'function') {
       acknowledge({ serverTime: Date.now() })
@@ -370,9 +517,10 @@ io.on('connection', (socket) => {
         const identity = rooms.getPresenceIdentity(normalizedCode, {
           hostToken,
           participantToken,
+          userId: socketUser?.id,
         })
         socket.join(roomChannel(normalizedCode))
-        if (identity.isHost || identity.participantId) {
+        if (identity.isHost || identity.isOwner || identity.participantId) {
           socket.join(activeRoomChannel(normalizedCode))
           rooms.markRoomOccupied(normalizedCode)
         }
@@ -463,7 +611,11 @@ app.use((error, _req, res, _next) => {
 
 rooms.markAllRoomsEmpty()
 rooms.deleteExpiredRooms()
-const cleanupTimer = setInterval(() => rooms.deleteExpiredRooms(), 60 * 1000)
+auth.deleteExpiredSessions()
+const cleanupTimer = setInterval(() => {
+  rooms.deleteExpiredRooms()
+  auth.deleteExpiredSessions()
+}, 60 * 1000)
 cleanupTimer.unref()
 
 const playbackTimer = setInterval(() => {

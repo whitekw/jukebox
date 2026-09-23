@@ -9,8 +9,9 @@ import {
   participantTokenKey,
 } from '../../api'
 import { Brand } from '../../components/Brand'
+import { AccountMenu } from '../../components/AccountMenu'
+import { useAuth } from '../../auth'
 import { CopyIcon, MusicIcon } from '../../components/Icons'
-import { LocaleSwitcher } from '../../components/LocaleSwitcher'
 import { YouTubePlayer } from '../../components/YouTubePlayer'
 import { getErrorMessage, useI18n } from '../../i18n-context'
 import {
@@ -33,6 +34,7 @@ import { SearchPanel } from './SearchPanel'
 
 export function RoomPage() {
   const { t } = useI18n()
+  const { user } = useAuth()
   const params = useParams()
   const code = normalizeRoomCode(params.code)
   const hostToken = localStorage.getItem(hostTokenKey(code)) ?? ''
@@ -51,6 +53,10 @@ export function RoomPage() {
     error: roomError,
   } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
+  const [participantLoading, setParticipantLoading] = useState(
+    () => Boolean(participantToken),
+  )
+  const [isOwner, setIsOwner] = useState(false)
   const [nickname, setNickname] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -64,8 +70,12 @@ export function RoomPage() {
   }, [message])
 
   useEffect(() => {
-    if (!participantToken) return
+    if (!participantToken) {
+      setParticipantLoading(false)
+      return
+    }
     let active = true
+    setParticipantLoading(true)
     void api
       .getMe(code, participantToken)
       .then((me) => {
@@ -77,10 +87,40 @@ export function RoomPage() {
         setParticipantToken('')
         setParticipant(null)
       })
+      .finally(() => {
+        if (active) setParticipantLoading(false)
+      })
     return () => {
       active = false
     }
   }, [code, participantToken])
+
+  useEffect(() => {
+    if (!user) {
+      setIsOwner(false)
+      return
+    }
+    let active = true
+    void api
+      .getRoomSession(code, {
+        ...(hostToken ? { hostToken } : {}),
+        ...(participantToken ? { participantToken } : {}),
+      })
+      .then((session) => {
+        if (active) setIsOwner(session.isOwner)
+      })
+      .catch(() => {
+        if (active) setIsOwner(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [code, hostToken, participantToken, user])
+
+  useEffect(() => {
+    if (!user) return
+    setNickname((current) => current || user.displayName.slice(0, 20))
+  }, [user])
 
   const isManager =
     Boolean(participant) &&
@@ -94,7 +134,11 @@ export function RoomPage() {
         hostToken,
         ...(participantToken ? { participantToken } : {}),
       }
-    : isManager && participantToken
+    : isOwner
+      ? participantToken
+        ? { participantToken }
+        : {}
+      : isManager && participantToken
       ? { participantToken }
       : null
   const isController = controlCredentials !== null
@@ -198,7 +242,6 @@ export function RoomPage() {
     return (
       <main className={pageMessageStyles}>
         <Brand className="absolute top-[26px] left-[30px]" />
-        <LocaleSwitcher className="absolute top-[26px] right-[30px]" />
         <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">
           {t('room.connecting')}
         </h1>
@@ -209,7 +252,6 @@ export function RoomPage() {
     return (
       <main className={pageMessageStyles}>
         <Brand className="absolute top-[26px] left-[30px]" />
-        <LocaleSwitcher className="absolute top-[26px] right-[30px]" />
         <h1 className="mt-4 text-[clamp(24px,4vw,38px)]">
           {roomError || t('room.roomNotFound')}
         </h1>
@@ -222,27 +264,25 @@ export function RoomPage() {
 
   return (
     <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
-      <header className="mx-auto mb-[22px] flex max-w-[1500px] items-center justify-between">
+      <header className="relative z-[60] mx-auto mb-[22px] flex max-w-[1500px] items-center justify-between">
         <Brand compactOnMobile />
         <div className="flex items-center gap-2">
-          {(participant || isHost) && (
-            <LocaleSwitcher className="max-w-[88px] sm:max-w-none" />
-          )}
+          <AccountMenu compact />
           <div className="flex items-center gap-[9px] text-[11px] font-bold tracking-[0.08em] text-dim">
             <span className={connectionDotStyles({ connected })} />
             ROOM <strong>{code}</strong>
           </div>
-          {(participant || isHost) && (
+          {(participant || isHost || isOwner) && (
             <ParticipantsMenu
               participants={room.participants}
               currentParticipantId={participant?.id}
               onSetManager={
-                isManager
+                isManager || isOwner
                   ? (targetParticipantId, nextIsManager) =>
                       runControllerAction(() =>
                         api.setManager(
                           code,
-                          participantToken,
+                          controlCredentials!,
                           targetParticipantId,
                           nextIsManager,
                         ),
@@ -376,7 +416,7 @@ export function RoomPage() {
             onSend={sendChatMessage}
           />
         )}
-        {isHost && (
+        {(isHost || isOwner) && (
           <section className="flex flex-col items-center gap-5 rounded-2xl border border-line bg-[linear-gradient(90deg,rgba(155,123,255,.10),rgba(255,255,255,.025))] px-5 py-5 text-center sm:grid sm:grid-cols-[auto_1fr_auto] sm:text-left">
             <div className="grid place-items-center rounded-[9px] bg-white p-[7px]">
               <QRCode value={joinUrl} size={88} />
@@ -403,13 +443,12 @@ export function RoomPage() {
         )}
       </section>
 
-      {!participant && (
+      {!participant && !participantLoading && (
         <div className="fixed inset-0 z-20 grid place-items-center bg-[#040307]/75 p-5 backdrop-blur-[18px]">
           <form
             className="relative flex w-full max-w-[420px] flex-col rounded-[18px] border border-purple/30 bg-[#121017] p-6 shadow-[0_30px_100px_rgba(0,0,0,.5)] md:p-[30px]"
             onSubmit={join}
           >
-            <LocaleSwitcher className="absolute top-5 right-5" />
             <div className={cardIconStyles()}><MusicIcon size={25} /></div>
             <span className={sectionKickerStyles}>WELCOME TO {code}</span>
             <h1 className="mt-2.5 mb-2 text-[27px] tracking-[-0.04em]">

@@ -1,4 +1,13 @@
 export type PlaybackMode = 'host_only' | 'all_devices'
+export type RoomRetentionMode = 'temporary' | 'permanent'
+
+export type AuthUser = {
+  id: string
+  discordId: string
+  username: string
+  displayName: string
+  avatarUrl: string | null
+}
 
 export type Song = {
   id: string
@@ -14,7 +23,8 @@ export type Song = {
 
 export type RoomState = {
   code: string
-  expiresAt: number
+  retentionMode: RoomRetentionMode
+  expiresAt: number | null
   hostVolume: number
   playbackMode: PlaybackMode
   playbackPaused: boolean
@@ -43,6 +53,7 @@ export type Participant = {
 
 export type RoomSession = {
   isHost: boolean
+  isOwner: boolean
   participant: Participant | null
   room: RoomState
 }

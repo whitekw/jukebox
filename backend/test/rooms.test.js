@@ -477,6 +477,113 @@ test('deletes a room after it remains empty for one hour', () => {
   db.close()
 })
 
+test('creates a room and its first participant together', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+
+  assert.throws(
+    () => rooms.createRoom({ nickname: 'A' }),
+    /닉네임은 2~20자/,
+  )
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM rooms').get().count, 0)
+
+  const created = rooms.createRoom({ nickname: 'Creator' })
+  const state = rooms.getPublicRoom(created.code)
+  assert.ok(created.participantToken)
+  assert.equal(created.participant.nickname, 'Creator')
+  assert.equal(created.participant.isManager, true)
+  assert.equal(state.participants.length, 1)
+  assert.equal(state.participants[0].nickname, 'Creator')
+  assert.equal(state.participants[0].isManager, true)
+  db.close()
+})
+
+test('keeps permanent rooms and grants their account owner control', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  db.prepare(
+    `INSERT INTO users (
+       id, discord_id, username, global_name, avatar_hash,
+       created_at, updated_at, last_login_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'owner-1',
+    'discord-1',
+    'owner',
+    'Owner',
+    null,
+    currentTime,
+    currentTime,
+    currentTime,
+  )
+  const rooms = createRoomService(db, {
+    roomTtlHours: 1,
+    emptyRoomTtlHours: 1,
+    now: () => currentTime,
+  })
+  const created = rooms.createRoom({
+    retentionMode: 'permanent',
+    ownerUserId: 'owner-1',
+  })
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
+  rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One'))
+
+  assert.equal(created.expiresAt, null)
+  assert.equal(rooms.getPublicRoom(created.code).retentionMode, 'permanent')
+  assert.equal(
+    rooms.getRoomSession(created.code, { userId: 'owner-1' }).isOwner,
+    true,
+  )
+  rooms.setManager(
+    created.code,
+    { userId: 'owner-1' },
+    bob.participant.id,
+    true,
+  )
+  assert.equal(
+    rooms
+      .getPublicRoom(created.code)
+      .participants.find((participant) => participant.id === bob.participant.id)
+      .isManager,
+    true,
+  )
+  rooms.setPlaybackPaused(created.code, { userId: 'owner-1' }, true)
+  assert.equal(rooms.listOwnedRooms('owner-1').length, 1)
+
+  rooms.markRoomEmpty(created.code)
+  currentTime += 7 * 24 * 60 * 60 * 1000
+  assert.equal(rooms.deleteExpiredRooms(), 0)
+  assert.equal(rooms.getPublicRoom(created.code).code, created.code)
+  db.close()
+})
+
+test('requires an account for permanent rooms and keeps temporary rooms while occupied', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, {
+    roomTtlHours: 1,
+    emptyRoomTtlHours: 1,
+    now: () => currentTime,
+  })
+
+  assert.throws(
+    () => rooms.createRoom({ retentionMode: 'permanent' }),
+    /로그인/,
+  )
+  assert.throws(
+    () => rooms.createRoom({ retentionMode: 'unknown' }),
+    /유지 방식/,
+  )
+
+  const created = rooms.createRoom({ retentionMode: 'temporary' })
+  rooms.markRoomOccupied(created.code)
+  currentTime += 2 * 60 * 60 * 1000
+  assert.equal(rooms.deleteExpiredRooms(), 0)
+  assert.equal(rooms.getPublicRoom(created.code).code, created.code)
+  db.close()
+})
+
 test('allows participants to remove and skip only their own songs', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)

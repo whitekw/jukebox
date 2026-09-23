@@ -9,6 +9,7 @@ flowchart LR
     H[호스트 브라우저\n/room/:code + hostToken]
     P[참여자 브라우저\n/room/:code + participantToken]
     S[Node.js 24\nExpress + Socket.IO]
+    D[Discord OAuth2]
     R[Room Service]
     Y[YouTube Service]
     DB[(SQLite)]
@@ -21,6 +22,7 @@ flowchart LR
     S --> Y
     R <--> DB
     Y <-->|HTTPS| YD
+    S <-->|Authorization code + identify| D
     H <-->|영상/플레이어 제어| YP
     P -.->|all_devices 모드 재생| YP
 ```
@@ -29,11 +31,11 @@ flowchart LR
 
 | 컨테이너 | 책임 | 상태 |
 | --- | --- | --- |
-| 프런트 SPA | 화면, 토큰 보관, REST 명령, 룸 상태 구독, 선택 모드에 따른 영상 재생 | React state + `localStorage` |
+| 프런트 SPA | 화면, 방 토큰 보관, 로그인 UI, REST 명령, 룸 상태 구독, 선택 모드에 따른 영상 재생 | React state + `localStorage` + HttpOnly 세션 쿠키 |
 | Express/Socket.IO 서버 | API 라우팅, 오류 변환, 룸 채널, 정적 파일 제공 | 인메모리 연결/제한/캐시 일부 |
 | Room Service | 인증·권한, 한도, 중복, 곡 상태 전이, 설정, 공동 관리자 관리 | SQLite 트랜잭션 |
 | YouTube Service | 입력 파싱, 외부 검색, 재생 가능성 검증 | 상태 없음 |
-| SQLite | 방, 참여자, 곡, 채팅과 재생 제어 상태 | WAL 파일 |
+| SQLite | 사용자·로그인 세션, 방, 참여자, 곡, 채팅과 재생 제어 상태 | WAL 파일 |
 
 ## 3. 상태 소유권
 
@@ -41,7 +43,7 @@ flowchart LR
 
 | 상태 | 정본 | 복제/캐시 |
 | --- | --- | --- |
-| 방 설정과 만료 시각 | `rooms` 테이블 | 모든 구독 브라우저의 `RoomState` |
+| 방 설정·소유자·유지 방식 | `rooms` 테이블 | 모든 구독 브라우저의 `RoomState` |
 | 현재 곡과 대기열 | `rooms.current_song_id`, `songs` | 모든 구독 브라우저의 `RoomState` |
 | 재생 모드와 기준 타임라인 | `rooms` 테이블 | 모든 플레이어가 위치 계산 및 drift 보정에 사용 |
 | 일시정지/자동재생 차단/볼륨 | `rooms` 테이블 | 호스트/참여자 플레이어와 매니저 UI |
@@ -50,6 +52,9 @@ flowchart LR
 | 현재 접속 중인 참여자 | Node.js 메모리의 소켓별 presence | 공개 룸 상태의 참여자 목록 |
 | 호스트/참여자 원본 토큰 | 각 브라우저 `localStorage` | 서버에는 SHA-256 해시만 저장 |
 | 언어 선택 | 브라우저 `localStorage` | 서버는 최초 추천 로케일만 제공 |
+| Discord 사용자 | `users` 테이블 | 프런트 `AuthProvider`의 공개 프로필 |
+| 로그인 세션 | `auth_sessions`의 토큰 해시 | 브라우저 HttpOnly `jukebox_session` 원본 쿠키 |
+| 영구 방 소유권 | `rooms.owner_user_id` | 로그인 쿠키로 기기 간 복구 |
 
 ## 4. 백엔드 레이어
 
@@ -60,6 +65,7 @@ flowchart TB
     ERR[AppError -> JSON error middleware]
     ROOM[createRoomService]
     YT[createYouTubeService]
+    AUTH[createDiscordAuth]
     LOCALE[locale helpers]
     LIMIT[in-memory rate limiter]
     DB[(node:sqlite DatabaseSync)]
@@ -67,6 +73,7 @@ flowchart TB
     LIMIT --> HTTP
     HTTP --> ROOM
     HTTP --> YT
+    HTTP --> AUTH
     HTTP --> LOCALE
     HTTP --> ERR
     WS --> ROOM
@@ -78,13 +85,15 @@ flowchart TB
 - 환경 변수를 읽고 DB, 도메인 서비스, Express, HTTP 서버, Socket.IO를 생성합니다.
 - 변경 API가 성공하면 `room:{정규화된 코드}` 채널로 `room:state`를 보내고, 새 채팅과 활동 로그는 인증된 참여자 전용 `chat-room:{코드}` 채널로 보냅니다.
 - `frontend/dist`를 정적 제공하며 SPA 경로는 `index.html`로 폴백합니다.
-- 시작 시 한 번, 이후 1분마다 고정 만료 방과 1시간 이상 비어 있는 방을 삭제합니다.
+- Discord Authorization Code 흐름의 state를 HttpOnly 쿠키로 검증하고 로그인 세션을 발급·삭제합니다.
+- 시작 시 한 번, 이후 1분마다 레거시 만료 방, TTL을 넘긴 임시 방과 만료된 로그인 세션을 삭제합니다. 영구 방은 제외합니다.
 - `SIGINT`와 `SIGTERM`에서 HTTP 서버와 DB를 닫습니다.
 
 ### `rooms.js`: 도메인 서비스
 
 - 방 코드 및 고엔트로피 토큰 생성
-- 호스트, 참여자, 매니저 자격 증명 검증
+- 호스트, 계정 소유자, 참여자, 매니저 자격 증명 검증
+- 임시·영구 방 생성과 계정 소유 영구 방 조회
 - 공개 `RoomState` 조립
 - 방 내 활성 영상 중복 방지
 - 현재 곡/대기열 전이, 순서 변경, 삭제
@@ -164,7 +173,7 @@ sequenceDiagram
     FE->>API: POST /api/rooms
     API->>RS: createRoom()
     RS->>DB: room + host token hash 저장
-    API-->>FE: code, hostToken, expiresAt
+    API-->>FE: code, hostToken, retentionMode
     FE->>FE: hostToken을 localStorage에 저장
     Host->>FE: 닉네임 제출
     FE->>API: POST /api/rooms/:code/join
@@ -302,6 +311,6 @@ flowchart LR
 | 방 생성 시 재생 기기 모드 고정 | 스피커 중심 사용과 원격 공동 청취를 모두 지원 | 방을 만든 뒤에는 모드를 변경할 수 없음 |
 | 서버 기준 재생 타임라인 + 클라이언트 보정 | 미디어를 중계하지 않고 여러 IFrame의 위치를 정렬 | 네트워크·버퍼링에 따라 짧은 오차가 남을 수 있음 |
 | SQLite + 동기 API | 배포와 트랜잭션 코드가 단순 | 이벤트 루프 블로킹 가능성과 수평 확장 제한 |
-| 토큰 기반 무계정 인증 | 빠른 참여와 개인정보 최소화 | 토큰 복구·철회·기기 간 이동이 어려움 |
+| 토큰 기반 빠른 참여 + 선택적 계정 소유권 | 비로그인 참여는 유지하면서 영구 방은 기기 간 복구 | 참여자 닉네임 세션 자체는 여전히 브라우저별 토큰에 의존 |
 | 생성 시 YouTube 메타데이터 복사 | 읽기 성능과 외부 API 의존 감소 | 원본 제목/썸네일 변경이 자동 반영되지 않음 |
 | 고정 TTL + 빈 방 자동 삭제 | 사용하지 않는 방을 빠르게 정리하면서 최대 수명을 제한 | Socket.IO 연결 상태를 단일 서버에서 추적 |

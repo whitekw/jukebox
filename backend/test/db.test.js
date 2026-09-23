@@ -88,7 +88,7 @@ test('migrates the earliest legacy participant to a manager', () => {
         `SELECT manager_participant_id, host_volume, playback_paused,
                  playback_blocked, playback_mode, playback_position_seconds,
                  playback_anchor_at, playback_pending, playback_revision,
-                 empty_since
+                 empty_since, owner_user_id, retention_mode, empty_ttl_hours
          FROM rooms WHERE id = ?`,
       )
       .get('room-1')
@@ -127,6 +127,9 @@ test('migrates the earliest legacy participant to a manager', () => {
     assert.ok(columns.includes('playback_pending'))
     assert.ok(columns.includes('empty_since'))
     assert.ok(columns.includes('playback_revision'))
+    assert.ok(columns.includes('owner_user_id'))
+    assert.ok(columns.includes('retention_mode'))
+    assert.ok(columns.includes('empty_ttl_hours'))
     assert.equal(migratedRoom.manager_participant_id, null)
     assert.equal(migratedRoom.host_volume, 100)
     assert.equal(migratedRoom.playback_paused, 0)
@@ -137,6 +140,9 @@ test('migrates the earliest legacy participant to a manager', () => {
     assert.equal(migratedRoom.playback_pending, 0)
     assert.equal(migratedRoom.playback_revision, 0)
     assert.equal(migratedRoom.empty_since, null)
+    assert.equal(migratedRoom.owner_user_id, null)
+    assert.equal(migratedRoom.retention_mode, 'legacy')
+    assert.equal(migratedRoom.empty_ttl_hours, null)
     assert.equal(migratedParticipant.is_manager, 1)
 
     db.prepare('UPDATE participants SET is_manager = 0 WHERE id = ?').run(

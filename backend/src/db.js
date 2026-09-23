@@ -14,10 +14,33 @@ function createDatabase(databasePath = ':memory:') {
   }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      discord_id TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL,
+      global_name TEXT,
+      avatar_hash TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_login_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS rooms (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
       host_token_hash TEXT NOT NULL,
+      owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      retention_mode TEXT NOT NULL DEFAULT 'legacy'
+        CHECK(retention_mode IN ('legacy', 'temporary', 'permanent')),
+      empty_ttl_hours REAL,
       max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
       manager_participant_id TEXT,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
@@ -84,6 +107,8 @@ function createDatabase(databasePath = ':memory:') {
     );
 
     CREATE INDEX IF NOT EXISTS rooms_by_expiry ON rooms(expires_at);
+    CREATE INDEX IF NOT EXISTS auth_sessions_by_user ON auth_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS auth_sessions_by_expiry ON auth_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
       ON songs(room_id, status, position);
@@ -160,6 +185,19 @@ function createDatabase(databasePath = ':memory:') {
   if (!roomColumns.has('empty_since')) {
     db.exec('ALTER TABLE rooms ADD COLUMN empty_since INTEGER')
   }
+  if (!roomColumns.has('owner_user_id')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
+    )
+  }
+  if (!roomColumns.has('retention_mode')) {
+    db.exec(
+      "ALTER TABLE rooms ADD COLUMN retention_mode TEXT NOT NULL DEFAULT 'legacy' CHECK(retention_mode IN ('legacy', 'temporary', 'permanent'))",
+    )
+  }
+  if (!roomColumns.has('empty_ttl_hours')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN empty_ttl_hours REAL')
+  }
 
   const participantColumns = new Set(
     db
@@ -175,6 +213,9 @@ function createDatabase(databasePath = ':memory:') {
   }
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS rooms_by_owner_retention ON rooms(owner_user_id, retention_mode)',
   )
 
   db.prepare(
