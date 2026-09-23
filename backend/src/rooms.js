@@ -748,7 +748,14 @@ function createRoomService(db, options = {}) {
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      requireController(room, credentials)
+      const identity = getSessionIdentity(room, credentials)
+      if (!identity.isHost && !identity.participant) {
+        throw new AppError(
+          401,
+          '이 방에 다시 참여해주세요.',
+          'PARTICIPANT_REQUIRED',
+        )
+      }
       if (!room.current_song_id) {
         throw new AppError(
           409,

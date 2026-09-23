@@ -109,6 +109,7 @@ type ChatMessage = {
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/advance` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
@@ -304,6 +305,8 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 현재 곡이 있어야 하며 boolean만 허용합니다. 명시적인 재생 상태 변경은 자동재생 차단 플래그를 해제합니다.
 
+이 API는 관리자 화면의 `전체 일시정지`·`전체 재생` 버튼에서만 호출합니다. YouTube IFrame 내부의 재생·일시정지 조작은 해당 브라우저에만 적용되며 전역 `playbackPaused`를 변경하지 않습니다. 로컬 일시정지 후 재생하면 클라이언트는 아래 서버 기준 예상 위치로 이동한 뒤 재생합니다.
+
 재생 위치는 서버가 `playbackPositionSeconds`와 `playbackAnchorAt`을 기준점으로 관리합니다. 재생 중인 클라이언트는 `serverTime`으로 서버 시계 오차를 추정하고 다음 위치를 계산합니다.
 
 ```text
@@ -312,6 +315,12 @@ position = playbackPositionSeconds
 ```
 
 `playbackRevision`은 곡 변경, 일시정지/재개, 호스트 전용 자동재생 차단 상태 변경 때 증가합니다.
+
+### `POST /api/rooms/:code/playback/start`
+
+필수 권한: 유효한 호스트 또는 참여자 세션
+
+모든 기기 모드에서 새 곡이 `pending`일 때 실제 재생을 먼저 시작한 기기가 영상 ID와 현재 위치를 보고합니다. 관리자가 자기 기기만 로컬 일시정지한 상황에서도 다른 참여자가 타임라인을 시작할 수 있습니다. 첫 유효 보고만 반영되며 이후 요청은 현재 상태를 그대로 반환합니다.
 
 ### `PATCH /api/rooms/:code/playback/autoplay-blocked`
 

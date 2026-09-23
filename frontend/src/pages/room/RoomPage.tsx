@@ -167,19 +167,15 @@ export function RoomPage() {
     ).catch((requestError) => setError(getErrorMessage(requestError, t)))
   }
 
-  function updatePlaybackFromPlayer(paused: boolean) {
-    if (!controlCredentials || paused === room?.playbackPaused) return
-    runQueueAction(() =>
-      api.setPlaybackPaused(code, controlCredentials, paused),
-    )
-  }
-
   function reportPlaybackStarted(videoId: string, positionSeconds: number) {
-    if (!controlCredentials || room?.playbackMode !== 'all_devices') return
-    void runControllerAction(() =>
+    const playbackCredentials = participantToken
+      ? { participantToken }
+      : hostToken || null
+    if (!playbackCredentials || room?.playbackMode !== 'all_devices') return
+    void runRoomAction(() =>
       api.startPlayback(
         code,
-        controlCredentials,
+        playbackCredentials,
         videoId,
         positionSeconds,
       ),
@@ -278,11 +274,9 @@ export function RoomPage() {
                       ? reportPlaybackBlocked
                       : undefined
                   }
-                  onPausedChange={
-                    isController ? updatePlaybackFromPlayer : undefined
-                  }
                   onPlaybackStarted={
-                    isController && room.playbackMode === 'all_devices'
+                    (participant || isHost) &&
+                    room.playbackMode === 'all_devices'
                       ? reportPlaybackStarted
                       : undefined
                   }
@@ -318,7 +312,7 @@ export function RoomPage() {
                     )
                 : undefined
             }
-            onPlaybackToggle={
+            onGlobalPlaybackToggle={
               isController
                 ? () =>
                     runQueueAction(() =>
@@ -431,7 +425,6 @@ export function RoomPage() {
               onChange={(event) => setNickname(event.target.value)}
               minLength={2}
               maxLength={20}
-              placeholder={t('room.nicknamePlaceholder')}
               autoFocus
               required
             />

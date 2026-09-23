@@ -15,14 +15,14 @@ export const NowPlaying = ({
   blocked,
   player,
   onAdvance,
-  onPlaybackToggle,
+  onGlobalPlaybackToggle,
 }: {
   song: Song | null
   paused: boolean
   blocked: boolean
   player?: ReactNode
   onAdvance?: () => void
-  onPlaybackToggle?: () => void
+  onGlobalPlaybackToggle?: () => void
 }) => {
   const { t } = useI18n()
 
@@ -68,20 +68,6 @@ export const NowPlaying = ({
                     src={song.thumbnailUrl}
                     alt=""
                   />
-                  {onPlaybackToggle && (
-                    <button
-                      className="absolute inset-0 grid place-items-center bg-black/35 text-white transition-colors hover:bg-black/50 focus-visible:outline-2 focus-visible:outline-purple-light"
-                      type="button"
-                      aria-label={
-                        paused ? t('manager.play') : t('manager.pause')
-                      }
-                      onClick={onPlaybackToggle}
-                    >
-                      <span className="grid size-10 place-items-center rounded-full bg-black/65 shadow-lg">
-                        {paused ? <PlayIcon size={19} /> : <PauseIcon size={19} />}
-                      </span>
-                    </button>
-                  )}
                 </div>
               )}
               <div className="min-w-0">
@@ -96,20 +82,44 @@ export const NowPlaying = ({
                 </small>
               </div>
             </div>
-            {onAdvance && (
-              <button
-                className={cn(
-                  buttonStyles({ intent: 'outline', size: 'md' }),
-                  'size-11 shrink-0 px-0 font-bold sm:h-11 sm:w-auto sm:px-4',
+            {(onGlobalPlaybackToggle || onAdvance) && (
+              <div className="flex shrink-0 items-center gap-2">
+                {onGlobalPlaybackToggle && (
+                  <button
+                    className={cn(
+                      buttonStyles({
+                        intent: paused ? 'primary' : 'outline',
+                        size: 'md',
+                      }),
+                      'size-11 shrink-0 px-0 font-bold',
+                    )}
+                    type="button"
+                    aria-label={
+                      paused ? t('manager.playAll') : t('manager.pauseAll')
+                    }
+                    title={
+                      paused ? t('manager.playAll') : t('manager.pauseAll')
+                    }
+                    onClick={onGlobalPlaybackToggle}
+                  >
+                    {paused ? <PlayIcon size={18} /> : <PauseIcon size={18} />}
+                  </button>
                 )}
-                type="button"
-                onClick={onAdvance}
-              >
-                <SkipIcon size={18} />
-                <span className="sr-only sm:not-sr-only">
-                  {t('manager.skip')}
-                </span>
-              </button>
+                {onAdvance && (
+                  <button
+                    className={cn(
+                      buttonStyles({ intent: 'outline', size: 'md' }),
+                      'size-11 shrink-0 px-0 font-bold',
+                    )}
+                    type="button"
+                    aria-label={t('manager.skip')}
+                    title={t('manager.skip')}
+                    onClick={onAdvance}
+                  >
+                    <SkipIcon size={18} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </>

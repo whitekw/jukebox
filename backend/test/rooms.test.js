@@ -190,6 +190,7 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
     playbackMode: 'all_devices',
   })
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
   assert.equal(created.playbackMode, 'all_devices')
   let state = rooms.addSong(
@@ -206,9 +207,19 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
 
   currentTime += 3_000
   assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(), [])
+  assert.throws(
+    () =>
+      rooms.startPlayback(
+        created.code,
+        { participantToken: 'wrong-token' },
+        'aaaaaaaaaaa',
+        0.2,
+      ),
+    /다시 참여/,
+  )
   state = rooms.startPlayback(
     created.code,
-    { participantToken: alice.participantToken },
+    { participantToken: bob.participantToken },
     'aaaaaaaaaaa',
     0.2,
   )
