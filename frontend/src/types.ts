@@ -47,14 +47,39 @@ export type RoomSession = {
   room: RoomState
 }
 
-export type ChatMessage = {
+export type RoomEventType =
+  | 'song_added'
+  | 'song_skipped'
+  | 'song_removed'
+  | 'queue_reordered'
+  | 'playback_paused'
+  | 'playback_resumed'
+  | 'participant_joined'
+  | 'participant_left'
+  | 'manager_added'
+  | 'manager_removed'
+
+type ChatEntryBase = {
   id: string
   sequence: number
-  participantId: string
-  nickname: string
-  content: string
+  participantId: string | null
+  nickname: string | null
+  actorType: 'participant' | 'host' | 'system'
   createdAt: number
 }
+
+export type ChatMessage =
+  | (ChatEntryBase & {
+      type: 'message'
+      participantId: string
+      nickname: string
+      content: string
+    })
+  | (ChatEntryBase & {
+      type: 'system'
+      eventType: RoomEventType
+      data: Record<string, string | number | boolean>
+    })
 
 export type VideoSearchResult = {
   videoId: string

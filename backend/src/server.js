@@ -51,12 +51,15 @@ function activeRoomChannel(code) {
 
 const presence = createRoomPresence({
   graceMs: participantLeaveGraceMs,
-  onParticipantOffline: ({ code }) => {
+  onParticipantOffline: ({ code, participantId }) => {
     try {
-      const state = rooms.ensureOnlineManager(
+      logRoomEvent(
         code,
-        presence.getParticipantIds(code),
+        'participant_left',
+        { participantId },
+        {},
       )
+      const state = ensureOnlineManagerWithActivity(code)
       emitRoom(code, state)
     } catch (error) {
       if (error?.code !== 'ROOM_NOT_FOUND') {
@@ -85,6 +88,43 @@ function emitRoom(code, state) {
   )
   io.to(roomChannel(code)).emit('room:state', visibleState)
   return visibleState
+}
+
+function requestActivityActor(req) {
+  const participantToken = req.get('x-participant-token')
+  if (participantToken) return { participantToken }
+  const hostToken = req.get('x-host-token')
+  return hostToken ? { hostToken } : {}
+}
+
+function logRoomEvent(code, eventType, actor, data) {
+  const normalizedCode = normalizeCode(code)
+  const entry = rooms.addRoomEvent(normalizedCode, eventType, actor, data)
+  io.to(chatRoomChannel(normalizedCode)).emit('chat:message', entry)
+  return entry
+}
+
+function ensureOnlineManagerWithActivity(code) {
+  const normalizedCode = normalizeCode(code)
+  const before = rooms.getPublicRoom(normalizedCode)
+  const state = rooms.ensureOnlineManager(
+    normalizedCode,
+    presence.getParticipantIds(normalizedCode),
+  )
+  const previousManagerIds = new Set(
+    before.participants
+      .filter((participant) => participant.isManager)
+      .map((participant) => participant.id),
+  )
+  for (const participant of state.participants) {
+    if (participant.isManager && !previousManagerIds.has(participant.id)) {
+      logRoomEvent(normalizedCode, 'manager_added', {}, {
+        target: participant.nickname,
+        automatic: true,
+      })
+    }
+  }
+  return state
 }
 
 function asyncRoute(handler) {
@@ -184,16 +224,32 @@ app.post(
 )
 
 app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
+  const currentSong = rooms.getPublicRoom(req.params.code).currentSong
   const state = rooms.advance(req.params.code, controlCredentials(req))
+  logRoomEvent(
+    req.params.code,
+    'song_skipped',
+    requestActivityActor(req),
+    { title: currentSong?.title ?? '' },
+  )
   res.json(emitRoom(req.params.code, state))
 })
 
 app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
+  const previousState = rooms.getPublicRoom(req.params.code)
   const state = rooms.setPlaybackPaused(
     req.params.code,
     controlCredentials(req),
     req.body.paused,
   )
+  if (previousState.playbackPaused !== state.playbackPaused) {
+    logRoomEvent(
+      req.params.code,
+      state.playbackPaused ? 'playback_paused' : 'playback_resumed',
+      requestActivityActor(req),
+      {},
+    )
+  }
   res.json(emitRoom(req.params.code, state))
 })
 
@@ -221,21 +277,46 @@ app.patch(
 )
 
 app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
+  const removedSong = rooms
+    .getPublicRoom(req.params.code)
+    .queue.find((song) => song.id === req.params.songId)
   const state = rooms.removeSong(
     req.params.code,
     controlCredentials(req),
     req.params.songId,
   )
+  logRoomEvent(
+    req.params.code,
+    'song_removed',
+    requestActivityActor(req),
+    { title: removedSong?.title ?? '' },
+  )
   res.json(emitRoom(req.params.code, state))
 })
 
 app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) => {
+  const previousQueue = rooms.getPublicRoom(req.params.code).queue
+  const previousIndex = previousQueue.findIndex(
+    (song) => song.id === req.params.songId,
+  )
+  const movedSong = previousQueue[previousIndex]
   const state = rooms.reorderSong(
     req.params.code,
     controlCredentials(req),
     req.params.songId,
     req.body.targetIndex,
   )
+  if (previousIndex !== Number(req.body.targetIndex)) {
+    logRoomEvent(
+      req.params.code,
+      'queue_reordered',
+      requestActivityActor(req),
+      {
+        title: movedSong?.title ?? '',
+        position: Number(req.body.targetIndex) + 1,
+      },
+    )
+  }
   res.json(emitRoom(req.params.code, state))
 })
 
@@ -250,16 +331,26 @@ app.patch('/api/rooms/:code/settings', mutationLimiter, (req, res) => {
 
 app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res) => {
   const normalizedCode = normalizeCode(req.params.code)
+  const target = rooms
+    .getPublicRoom(normalizedCode)
+    .participants.find(
+      (participant) => participant.id === req.params.participantId,
+    )
   rooms.setManager(
     normalizedCode,
     req.get('x-participant-token'),
     req.params.participantId,
     req.body.isManager,
   )
-  const state = rooms.ensureOnlineManager(
-    normalizedCode,
-    presence.getParticipantIds(normalizedCode),
-  )
+  if (target && target.isManager !== req.body.isManager) {
+    logRoomEvent(
+      normalizedCode,
+      req.body.isManager ? 'manager_added' : 'manager_removed',
+      requestActivityActor(req),
+      { target: target.nickname, automatic: false },
+    )
+  }
+  const state = ensureOnlineManagerWithActivity(normalizedCode)
   res.json(emitRoom(normalizedCode, state))
 })
 
@@ -287,7 +378,7 @@ io.on('connection', (socket) => {
         }
         if (identity.participantId) {
           socket.join(chatRoomChannel(normalizedCode))
-          presence.connect(
+          const becameOnline = presence.connect(
             normalizedCode,
             identity.participantId,
             socket.id,
@@ -296,10 +387,15 @@ io.on('connection', (socket) => {
             code: normalizedCode,
             participantId: identity.participantId,
           }
-          state = rooms.ensureOnlineManager(
-            normalizedCode,
-            presence.getParticipantIds(normalizedCode),
-          )
+          if (becameOnline) {
+            logRoomEvent(
+              normalizedCode,
+              'participant_joined',
+              { participantId: identity.participantId },
+              {},
+            )
+          }
+          state = ensureOnlineManagerWithActivity(normalizedCode)
         }
         emitRoom(normalizedCode, state)
         if (typeof acknowledge === 'function') acknowledge({ ok: true })
@@ -385,11 +481,26 @@ server.listen(port, () => {
   console.log(`Jukebox backend listening on http://localhost:${port}`)
 })
 
+let shuttingDown = false
+
 function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
   clearInterval(playbackTimer)
   clearInterval(cleanupTimer)
   presence.clear()
-  server.close(() => {
+
+  const forceExitTimer = setTimeout(() => {
+    db.close()
+    process.exit(1)
+  }, 5_000)
+  forceExitTimer.unref()
+
+  // server.close()만 호출하면 열려 있는 Socket.IO 연결 때문에 개발 서버의
+  // watch 재시작이 끝나지 않아 이전 프로세스가 포트를 계속 점유한다. 실시간 연결과
+  // Engine.IO 서버를 먼저 닫은 뒤 DB를 정리해야 다음 프로세스가 즉시 뜬다.
+  io.close(() => {
+    clearTimeout(forceExitTimer)
     db.close()
     process.exit(0)
   })

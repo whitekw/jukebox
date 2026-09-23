@@ -86,9 +86,27 @@ type VideoSearchResult = {
 type ChatMessage = {
   id: string
   sequence: number
+  type: 'message'
   participantId: string
   nickname: string
+  actorType: 'participant'
   content: string
+  createdAt: number
+}
+
+type RoomEvent = {
+  id: string
+  sequence: number
+  type: 'system'
+  participantId: string | null
+  nickname: string | null
+  actorType: 'participant' | 'host' | 'system'
+  eventType:
+    | 'song_added' | 'song_skipped' | 'song_removed' | 'queue_reordered'
+    | 'playback_paused' | 'playback_resumed'
+    | 'participant_joined' | 'participant_left'
+    | 'manager_added' | 'manager_removed'
+  data: Record<string, string | number | boolean>
   createdAt: number
 }
 ```
@@ -103,7 +121,7 @@ type ChatMessage = {
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
-| GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅 100개 |
+| GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 없음 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
@@ -217,7 +235,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 필수 헤더: `x-participant-token`
 
-방의 최근 메시지를 최대 100개까지 오래된 순으로 반환합니다.
+방의 최근 사용자 메시지와 시스템 활동 로그를 합쳐 최대 100개까지 오래된 순으로 반환합니다.
 
 ```json
 {
@@ -225,10 +243,23 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
     {
       "id": "uuid",
       "sequence": 1,
+      "type": "message",
       "participantId": "uuid",
       "nickname": "Alice",
+      "actorType": "participant",
       "content": "안녕하세요",
       "createdAt": 1789540800000
+    },
+    {
+      "id": "uuid",
+      "sequence": 2,
+      "type": "system",
+      "participantId": "uuid",
+      "nickname": "Alice",
+      "actorType": "participant",
+      "eventType": "song_added",
+      "data": { "title": "Example" },
+      "createdAt": 1789540801000
     }
   ]
 }
@@ -243,6 +274,8 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 ```
 
 앞뒤 공백을 제거한 일반 텍스트 `1..300`자만 허용합니다. 성공하면 `201 Created`와 저장된 `ChatMessage`를 반환하고, 인증된 방 참여자에게 `chat:message`로 전달합니다. 메시지 삭제 API는 제공하지 않습니다.
+
+건너뛰기·대기열 삭제·순서 변경·전체 일시정지/재개·입장/퇴장·관리자 지정/해제도 `RoomEvent`로 저장되어 같은 `chat:message` 이벤트로 전달됩니다. 곡 추가는 대기열에 신청자가 표시되므로 활동 로그를 생성하지 않습니다. 입장/퇴장은 참여자의 첫 소켓 연결과 마지막 소켓 종료 후 재연결 유예 시간이 지난 시점을 기준으로 하므로, 새로고침이나 여러 탭 사용으로 로그가 중복되지 않습니다.
 
 ## 8. YouTube 조회
 
@@ -412,7 +445,7 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 
 ### 서버 → 클라이언트: `chat:message`
 
-payload는 새로 저장된 `ChatMessage`입니다. 유효한 참여자 토큰으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 메시지 ID를 기준으로 병합합니다.
+payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한 참여자 토큰으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 항목 ID를 기준으로 병합합니다.
 
 ## 11. 오류 계약
 

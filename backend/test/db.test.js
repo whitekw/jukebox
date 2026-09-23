@@ -79,6 +79,10 @@ test('migrates the earliest legacy participant to a manager', () => {
       .prepare('PRAGMA table_info(chat_messages)')
       .all()
       .map((column) => column.name)
+    const roomFeedColumns = db
+      .prepare('PRAGMA table_info(room_feed_entries)')
+      .all()
+      .map((column) => column.name)
     const migratedRoom = db
       .prepare(
         `SELECT manager_participant_id, host_volume, playback_paused,
@@ -99,6 +103,19 @@ test('migrates the earliest legacy participant to a manager', () => {
       'room_id',
       'participant_id',
       'content',
+      'created_at',
+    ])
+    assert.deepEqual(roomFeedColumns, [
+      'sequence',
+      'id',
+      'room_id',
+      'entry_type',
+      'participant_id',
+      'nickname',
+      'actor_type',
+      'content',
+      'event_type',
+      'event_data',
       'created_at',
     ])
     assert.ok(columns.includes('host_volume'))
@@ -133,6 +150,56 @@ test('migrates the earliest legacy participant to a manager', () => {
         .get('participant-1').is_manager,
       0,
     )
+  } finally {
+    db?.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('copies legacy chat messages into the unified room feed once', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-feed-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  let db
+
+  try {
+    db = createDatabase(databasePath)
+    db.prepare(
+      `INSERT INTO rooms (
+         id, code, host_token_hash, playback_anchor_at,
+         created_at, expires_at
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('room-1', 'ABC234', '0'.repeat(64), 1_000, 1_000, 60_000)
+    db.prepare(
+      `INSERT INTO participants (
+         id, room_id, token_hash, nickname, created_at
+       ) VALUES (?, ?, ?, ?, ?)`,
+    ).run('participant-1', 'room-1', '1'.repeat(64), 'Alice', 1_000)
+    db.prepare(
+      `INSERT INTO chat_messages (
+         id, room_id, participant_id, content, created_at
+       ) VALUES (?, ?, ?, ?, ?)`,
+    ).run('message-1', 'room-1', 'participant-1', 'legacy', 1_001)
+    db.close()
+
+    db = createDatabase(databasePath)
+    db.close()
+    db = createDatabase(databasePath)
+    const entries = db
+      .prepare(
+        `SELECT id, entry_type, nickname, content
+         FROM room_feed_entries WHERE room_id = ?`,
+      )
+      .all('room-1')
+      .map((entry) => ({ ...entry }))
+
+    assert.deepEqual(entries, [
+      {
+        id: 'message-1',
+        entry_type: 'message',
+        nickname: 'Alice',
+        content: 'legacy',
+      },
+    ])
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

@@ -33,8 +33,8 @@ test('keeps a participant online until their final socket leaves', () => {
     onParticipantOffline: (event) => offline.push(event),
   })
 
-  presence.connect('ABC123', 'alice', 'socket-1')
-  presence.connect('ABC123', 'alice', 'socket-2')
+  assert.equal(presence.connect('ABC123', 'alice', 'socket-1'), true)
+  assert.equal(presence.connect('ABC123', 'alice', 'socket-2'), false)
   presence.disconnect('ABC123', 'alice', 'socket-1')
 
   assert.deepEqual([...presence.getParticipantIds('ABC123')], ['alice'])
@@ -51,10 +51,10 @@ test('cancels leaving when a participant reconnects during the grace period', ()
     onParticipantOffline: (event) => offline.push(event),
   })
 
-  presence.connect('ABC123', 'alice', 'socket-1')
+  assert.equal(presence.connect('ABC123', 'alice', 'socket-1'), true)
   presence.disconnect('ABC123', 'alice', 'socket-1')
   const originalTimer = timers.timers[0]
-  presence.connect('ABC123', 'alice', 'socket-2')
+  assert.equal(presence.connect('ABC123', 'alice', 'socket-2'), false)
   timers.run(originalTimer)
 
   assert.deepEqual([...presence.getParticipantIds('ABC123')], ['alice'])
