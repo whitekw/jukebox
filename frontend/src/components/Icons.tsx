@@ -56,6 +56,22 @@ export function UsersIcon(props: IconProps) {
   )
 }
 
+export function MessageCircleIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3 1.6-4.8A8 8 0 1 1 21 15Z" />
+    </IconBase>
+  )
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m6 6 12 12M18 6 6 18" />
+    </IconBase>
+  )
+}
+
 export function SearchIcon(props: IconProps) {
   return (
     <IconBase {...props}>

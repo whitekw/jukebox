@@ -60,6 +60,14 @@ function createDatabase(databasePath = ':memory:') {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS rooms_by_expiry ON rooms(expires_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
@@ -67,6 +75,8 @@ function createDatabase(databasePath = ':memory:') {
     CREATE UNIQUE INDEX IF NOT EXISTS active_video_per_room
       ON songs(room_id, video_id)
       WHERE status IN ('queued', 'current');
+    CREATE INDEX IF NOT EXISTS chat_messages_by_room_created_at
+      ON chat_messages(room_id, created_at);
   `)
 
   const roomColumns = new Set(

@@ -26,6 +26,7 @@ import {
 import type { Participant } from '../../types'
 import { useRoomState } from '../../useRoomState'
 import { NowPlaying } from './NowPlaying'
+import { ChatPanel } from './ChatPanel'
 import { ParticipantsMenu } from './ParticipantsMenu'
 import { QueuePanel } from './QueuePanel'
 import { SearchPanel } from './SearchPanel'
@@ -45,6 +46,8 @@ export function RoomPage() {
     loading,
     connected,
     serverTimeOffsetMs,
+    chatMessages,
+    appendChatMessage,
     error: roomError,
   } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
@@ -127,6 +130,16 @@ export function RoomPage() {
     } catch (requestError) {
       setError(getErrorMessage(requestError, t))
     }
+  }
+
+  async function sendChatMessage(content: string) {
+    if (!participantToken) return
+    const chatMessage = await api.sendChatMessage(
+      code,
+      participantToken,
+      content,
+    )
+    appendChatMessage(chatMessage)
   }
 
   async function runRoomAction(action: () => Promise<NonNullable<typeof room>>) {
@@ -355,6 +368,13 @@ export function RoomPage() {
         </div>
         {participant && (
           <SearchPanel onAddSong={addSong} />
+        )}
+        {participant && (
+          <ChatPanel
+            messages={chatMessages}
+            currentParticipantId={participant.id}
+            onSend={sendChatMessage}
+          />
         )}
         {isHost && (
           <section className="flex flex-col items-center gap-5 rounded-2xl border border-line bg-[linear-gradient(90deg,rgba(155,123,255,.10),rgba(255,255,255,.025))] px-5 py-5 text-center sm:grid sm:grid-cols-[auto_1fr_auto] sm:text-left">

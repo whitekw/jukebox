@@ -33,7 +33,7 @@ flowchart LR
 | Express/Socket.IO 서버 | API 라우팅, 오류 변환, 룸 채널, 정적 파일 제공 | 인메모리 연결/제한/캐시 일부 |
 | Room Service | 인증·권한, 한도, 중복, 곡 상태 전이, 설정, 공동 관리자 관리 | SQLite 트랜잭션 |
 | YouTube Service | 입력 파싱, 외부 검색, 재생 가능성 검증 | 상태 없음 |
-| SQLite | 방, 참여자, 곡과 재생 제어 상태 | WAL 파일 |
+| SQLite | 방, 참여자, 곡, 채팅과 재생 제어 상태 | WAL 파일 |
 
 ## 3. 상태 소유권
 
@@ -46,6 +46,7 @@ flowchart LR
 | 재생 모드와 기준 타임라인 | `rooms` 테이블 | 모든 플레이어가 위치 계산 및 drift 보정에 사용 |
 | 일시정지/자동재생 차단/볼륨 | `rooms` 테이블 | 호스트/참여자 플레이어와 매니저 UI |
 | 참여자·매니저 | `participants.is_manager` | 공개 룸 상태 |
+| 최근 채팅 | `chat_messages` | 인증된 참여자 브라우저의 최근 100개 상태 |
 | 현재 접속 중인 참여자 | Node.js 메모리의 소켓별 presence | 공개 룸 상태의 참여자 목록 |
 | 호스트/참여자 원본 토큰 | 각 브라우저 `localStorage` | 서버에는 SHA-256 해시만 저장 |
 | 언어 선택 | 브라우저 `localStorage` | 서버는 최초 추천 로케일만 제공 |
@@ -75,7 +76,7 @@ flowchart TB
 ### `server.js`: 애플리케이션 조립
 
 - 환경 변수를 읽고 DB, 도메인 서비스, Express, HTTP 서버, Socket.IO를 생성합니다.
-- 변경 API가 성공하면 `room:{정규화된 코드}` 채널로 `room:state`를 보냅니다.
+- 변경 API가 성공하면 `room:{정규화된 코드}` 채널로 `room:state`를 보내고, 새 채팅은 인증된 참여자 전용 `chat-room:{코드}` 채널로 보냅니다.
 - `frontend/dist`를 정적 제공하며 SPA 경로는 `index.html`로 폴백합니다.
 - 시작 시 한 번, 이후 1분마다 고정 만료 방과 1시간 이상 비어 있는 방을 삭제합니다.
 - `SIGINT`와 `SIGTERM`에서 HTTP 서버와 DB를 닫습니다.
@@ -88,6 +89,7 @@ flowchart TB
 - 방 내 활성 영상 중복 방지
 - 현재 곡/대기열 전이, 순서 변경, 삭제
 - 재생 모드·기준 위치·기준 시각·revision, 볼륨 상태 및 공동 관리자 관리
+- 참여자 채팅 기록 저장과 최근 100개 조회
 - 변경 작업의 SQLite 트랜잭션 처리
 
 ### `youtube.js`: 외부 API 어댑터
@@ -107,7 +109,7 @@ flowchart TB
     HOOK[useRoomState]
     API[api.ts]
     PLAYER[YouTubePlayer]
-    PANELS[Manager / Queue / Search panels]
+    PANELS[Participants / Queue / Search / Chat panels]
     I18N[I18nProvider]
 
     I18N --> APP
@@ -142,6 +144,8 @@ flowchart TB
 연결 직후와 30초 간격으로 `time:sync`를 호출해 서버와 브라우저 시계의 오차를 추정합니다. 모든 기기 모드의 플레이어는 기준 위치와 기준 서버 시각으로 예상 위치를 계산하고, 3초마다 실제 위치가 0.75초보다 크게 벗어나면 `seekTo()`로 보정합니다. 단, 플레이어가 `ENDED` 상태에 도달하면 다음 곡 상태를 받을 때까지 위치 보정과 재생 재시도를 중단합니다.
 
 REST 변경 응답도 즉시 `setRoom`에 반영하므로, 이벤트 전달 전에 요청을 실행한 브라우저가 먼저 최신 UI를 볼 수 있습니다.
+
+채팅은 유효한 참여자 토큰으로 최근 100개를 REST 조회하고, 같은 토큰으로 구독한 소켓에서 `chat:message`를 수신합니다. 최초 조회와 실시간 이벤트가 겹쳐도 메시지 ID로 중복을 제거하고 생성 시각·DB 순번으로 정렬합니다.
 
 ## 6. 핵심 시퀀스
 
@@ -239,6 +243,7 @@ sequenceDiagram
 | 방 참여 | O | O | O | O |
 | YouTube 검색/차트 조회 | O | O | O | O |
 | 곡 추가 | X | O | O | X |
+| 채팅 조회·전송 | X | O | O | X |
 | 일시정지/재생 | X | X | O | O |
 | 현재 곡 건너뛰기 | X | 본인 신청곡 | O | O |
 | 대기열 곡 삭제 | X | 본인 신청곡 | O | O |
@@ -254,7 +259,7 @@ sequenceDiagram
 - 원본 토큰은 생성 응답에서 한 번 반환되며 DB에는 SHA-256 해시만 저장됩니다.
 - 호스트 토큰 비교는 `timingSafeEqual`을 사용합니다.
 - JSON 요청 본문은 32KB로 제한됩니다.
-- 검색은 IP/경로당 분당 30회, 변경 API는 분당 120회로 제한됩니다.
+- 검색은 IP/경로당 분당 30회, 일반 변경 API는 분당 120회로 제한됩니다. 채팅 조회·전송에는 별도 제한이 없습니다.
 - YouTube API 키는 백엔드 환경 변수에만 존재합니다.
 - 프로덕션 이미지는 비루트 `node` 사용자로 실행되며 배포 Compose는 읽기 전용 루트 파일시스템, capability 제거, `no-new-privileges`를 적용합니다.
 - 서비스 자체는 TLS를 종료하지 않으므로 인터넷 공개 시 HTTPS 리버스 프록시가 필요합니다.

@@ -46,6 +46,14 @@ export const ko = {
   'queue.next': '다음 곡',
   'queue.songCount': '{{count}}곡 대기 중',
   'queue.emptyDescription': '추가된 곡은 재생 순서대로 여기에 표시됩니다.',
+  'chat.title': '방 채팅',
+  'chat.empty': '첫 메시지를 남겨보세요.',
+  'chat.placeholder': '메시지 입력',
+  'chat.send': '전송',
+  'chat.sending': '전송 중…',
+  'chat.you': '나',
+  'chat.open': '채팅 열기',
+  'chat.close': '채팅 닫기',
   'participants.openList': '참여자 목록 열기',
   'participants.title': '참여자',
   'participants.count': '{{count}}명',
@@ -111,6 +119,7 @@ export const ko = {
   'errors.INVALID_VIDEO': '올바른 YouTube 영상 URL 또는 ID가 아닙니다.',
   'errors.VIDEO_NOT_PLAYABLE': '공개 상태이며 외부 재생이 가능한 영상을 찾지 못했습니다.',
   'errors.INVALID_QUERY': '검색어는 2자 이상 100자 이하여야 합니다.',
+  'errors.INVALID_CHAT_MESSAGE': '메시지는 1~300자로 입력해주세요.',
 } as const
 
 export type TranslationKey = keyof typeof ko
@@ -163,6 +172,14 @@ export const ja = {
   'queue.next': '次の曲',
   'queue.songCount': '{{count}}曲が待機中',
   'queue.emptyDescription': '追加された曲は再生順にここへ表示されます。',
+  'chat.title': 'ルームチャット',
+  'chat.empty': '最初のメッセージを送ってみましょう。',
+  'chat.placeholder': 'メッセージを入力',
+  'chat.send': '送信',
+  'chat.sending': '送信中…',
+  'chat.you': '自分',
+  'chat.open': 'チャットを開く',
+  'chat.close': 'チャットを閉じる',
   'participants.openList': '参加者リストを開く',
   'participants.title': '参加者',
   'participants.count': '{{count}}人',
@@ -228,6 +245,7 @@ export const ja = {
   'errors.INVALID_VIDEO': '有効なYouTube動画URLまたはIDではありません。',
   'errors.VIDEO_NOT_PLAYABLE': '公開中で外部再生が可能な動画が見つかりませんでした。',
   'errors.INVALID_QUERY': '検索語は2〜100文字で入力してください。',
+  'errors.INVALID_CHAT_MESSAGE': 'メッセージは1〜300文字で入力してください。',
 } satisfies Record<TranslationKey, string>
 
 export const en = {
@@ -278,6 +296,14 @@ export const en = {
   'queue.next': 'Up next',
   'queue.songCount': '{{count}} songs queued',
   'queue.emptyDescription': 'Added songs will appear here in playback order.',
+  'chat.title': 'Room chat',
+  'chat.empty': 'Start the conversation.',
+  'chat.placeholder': 'Type a message',
+  'chat.send': 'Send',
+  'chat.sending': 'Sending…',
+  'chat.you': 'You',
+  'chat.open': 'Open chat',
+  'chat.close': 'Close chat',
   'participants.openList': 'Open participant list',
   'participants.title': 'Participants',
   'participants.count': '{{count}} people',
@@ -343,6 +369,7 @@ export const en = {
   'errors.INVALID_VIDEO': 'Enter a valid YouTube video URL or ID.',
   'errors.VIDEO_NOT_PLAYABLE': 'No public, embeddable video could be found.',
   'errors.INVALID_QUERY': 'Enter a search term between 2 and 100 characters.',
+  'errors.INVALID_CHAT_MESSAGE': 'Enter a message between 1 and 300 characters.',
 } satisfies Record<TranslationKey, string>
 
 export const messages = { ko, ja, en }

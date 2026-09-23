@@ -14,7 +14,7 @@
 | 헤더 | 발급 시점 | 용도 |
 | --- | --- | --- |
 | `x-host-token` | 방 생성 응답 | 호스트 제어, 자동재생 차단 상태 보고 |
-| `x-participant-token` | 방 참여 응답 | 참여자 확인, 곡 추가, 매니저 제어 및 지정 |
+| `x-participant-token` | 방 참여 응답 | 참여자 확인, 곡 추가, 채팅, 매니저 제어 및 지정 |
 
 두 토큰은 브라우저 `localStorage`에 다음 키로 저장됩니다.
 
@@ -80,6 +80,19 @@ type VideoSearchResult = {
 }
 ```
 
+### `ChatMessage`
+
+```ts
+type ChatMessage = {
+  id: string
+  sequence: number
+  participantId: string
+  nickname: string
+  content: string
+  createdAt: number
+}
+```
+
 ## 4. 엔드포인트 요약
 
 | Method | Path | 권한 | 제한 그룹 | 응답 |
@@ -90,6 +103,8 @@ type VideoSearchResult = {
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
+| GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅 100개 |
+| POST | `/api/rooms/:code/messages` | 참여자 | 없음 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/advance` | controller | 변경 | `RoomState` |
@@ -100,7 +115,7 @@ type VideoSearchResult = {
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | 매니저 | 변경 | `RoomState` |
 
-요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다.
+요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다. 채팅 조회와 전송에는 별도 요청 제한을 적용하지 않습니다.
 
 ## 5. 시스템 및 설정
 
@@ -195,7 +210,40 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 }
 ```
 
-## 7. YouTube 조회
+## 7. 방 채팅
+
+### `GET /api/rooms/:code/messages`
+
+필수 헤더: `x-participant-token`
+
+방의 최근 메시지를 최대 100개까지 오래된 순으로 반환합니다.
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "sequence": 1,
+      "participantId": "uuid",
+      "nickname": "Alice",
+      "content": "안녕하세요",
+      "createdAt": 1789540800000
+    }
+  ]
+}
+```
+
+### `POST /api/rooms/:code/messages`
+
+필수 헤더: `x-participant-token`
+
+```json
+{ "content": "안녕하세요" }
+```
+
+앞뒤 공백을 제거한 일반 텍스트 `1..300`자만 허용합니다. 성공하면 `201 Created`와 저장된 `ChatMessage`를 반환하고, 인증된 방 참여자에게 `chat:message`로 전달합니다. 메시지 삭제 API는 제공하지 않습니다.
+
+## 8. YouTube 조회
 
 ### `GET /api/youtube/search?q={query}`
 
@@ -218,7 +266,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 }
 ```
 
-## 8. 신청곡과 재생 제어
+## 9. 신청곡과 재생 제어
 
 ### `POST /api/rooms/:code/songs`
 
@@ -313,7 +361,7 @@ position = playbackPositionSeconds
 
 같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 최소 한 명의 관리자는 반드시 유지됩니다.
 
-## 9. Socket.IO 계약
+## 10. Socket.IO 계약
 
 Socket.IO는 REST 서버와 같은 origin 및 포트를 사용합니다.
 
@@ -347,13 +395,17 @@ socket.emit(
 }
 ```
 
-구독 자체는 인증이 필요하지 않습니다. 성공하면 서버는 소켓을 `room:{CODE}` 채널에 넣고 즉시 현재 `room:state`를 한 번 보냅니다.
+공개 룸 상태 구독 자체는 인증이 필요하지 않습니다. 성공하면 서버는 소켓을 `room:{CODE}` 채널에 넣고 즉시 현재 `room:state`를 한 번 보냅니다. 유효한 참여자 토큰을 함께 보낸 소켓만 별도의 `chat-room:{CODE}` 채널에도 들어갑니다.
 
 ### 서버 → 클라이언트: `room:state`
 
 payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생 상태, 방 설정, 매니저 변경 후 해당 방의 모든 구독자에게 전달됩니다.
 
-## 10. 오류 계약
+### 서버 → 클라이언트: `chat:message`
+
+payload는 새로 저장된 `ChatMessage`입니다. 유효한 참여자 토큰으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 메시지 ID를 기준으로 병합합니다.
+
+## 11. 오류 계약
 
 ```json
 {
@@ -368,7 +420,7 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 
 | 분류 | 코드 |
 | --- | --- |
-| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
+| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
 | 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE`, `LAST_MANAGER_REQUIRED` |

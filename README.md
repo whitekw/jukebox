@@ -15,6 +15,7 @@
 - 관리자 추가·해제와 전원 오프라인 시 자동 승격
 - YouTube 공식 IFrame Player 자동 재생 및 종료 후 다음 곡 처리
 - Socket.IO 룸 단위 실시간 동기화
+- 참여자 전용 실시간 방 채팅과 최근 100개 기록
 - SQLite 영속 저장과 만료 방 정리
 - 호스트·참여자 토큰 해시 검증과 기본 요청 제한
 
@@ -25,8 +26,8 @@ frontend (React + Vite)
        │ HTTP / Socket.IO
        ▼
 backend (Express)
-       ├─ SQLite: rooms / participants / songs
-       ├─ Socket.IO: 룸 상태 브로드캐스트
+       ├─ SQLite: rooms / participants / songs / chat_messages
+       ├─ Socket.IO: 룸 상태·채팅 브로드캐스트
        └─ YouTube Data API: 검색 및 영상 검증
 ```
 

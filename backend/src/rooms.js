@@ -4,6 +4,8 @@ const { AppError } = require('./errors')
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
+const CHAT_MESSAGE_MAX_LENGTH = 300
+const CHAT_HISTORY_LIMIT = 100
 
 function createToken() {
   return crypto.randomBytes(32).toString('base64url')
@@ -168,6 +170,81 @@ function createRoomService(db, options = {}) {
       addedById: row.added_by,
       position: row.position,
     }
+  }
+
+  function serializeChatMessage(row) {
+    return {
+      id: row.id,
+      sequence: Number(row.message_order),
+      participantId: row.participant_id,
+      nickname: row.nickname,
+      content: row.content,
+      createdAt: Number(row.created_at),
+    }
+  }
+
+  function listChatMessages(code, participantToken) {
+    const room = getRoomRecord(code)
+    requireParticipant(room, participantToken)
+    return db
+      .prepare(
+        `SELECT * FROM (
+           SELECT chat_messages.id, chat_messages.participant_id,
+                  participants.nickname, chat_messages.content,
+                  chat_messages.created_at,
+                  chat_messages.rowid AS message_order
+           FROM chat_messages
+           JOIN participants ON participants.id = chat_messages.participant_id
+           WHERE chat_messages.room_id = ?
+           ORDER BY chat_messages.created_at DESC, chat_messages.rowid DESC
+           LIMIT ?
+         )
+         ORDER BY created_at ASC, message_order ASC`,
+      )
+      .all(room.id, CHAT_HISTORY_LIMIT)
+      .map(serializeChatMessage)
+  }
+
+  function addChatMessage(code, participantToken, content) {
+    const normalizedContent =
+      typeof content === 'string' ? content.trim() : ''
+    if (
+      normalizedContent.length === 0 ||
+      normalizedContent.length > CHAT_MESSAGE_MAX_LENGTH
+    ) {
+      throw new AppError(
+        400,
+        `메시지는 1~${CHAT_MESSAGE_MAX_LENGTH}자로 입력해주세요.`,
+        'INVALID_CHAT_MESSAGE',
+      )
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const participant = requireParticipant(room, participantToken)
+      const message = {
+        id: crypto.randomUUID(),
+        participantId: participant.id,
+        nickname: participant.nickname,
+        content: normalizedContent,
+        createdAt: now(),
+      }
+      const result = db.prepare(
+        `INSERT INTO chat_messages (
+           id, room_id, participant_id, content, created_at
+         ) VALUES (?, ?, ?, ?, ?)`,
+      ).run(
+        message.id,
+        room.id,
+        message.participantId,
+        message.content,
+        message.createdAt,
+      )
+      return {
+        ...message,
+        sequence: Number(result.lastInsertRowid),
+      }
+    })
   }
 
   function getPlaybackPosition(room, at = now()) {
@@ -872,6 +949,8 @@ function createRoomService(db, options = {}) {
     getPublicRoom,
     getParticipantStatus,
     getRoomSession,
+    listChatMessages,
+    addChatMessage,
     hasActiveSession,
     getPresenceIdentity,
     addSong,

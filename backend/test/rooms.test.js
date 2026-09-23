@@ -35,6 +35,76 @@ test('creates, joins, queues and advances a room', () => {
   db.close()
 })
 
+test('stores and returns the latest room chat messages for participants', () => {
+  const db = createDatabase()
+  let currentTime = 1_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
+
+  const first = rooms.addChatMessage(
+    created.code,
+    alice.participantToken,
+    '  안녕하세요  ',
+  )
+  currentTime += 1
+  const second = rooms.addChatMessage(
+    created.code,
+    bob.participantToken,
+    '반갑습니다',
+  )
+
+  assert.deepEqual(first, {
+    id: first.id,
+    sequence: first.sequence,
+    participantId: alice.participant.id,
+    nickname: 'Alice',
+    content: '안녕하세요',
+    createdAt: 1_000,
+  })
+  assert.ok(second.sequence > first.sequence)
+  assert.deepEqual(
+    rooms.listChatMessages(created.code, bob.participantToken),
+    [first, second],
+  )
+  assert.throws(
+    () => rooms.listChatMessages(created.code, 'wrong-token'),
+    /다시 참여/,
+  )
+  assert.throws(
+    () => rooms.addChatMessage(created.code, alice.participantToken, '   '),
+    /1~300자/,
+  )
+  assert.throws(
+    () =>
+      rooms.addChatMessage(
+        created.code,
+        alice.participantToken,
+        'a'.repeat(301),
+      ),
+    /1~300자/,
+  )
+
+  for (let index = 0; index < 101; index += 1) {
+    currentTime += 1
+    rooms.addChatMessage(
+      created.code,
+      alice.participantToken,
+      `message-${index}`,
+    )
+  }
+  const latestMessages = rooms.listChatMessages(
+    created.code,
+    alice.participantToken,
+  )
+  assert.equal(latestMessages.length, 100)
+  assert.equal(latestMessages[0].content, 'message-1')
+  assert.equal(latestMessages.at(-1).content, 'message-100')
+
+  db.close()
+})
+
 test('allows unlimited requests while enforcing duplicate prevention and host token', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
