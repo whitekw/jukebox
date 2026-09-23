@@ -47,6 +47,15 @@ export type RoomSession = {
   room: RoomState
 }
 
+export type ChatMessage = {
+  id: string
+  sequence: number
+  participantId: string
+  nickname: string
+  content: string
+  createdAt: number
+}
+
 export type VideoSearchResult = {
   videoId: string
   title: string

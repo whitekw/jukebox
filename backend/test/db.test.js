@@ -75,6 +75,10 @@ test('migrates the earliest legacy participant to a manager', () => {
       .prepare('PRAGMA table_info(participants)')
       .all()
       .map((column) => column.name)
+    const chatMessageColumns = db
+      .prepare('PRAGMA table_info(chat_messages)')
+      .all()
+      .map((column) => column.name)
     const migratedRoom = db
       .prepare(
         `SELECT manager_participant_id, host_volume, playback_paused,
@@ -90,6 +94,13 @@ test('migrates the earliest legacy participant to a manager', () => {
 
     assert.ok(columns.includes('manager_participant_id'))
     assert.ok(participantColumns.includes('is_manager'))
+    assert.deepEqual(chatMessageColumns, [
+      'id',
+      'room_id',
+      'participant_id',
+      'content',
+      'created_at',
+    ])
     assert.ok(columns.includes('host_volume'))
     assert.ok(columns.includes('playback_paused'))
     assert.ok(columns.includes('playback_blocked'))

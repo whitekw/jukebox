@@ -41,6 +41,10 @@ function roomChannel(code) {
   return `room:${normalizeCode(code)}`
 }
 
+function chatRoomChannel(code) {
+  return `chat-room:${normalizeCode(code)}`
+}
+
 function activeRoomChannel(code) {
   return `active-room:${normalizeCode(code)}`
 }
@@ -135,6 +139,26 @@ app.get('/api/rooms/:code/me', (req, res) => {
   res.json(
     rooms.getParticipantStatus(req.params.code, req.get('x-participant-token')),
   )
+})
+
+app.get('/api/rooms/:code/messages', (req, res) => {
+  res.json({
+    items: rooms.listChatMessages(
+      req.params.code,
+      req.get('x-participant-token'),
+    ),
+  })
+})
+
+app.post('/api/rooms/:code/messages', (req, res) => {
+  const normalizedCode = normalizeCode(req.params.code)
+  const message = rooms.addChatMessage(
+    normalizedCode,
+    req.get('x-participant-token'),
+    req.body?.content,
+  )
+  io.to(chatRoomChannel(normalizedCode)).emit('chat:message', message)
+  res.status(201).json(message)
 })
 
 app.get(
@@ -262,6 +286,7 @@ io.on('connection', (socket) => {
           rooms.markRoomOccupied(normalizedCode)
         }
         if (identity.participantId) {
+          socket.join(chatRoomChannel(normalizedCode))
           presence.connect(
             normalizedCode,
             identity.participantId,

@@ -8,7 +8,9 @@
 erDiagram
     ROOMS ||--o{ PARTICIPANTS : contains
     ROOMS ||--o{ SONGS : owns
+    ROOMS ||--o{ CHAT_MESSAGES : owns
     PARTICIPANTS ||--o{ SONGS : requests
+    PARTICIPANTS ||--o{ CHAT_MESSAGES : writes
 
     ROOMS {
         text id PK
@@ -50,6 +52,14 @@ erDiagram
         text added_by FK
         text status
         integer position
+        integer created_at
+    }
+
+    CHAT_MESSAGES {
+        text id PK
+        text room_id FK
+        text participant_id FK
+        text content
         integer created_at
     }
 ```
@@ -124,7 +134,19 @@ erDiagram
 
 부분 UNIQUE 인덱스가 애플리케이션의 사전 중복 검사와 별개로 활성 곡 중복을 DB 수준에서도 방지합니다. 이미 `played` 또는 `removed`인 영상은 같은 방에 다시 추가할 수 있습니다.
 
-## 5. 곡 상태 전이
+## 5. `chat_messages`
+
+| 컬럼 | 타입/제약 | 의미 |
+| --- | --- | --- |
+| `id` | TEXT PK | 메시지 UUID |
+| `room_id` | TEXT FK → `rooms.id`, ON DELETE CASCADE | 소속 방 |
+| `participant_id` | TEXT FK → `participants.id`, ON DELETE CASCADE | 작성 참여자 |
+| `content` | TEXT NOT NULL | 공백 제거 후 `1..300`자인 일반 텍스트 |
+| `created_at` | INTEGER NOT NULL | 작성 시각 epoch ms |
+
+`chat_messages_by_room_created_at(room_id, created_at)` 인덱스를 사용합니다. 조회는 최신 100개를 선택한 뒤 생성 시각과 SQLite `rowid` 순으로 반환하며, API의 `sequence`는 이 `rowid`를 숫자로 직렬화한 값입니다. 방 삭제 시 메시지도 함께 삭제됩니다.
+
+## 6. 곡 상태 전이
 
 ```mermaid
 stateDiagram-v2
@@ -142,7 +164,7 @@ stateDiagram-v2
 - 현재 구현은 `played`와 `removed` 행을 방이 만료될 때까지 유지합니다.
 - 대기열 이동은 두 인접 곡의 `position`을 교환합니다. 중간 충돌을 피하기 위해 이동 곡에 임시 음수 값을 넣습니다.
 
-## 6. 핵심 불변식
+## 7. 핵심 불변식
 
 ### 방
 
@@ -167,7 +189,13 @@ stateDiagram-v2
 - 직접 추가되는 영상은 YouTube 조회 시 공개·비라이브·임베드 가능 상태여야 합니다.
 - 대기열 조회는 `position ASC, created_at ASC`로 안정적으로 정렬합니다.
 
-## 7. 트랜잭션 경계
+### 채팅
+
+- 유효한 참여자 토큰이 있는 사용자만 기록을 조회하거나 메시지를 전송할 수 있습니다.
+- 메시지는 일반 텍스트로 저장하며 앞뒤 공백을 제거한 뒤 `1..300`자를 검증합니다.
+- 삭제 기능과 채팅 전용 요청 제한은 제공하지 않습니다.
+
+## 8. 트랜잭션 경계
 
 `rooms.js`의 다음 변경은 `BEGIN IMMEDIATE` / `COMMIT`으로 처리되고 실패 시 `ROLLBACK`됩니다.
 
@@ -179,10 +207,11 @@ stateDiagram-v2
 - 방 설정 변경
 - 매니저 추가·해제
 - 온라인 매니저 부재 시 자동 승격
+- 채팅 메시지 추가
 
 `BEGIN IMMEDIATE`는 쓰기 예약 잠금을 먼저 획득하므로 한도 및 중복 검사 뒤 삽입 사이의 동시 쓰기 경쟁을 줄입니다. 현재 모든 DB 작업은 단일 Node.js 프로세스 안에서 동기 실행됩니다.
 
-## 8. 스키마 초기화와 마이그레이션
+## 9. 스키마 초기화와 마이그레이션
 
 `createDatabase()`는 시작할 때 `CREATE TABLE IF NOT EXISTS`와 인덱스 생성을 실행합니다. 기존 DB에 다음 `rooms` 컬럼이 없으면 `ALTER TABLE`로 추가합니다.
 
@@ -199,7 +228,7 @@ stateDiagram-v2
 
 기존 `participants` 테이블에 `is_manager`가 없으면 컬럼을 추가하고, 레거시 `manager_participant_id`가 가리키던 참여자를 관리자로 변환합니다. 레거시 포인터가 없는 방은 생성 시각이 가장 빠른 참여자를 관리자로 지정한 뒤 포인터를 비웁니다. 현재 별도의 스키마 버전 테이블이나 마이그레이션 파일은 없습니다.
 
-## 9. 만료와 삭제
+## 10. 만료와 삭제
 
 - 방 생성 시 `expires_at = now + ROOM_TTL_HOURS`로 고정합니다.
 - 유효한 호스트 또는 참여자 토큰으로 연결된 Socket.IO 클라이언트가 하나도 없으면 `empty_since`를 기록하고, 다시 연결되면 비웁니다.
@@ -209,6 +238,6 @@ stateDiagram-v2
 - 방 삭제는 foreign key cascade로 참여자와 곡을 함께 삭제합니다.
 - 방 활동에 따른 TTL 연장 기능은 없습니다.
 
-## 10. 백업 고려사항
+## 11. 백업 고려사항
 
 파일 DB는 WAL 모드이므로 실행 중 파일 복사만으로 백업할 때는 본 DB와 `-wal`, `-shm`의 일관성을 고려해야 합니다. 운영 백업은 SQLite의 일관된 백업 방식 또는 서비스를 안전하게 중지한 뒤 볼륨을 복제하는 방식이 적합합니다. 복원 전에는 현재 DB 볼륨의 별도 사본을 보관하고, 복원 후 `/api/health`와 방 생성/조회 동작을 확인합니다.

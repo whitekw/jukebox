@@ -32,7 +32,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 ### 룸 매니저
 
 - 방에 가장 먼저 입장한 참여자가 자동으로 매니저가 됩니다.
-- 매니저는 여러 명을 지정할 수 있으며 재생/일시정지, 건너뛰기와 대기열 편집을 수행할 수 있습니다. 호스트 볼륨 변경은 호스트 전용 모드에서만 제공되며, 모든 기기 모드에서는 각 기기가 자체 플레이어 볼륨을 사용합니다.
+- 매니저는 여러 명을 지정할 수 있으며 전체 재생/일시정지, 건너뛰기와 대기열 편집을 수행할 수 있습니다. IFrame의 재생/일시정지는 해당 기기에만 적용되고 재개 시 서버 위치로 동기화됩니다. 호스트 볼륨 변경은 호스트 전용 모드에서만 제공되며, 모든 기기 모드에서는 각 기기가 자체 플레이어 볼륨을 사용합니다.
 - 매니저는 참여자 메뉴에서 다른 참여자의 관리 권한을 추가하거나 해제할 수 있으며 최소 한 명은 유지됩니다.
 - 모든 매니저가 오프라인이면 가장 오래 접속 중인 일반 참여자를 추가 매니저로 자동 승격합니다. 기존 매니저 권한은 재접속 후에도 유지됩니다.
 - 호스트 토큰은 매니저와 무관하게 방이 살아 있는 동안 계속 제어 권한을 가집니다.
@@ -44,7 +44,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 | 프런트엔드 | React 19, TypeScript 6, Vite 8 | SPA 화면과 브라우저 상태 관리 |
 | 라우팅 | React Router 7 | 홈과 역할 기반 통합 룸 화면 라우팅 |
 | UI | Tailwind CSS 4, tailwind-variants | 반응형 스타일과 공통 스타일 variant |
-| 실시간 | Socket.IO 4 | 룸 단위 전체 상태 브로드캐스트 |
+| 실시간 | Socket.IO 4 | 룸 단위 전체 상태와 참여자 채팅 브로드캐스트 |
 | 백엔드 | Node.js 24, Express 5 | REST API, 정적 파일, 도메인 서비스 |
 | 저장소 | `node:sqlite`의 `DatabaseSync` | 방·참여자·곡 상태 영속화 |
 | 외부 연동 | YouTube Data API v3, IFrame Player API | 검색/검증/차트와 선택 모드별 브라우저 재생 |
@@ -57,7 +57,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 jukebox/
 ├─ frontend/
 │  ├─ src/
-│  │  ├─ pages/              # HomePage, 통합 RoomPage와 룸 하위 패널
+│  │  ├─ pages/              # HomePage, 통합 RoomPage와 검색·대기열·채팅 패널
 │  │  ├─ components/         # 플레이어, 곡 목록, 브랜드, 언어 선택기
 │  │  ├─ api.ts              # REST 클라이언트와 토큰 키 규칙
 │  │  ├─ useRoomState.ts     # 최초 조회 + Socket.IO 구독
@@ -121,4 +121,5 @@ jukebox/
 - DB 스키마: `backend/src/db.js`
 - 재생 및 동기화 흐름: `frontend/src/pages/room/RoomPage.tsx`, `frontend/src/components/YouTubePlayer.tsx`
 - 참여자/매니저 흐름: `frontend/src/pages/room/RoomPage.tsx`
+- 채팅 UI: `frontend/src/pages/room/ChatPanel.tsx`
 - 실시간 상태 구독: `frontend/src/useRoomState.ts`

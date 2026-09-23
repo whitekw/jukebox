@@ -3,6 +3,10 @@ import { useI18n, type Translate } from '../i18n-context'
 import { buttonStyles, cn } from '../styles'
 
 type YTPlayer = {
+  cueVideoById(options: {
+    videoId: string
+    startSeconds?: number
+  }): void
   loadVideoById(options: {
     videoId: string
     startSeconds?: number
@@ -160,7 +164,6 @@ export function YouTubePlayer({
   paused,
   playbackBlocked = false,
   onPlaybackBlockedChange,
-  onPausedChange,
   onPlaybackStarted,
   onEnded,
   synchronization,
@@ -170,7 +173,6 @@ export function YouTubePlayer({
   paused: boolean
   playbackBlocked?: boolean
   onPlaybackBlockedChange?: (blocked: boolean) => void
-  onPausedChange?: (paused: boolean) => void
   onPlaybackStarted?: (videoId: string, positionSeconds: number) => void
   onEnded?: () => void
   synchronization?: PlaybackSynchronization
@@ -191,8 +193,8 @@ export function YouTubePlayer({
   const synchronizationRef = useRef(synchronization)
   const playbackBlockedRef = useRef(playbackBlocked)
   const autoplayBlockedRef = useRef(false)
+  const locallyPausedRef = useRef(false)
   const onPlaybackBlockedChangeRef = useRef(onPlaybackBlockedChange)
-  const onPausedChangeRef = useRef(onPausedChange)
   const onPlaybackStartedRef = useRef(onPlaybackStarted)
   const onEndedRef = useRef(onEnded)
   const requestedPausedStateRef = useRef<boolean | null>(null)
@@ -251,11 +253,17 @@ export function YouTubePlayer({
   }
 
   function alignPlayer(player: YTPlayer, forceSeek: boolean) {
+    if (
+      !playerReadyRef.current ||
+      typeof player.getPlayerState !== 'function'
+    ) {
+      return
+    }
     const playerState = player.getPlayerState()
     if (playerState === YOUTUBE_STATE_ENDED) return
 
     const sync = synchronizationRef.current
-    if (sync && !sync.pending) {
+    if (sync && !sync.pending && (!locallyPausedRef.current || forceSeek)) {
       const expected = expectedPosition()
       const current = player.getCurrentTime()
       if (
@@ -266,9 +274,11 @@ export function YouTubePlayer({
       }
     }
 
-    if (pausedRef.current) {
-      requestedPausedStateRef.current = true
-      player.pauseVideo()
+    if (pausedRef.current || locallyPausedRef.current) {
+      if (playerState !== YOUTUBE_STATE_PAUSED) {
+        requestedPausedStateRef.current = true
+        player.pauseVideo()
+      }
     } else if (
       !autoplayBlockedRef.current &&
       playerState !== YOUTUBE_STATE_PLAYING
@@ -288,7 +298,8 @@ export function YouTubePlayer({
       ended: false,
     }
     playbackSessionRef.current = session
-    requestedPausedStateRef.current = pausedRef.current
+    requestedPausedStateRef.current =
+      pausedRef.current || locallyPausedRef.current
     autoplayBlockedRef.current = false
     setAutoplayBlocked(false)
     setPlaybackError(null)
@@ -297,13 +308,23 @@ export function YouTubePlayer({
       transitionRetryTimerRef.current = null
     }
     const player = playerRef.current
-    if (player) {
-      player.loadVideoById({
+    if (
+      player &&
+      playerReadyRef.current &&
+      typeof player.loadVideoById === 'function'
+    ) {
+      const loadOptions = {
         videoId,
         ...(synchronizationRef.current && !synchronizationRef.current.pending
           ? { startSeconds: expectedPosition() }
           : {}),
-      })
+      }
+      if (pausedRef.current || locallyPausedRef.current) {
+        player.cueVideoById(loadOptions)
+        requestedPausedStateRef.current = pausedRef.current ? true : null
+      } else {
+        player.loadVideoById(loadOptions)
+      }
 
       // loadVideoById 자체가 영상을 재생한다. 전환 직후에는 이전 영상의
       // 상태가 잠시 남을 수 있으므로 즉시 seek/play 명령을 겹쳐 보내지 않는다.
@@ -314,6 +335,7 @@ export function YouTubePlayer({
           playbackSessionRef.current !== session ||
           session.started ||
           pausedRef.current ||
+          locallyPausedRef.current ||
           autoplayBlockedRef.current
         ) {
           return
@@ -342,10 +364,6 @@ export function YouTubePlayer({
   }, [onEnded])
 
   useEffect(() => {
-    onPausedChangeRef.current = onPausedChange
-  }, [onPausedChange])
-
-  useEffect(() => {
     onPlaybackStartedRef.current = onPlaybackStarted
   }, [onPlaybackStarted])
 
@@ -369,12 +387,15 @@ export function YouTubePlayer({
   useEffect(() => {
     pausedRef.current = paused
     requestedPausedStateRef.current = paused
+    const player = playerRef.current
+    if (!player || !playerReadyRef.current) return
     if (paused) {
-      playerRef.current?.pauseVideo()
+      player.pauseVideo()
     } else {
+      locallyPausedRef.current = false
       autoplayBlockedRef.current = false
       setAutoplayBlocked(false)
-      playerRef.current?.playVideo()
+      alignPlayer(player, true)
     }
   }, [paused])
 
@@ -394,7 +415,13 @@ export function YouTubePlayer({
   useEffect(() => {
     const timer = window.setInterval(() => {
       const player = playerRef.current
-      if (!player || !synchronizationRef.current) return
+      if (
+        !player ||
+        !playerReadyRef.current ||
+        !synchronizationRef.current
+      ) {
+        return
+      }
       const playerState = player.getPlayerState()
       if (
         playerState === YOUTUBE_STATE_ENDED ||
@@ -490,17 +517,18 @@ export function YouTubePlayer({
                 onPlaybackBlockedChangeRef.current?.(false)
               }
               if (pausedRef.current) {
-                if (
-                  requestedPausedStateRef.current === true ||
-                  !onPausedChangeRef.current
-                ) {
-                  requestedPausedStateRef.current = true
+                requestedPausedStateRef.current = true
+                event.target.pauseVideo()
+                return
+              }
+              if (locallyPausedRef.current) {
+                if (requestedPausedStateRef.current === true) {
                   event.target.pauseVideo()
                   return
                 }
+                locallyPausedRef.current = false
                 requestedPausedStateRef.current = false
-                onPausedChangeRef.current(false)
-                return
+                alignPlayer(event.target, true)
               }
             }
             if (
@@ -513,8 +541,8 @@ export function YouTubePlayer({
               if (eventPaused && !session.started) return
               if (requestedPausedStateRef.current === eventPaused) {
                 requestedPausedStateRef.current = null
-              } else if (pausedRef.current !== eventPaused) {
-                onPausedChangeRef.current?.(eventPaused)
+              } else if (eventPaused && !pausedRef.current) {
+                locallyPausedRef.current = true
               }
             }
           },
@@ -582,7 +610,11 @@ export function YouTubePlayer({
             onClick={() => {
               setPlaybackError(null)
               const player = playerRef.current
-              if (player) {
+              if (
+                player &&
+                playerReadyRef.current &&
+                typeof player.loadVideoById === 'function'
+              ) {
                 const session: PlaybackSession = {
                   videoId: videoIdRef.current,
                   loadedAt: performance.now(),

@@ -26,6 +26,7 @@ import {
 import type { Participant } from '../../types'
 import { useRoomState } from '../../useRoomState'
 import { NowPlaying } from './NowPlaying'
+import { ChatPanel } from './ChatPanel'
 import { ParticipantsMenu } from './ParticipantsMenu'
 import { QueuePanel } from './QueuePanel'
 import { SearchPanel } from './SearchPanel'
@@ -45,6 +46,8 @@ export function RoomPage() {
     loading,
     connected,
     serverTimeOffsetMs,
+    chatMessages,
+    appendChatMessage,
     error: roomError,
   } = useRoomState(code, hostToken, participantToken)
   const [participant, setParticipant] = useState<Participant | null>(null)
@@ -129,6 +132,16 @@ export function RoomPage() {
     }
   }
 
+  async function sendChatMessage(content: string) {
+    if (!participantToken) return
+    const chatMessage = await api.sendChatMessage(
+      code,
+      participantToken,
+      content,
+    )
+    appendChatMessage(chatMessage)
+  }
+
   async function runRoomAction(action: () => Promise<NonNullable<typeof room>>) {
     setRoom(await action())
   }
@@ -154,19 +167,15 @@ export function RoomPage() {
     ).catch((requestError) => setError(getErrorMessage(requestError, t)))
   }
 
-  function updatePlaybackFromPlayer(paused: boolean) {
-    if (!controlCredentials || paused === room?.playbackPaused) return
-    runQueueAction(() =>
-      api.setPlaybackPaused(code, controlCredentials, paused),
-    )
-  }
-
   function reportPlaybackStarted(videoId: string, positionSeconds: number) {
-    if (!controlCredentials || room?.playbackMode !== 'all_devices') return
-    void runControllerAction(() =>
+    const playbackCredentials = participantToken
+      ? { participantToken }
+      : hostToken || null
+    if (!playbackCredentials || room?.playbackMode !== 'all_devices') return
+    void runRoomAction(() =>
       api.startPlayback(
         code,
-        controlCredentials,
+        playbackCredentials,
         videoId,
         positionSeconds,
       ),
@@ -265,11 +274,9 @@ export function RoomPage() {
                       ? reportPlaybackBlocked
                       : undefined
                   }
-                  onPausedChange={
-                    isController ? updatePlaybackFromPlayer : undefined
-                  }
                   onPlaybackStarted={
-                    isController && room.playbackMode === 'all_devices'
+                    (participant || isHost) &&
+                    room.playbackMode === 'all_devices'
                       ? reportPlaybackStarted
                       : undefined
                   }
@@ -305,7 +312,7 @@ export function RoomPage() {
                     )
                 : undefined
             }
-            onPlaybackToggle={
+            onGlobalPlaybackToggle={
               isController
                 ? () =>
                     runQueueAction(() =>
@@ -355,6 +362,13 @@ export function RoomPage() {
         </div>
         {participant && (
           <SearchPanel onAddSong={addSong} />
+        )}
+        {participant && (
+          <ChatPanel
+            messages={chatMessages}
+            currentParticipantId={participant.id}
+            onSend={sendChatMessage}
+          />
         )}
         {isHost && (
           <section className="flex flex-col items-center gap-5 rounded-2xl border border-line bg-[linear-gradient(90deg,rgba(155,123,255,.10),rgba(255,255,255,.025))] px-5 py-5 text-center sm:grid sm:grid-cols-[auto_1fr_auto] sm:text-left">
@@ -411,7 +425,6 @@ export function RoomPage() {
               onChange={(event) => setNickname(event.target.value)}
               minLength={2}
               maxLength={20}
-              placeholder={t('room.nicknamePlaceholder')}
               autoFocus
               required
             />

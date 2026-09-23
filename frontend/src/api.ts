@@ -1,4 +1,5 @@
 import type {
+  ChatMessage,
   Participant,
   PlaybackMode,
   RoomSession,
@@ -123,6 +124,28 @@ export const api = {
     return request<Participant>(`/api/rooms/${encodeURIComponent(code)}/me`, {
       headers: { 'x-participant-token': participantToken },
     })
+  },
+
+  getChatMessages(code: string, participantToken: string) {
+    return request<{ items: ChatMessage[] }>(
+      `/api/rooms/${encodeURIComponent(code)}/messages`,
+      { headers: { 'x-participant-token': participantToken } },
+    )
+  },
+
+  sendChatMessage(
+    code: string,
+    participantToken: string,
+    content: string,
+  ) {
+    return request<ChatMessage>(
+      `/api/rooms/${encodeURIComponent(code)}/messages`,
+      {
+        method: 'POST',
+        headers: { 'x-participant-token': participantToken },
+        body: JSON.stringify({ content }),
+      },
+    )
   },
 
   searchVideos(query: string) {
