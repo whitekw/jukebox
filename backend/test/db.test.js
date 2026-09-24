@@ -5,6 +5,54 @@ const os = require('node:os')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 const { createDatabase } = require('../src/db')
+const { createRoomService } = require('../src/rooms')
+
+test('migrates legacy account access tokens before resuming a member', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-tokens-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  let db
+
+  try {
+    db = createDatabase(databasePath)
+    db.prepare(
+      `INSERT INTO users (
+         id, discord_id, username, global_name, avatar_hash,
+         created_at, updated_at, last_login_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('owner', 'discord-owner', 'owner', 'Owner', null, 1, 1, 1)
+    const created = createRoomService(db).createRoom({
+      retentionMode: 'permanent', ownerUserId: 'owner',
+      nickname: 'Owner', participantUserId: 'owner', profileSource: 'account',
+    })
+    db.exec(`
+      DROP TABLE participant_access_tokens;
+      CREATE TABLE participant_access_tokens (
+        participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE
+      );
+    `)
+    db.prepare(
+      'INSERT INTO participant_access_tokens (participant_id, token_hash) VALUES (?, ?)',
+    ).run(created.participant.id, '2'.repeat(64))
+    db.close()
+    db = createDatabase(databasePath)
+
+    const resumed = createRoomService(db).resumeAccountParticipant(created.code, 'owner')
+    assert.equal(resumed.participant.id, created.participant.id)
+    assert.equal(
+      db.prepare('SELECT created_at FROM participant_access_tokens WHERE token_hash = ?')
+        .get('2'.repeat(64)).created_at,
+      0,
+    )
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS count FROM participant_access_tokens').get().count,
+      2,
+    )
+  } finally {
+    db?.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 test('migrates the earliest legacy participant to a manager', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
@@ -101,6 +149,7 @@ test('migrates the earliest legacy participant to a manager', () => {
     assert.ok(participantColumns.includes('user_id'))
     assert.ok(participantColumns.includes('profile_source'))
     assert.ok(participantColumns.includes('avatar_url'))
+    assert.ok(participantColumns.includes('offline_since'))
     assert.deepEqual(chatMessageColumns, [
       'id',
       'room_id',

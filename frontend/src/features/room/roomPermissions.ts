@@ -1,5 +1,20 @@
 import type { ControlCredentials } from './api'
-import type { Participant, RoomState } from './types'
+import type { Participant, RoomState, Song } from './types'
+
+export function canControlSong(
+  song: Pick<Song, 'addedById' | 'otherControlAvailableAt'>,
+  participantId: string | undefined,
+  isController: boolean,
+  serverNow: number,
+) {
+  return isController || Boolean(
+    participantId && (
+      song.addedById === participantId ||
+      (song.otherControlAvailableAt !== null &&
+        serverNow >= song.otherControlAvailableAt)
+    ),
+  )
+}
 
 export function getRoomPermissions({
   room,

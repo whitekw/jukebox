@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from 'react'
-import { GripIcon, MusicIcon, TrashIcon } from '../../../shared/ui/Icons'
+import { MusicIcon, TrashIcon } from '../../../shared/ui/Icons'
 import { formatDuration } from '../../../shared/format'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
@@ -107,19 +107,12 @@ export function SongList({
           )}
           key={song.id}
           draggable={Boolean(onReorder && songs.length > 1)}
+          title={onReorder && songs.length > 1 ? t('song.dragToReorder') : undefined}
           onDragStart={(event) => startDragging(event, song.id)}
           onDragOver={(event) => markDropTarget(event, song.id)}
           onDrop={(event) => dropSong(event, song.id)}
           onDragEnd={finishDragging}
         >
-          {onReorder && songs.length > 1 && (
-            <span
-              className="hidden shrink-0 text-[#6f6978] md:block"
-              title={t('song.dragToReorder')}
-            >
-              <GripIcon size={17} />
-            </span>
-          )}
           <img
             src={song.thumbnailUrl}
             alt=""
@@ -132,9 +125,18 @@ export function SongList({
             <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted">
               {song.artist}
             </span>
-            <small className="mt-0.5 text-[9px] text-[#66606d]">
-              {t('song.requestedBy', { nickname: song.addedBy })}
-            </small>
+            <span className="mt-1 flex min-w-0 items-center gap-1.5">
+              <span className="grid size-[18px] shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
+                {song.addedByAvatarUrl ? (
+                  <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
+                ) : (
+                  song.addedBy.trim().slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-dim">
+                {t('song.requestedBy', { nickname: song.addedBy })}
+              </small>
+            </span>
           </div>
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(song.durationSeconds)}

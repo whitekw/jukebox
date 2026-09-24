@@ -7,6 +7,8 @@ import type { RoomParticipant } from '../types'
 type ParticipantsMenuProps = {
   participants: RoomParticipant[]
   currentParticipantId?: string
+  onLeave?: () => Promise<void>
+  onJoinAccount?: () => Promise<void>
   onSetManager?: (
     targetParticipantId: string,
     isManager: boolean,
@@ -16,6 +18,8 @@ type ParticipantsMenuProps = {
 export function ParticipantsMenu({
   participants,
   currentParticipantId,
+  onLeave,
+  onJoinAccount,
   onSetManager,
 }: ParticipantsMenuProps) {
   const { t } = useI18n()
@@ -23,6 +27,8 @@ export function ParticipantsMenu({
   const [open, setOpen] = useState(false)
   const [busyParticipantId, setBusyParticipantId] = useState('')
   const [error, setError] = useState('')
+  const onlineParticipants = participants.filter((participant) => participant.online)
+  const offlineMembers = participants.filter((participant) => participant.isMember && !participant.online)
 
   useEffect(() => {
     if (!open) return
@@ -81,7 +87,7 @@ export function ParticipantsMenu({
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple',
         )}
         type="button"
-        aria-label={`${t('participants.openList')} · ${t('participants.count', { count: participants.length })}`}
+        aria-label={`${t('participants.openList')} · ${t('participants.count', { count: onlineParticipants.length })}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -91,7 +97,7 @@ export function ParticipantsMenu({
       >
         <UsersIcon size={19} />
         <span className="font-mono text-xs tabular-nums text-ink">
-          {participants.length}
+          {onlineParticipants.length}
         </span>
       </button>
 
@@ -111,19 +117,19 @@ export function ParticipantsMenu({
               </h2>
             </div>
             <span className="rounded-full border border-line bg-white/[0.035] px-2.5 py-1 font-mono text-[10px] text-muted">
-              {t('participants.count', { count: participants.length })}
+              {t('participants.count', { count: onlineParticipants.length })}
             </span>
           </div>
 
           <ul className="m-0 flex max-h-[320px] list-none flex-col gap-1 overflow-y-auto p-0">
-            {participants.map((roomParticipant) => {
+            {[...onlineParticipants, ...offlineMembers].map((roomParticipant, index) => {
               const isCurrent = roomParticipant.id === currentParticipantId
               return (
                 <li
-                  className="flex min-h-14 items-center gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-white/[0.04]"
+                  className={cn('flex min-h-14 items-center gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-white/[0.04]', !roomParticipant.online && 'opacity-60', index === onlineParticipants.length && offlineMembers.length > 0 && 'mt-2 border-t border-line pt-3')}
                   key={roomParticipant.id}
                 >
-                  <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-sm font-black text-purple-light">
+                  <span className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-sm font-black text-purple-light">
                     {roomParticipant.avatarUrl ? (
                       <img
                         className="size-full object-cover"
@@ -144,6 +150,7 @@ export function ParticipantsMenu({
                           {t('participants.you')}
                         </span>
                       )}
+                      <span className={cn('size-1.5 shrink-0 rounded-full', roomParticipant.online ? 'bg-lime' : 'bg-dim')} aria-label={roomParticipant.online ? t('participants.online') : t('participants.offline')} />
                     </div>
                     {roomParticipant.isManager && (
                       <span className="text-[10px] font-bold text-lime">
@@ -175,6 +182,13 @@ export function ParticipantsMenu({
               )
             })}
           </ul>
+
+          {(onLeave || onJoinAccount) && (
+            <div className="mt-2 border-t border-line pt-2">
+              {onJoinAccount && <button className="w-full rounded-lg px-3 py-2 text-left text-xs text-purple-light hover:bg-purple/[0.08]" type="button" onClick={() => void onJoinAccount()}>{t('participants.joinAccount')}</button>}
+              {onLeave && <button className="w-full rounded-lg px-3 py-2 text-left text-xs text-muted hover:bg-danger/[0.08] hover:text-danger" type="button" onClick={() => void onLeave()}>{t('home.leaveRoom')}</button>}
+            </div>
+          )}
 
           {error && (
             <p

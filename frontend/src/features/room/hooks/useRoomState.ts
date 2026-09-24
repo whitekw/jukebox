@@ -10,6 +10,8 @@ export function useRoomState(
   hostToken = '',
   participantToken = '',
   onHostRevoked?: () => void,
+  onMembershipLeft?: () => void,
+  authUserId = '',
 ) {
   const { t } = useI18n()
   const [room, setRoom] = useState<RoomState | null>(null)
@@ -127,6 +129,9 @@ export function useRoomState(
     socket.on('room:host-revoked', () => {
       if (active) onHostRevoked?.()
     })
+    socket.on('room:membership-left', () => {
+      if (active) onMembershipLeft?.()
+    })
     socket.on('connect_error', () => {
       if (active) setConnected(false)
     })
@@ -140,7 +145,7 @@ export function useRoomState(
       window.clearInterval(clockTimer)
       socket.disconnect()
     }
-  }, [appendChatMessage, code, hostToken, onHostRevoked, participantToken])
+  }, [appendChatMessage, authUserId, code, hostToken, onHostRevoked, onMembershipLeft, participantToken])
 
   return {
     room,

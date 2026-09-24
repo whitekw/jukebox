@@ -57,6 +57,16 @@ export const roomApi = {
     return request<{ items: RoomState[] }>('/api/rooms/owned')
   },
 
+  getJoinedRooms() {
+    return request<{ items: RoomState[] }>('/api/rooms/joined')
+  },
+
+  leaveRoom(code: string) {
+    return request<void>(`/api/rooms/${encodeURIComponent(code)}/membership`, {
+      method: 'DELETE',
+    })
+  },
+
   deleteRoom(code: string) {
     return request<void>(`/api/rooms/${encodeURIComponent(code)}`, {
       method: 'DELETE',
@@ -84,15 +94,24 @@ export const roomApi = {
     )
   },
 
-  joinRoom(code: string, nickname: string) {
+  joinRoom(code: string, nickname: string, participantToken?: string) {
     return request<{
       participantToken: string
       participant: Participant
       room: RoomState
     }>(`/api/rooms/${encodeURIComponent(code)}/join`, {
       method: 'POST',
+      headers: participantToken ? { 'x-participant-token': participantToken } : {},
       body: JSON.stringify({ nickname }),
     })
+  },
+
+  resumeRoom(code: string) {
+    return request<{
+      participantToken: string
+      participant: Participant
+      room: RoomState
+    }>(`/api/rooms/${encodeURIComponent(code)}/resume`, { method: 'POST' })
   },
 
   getMe(code: string, participantToken: string) {

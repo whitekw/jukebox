@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getRoomPermissions } from '../src/features/room/roomPermissions.ts'
+import { canControlSong, getRoomPermissions } from '../src/features/room/roomPermissions.ts'
 
 const room = {
   participants: [
@@ -67,4 +67,14 @@ test('a host sends both tokens when also joined as a participant', () => {
     participantToken: 'participant-token',
   })
   assert.deepEqual(result.songActionCredentials, result.controlCredentials)
+})
+
+test('a listener can control another requester song only after its one-minute deadline', () => {
+  const song = { addedById: 'requester', otherControlAvailableAt: 61_000 }
+  assert.equal(canControlSong(song, 'listener', false, 60_999), false)
+  assert.equal(canControlSong(song, 'listener', false, 61_000), true)
+  assert.equal(canControlSong(song, undefined, false, 61_000), false)
+  assert.equal(canControlSong({ ...song, otherControlAvailableAt: null }, 'listener', false, 61_000), false)
+  assert.equal(canControlSong(song, 'requester', false, 1_000), true)
+  assert.equal(canControlSong(song, undefined, true, 1_000), true)
 })

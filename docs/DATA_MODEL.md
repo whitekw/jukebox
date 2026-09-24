@@ -140,14 +140,22 @@ erDiagram
 | `room_id` | TEXT FK → `rooms.id`, ON DELETE CASCADE | 소속 방 |
 | `token_hash` | TEXT NOT NULL | 참여자 원본 토큰의 SHA-256 hex |
 | `nickname` | TEXT NOT NULL | 표시 이름, 서비스 규칙상 공백 제거 후 `2..20`자 |
+| `user_id` | TEXT nullable FK → `users.id` | 로그인 계정의 방 멤버십. 익명 참여자는 null |
+| `profile_source` | TEXT | `account` 또는 `custom` |
+| `avatar_url` | TEXT nullable | 계정 참여자의 프로필 이미지 스냅샷 |
+| `offline_since` | INTEGER nullable | 마지막 연결이 끊긴 시각 epoch ms. 재접속하면 null |
 | `is_manager` | INTEGER, 기본 0, `0/1` | 공동 관리자 여부 |
+| `left_at` | INTEGER nullable | 계정 멤버가 방을 나간 시각. 곡·채팅 기록 보존을 위해 행은 유지 |
 | `created_at` | INTEGER NOT NULL | 참여 시각 epoch ms |
 
 제약과 인덱스:
 
 - `UNIQUE(room_id, token_hash)`
 - `participants_by_room(room_id)`
+- `active_members_by_room(room_id, user_id)` partial UNIQUE (`user_id IS NOT NULL AND left_at IS NULL`)
 - 같은 방의 닉네임 중복은 허용합니다.
+
+`participant_access_tokens`는 로그인 멤버가 다른 기기에서 다시 들어올 때 발급한 참여 토큰 해시를 보관합니다. 한 참여자당 최근 16개까지만 유지하며, 방 나가기로 모두 폐기합니다. 로그인 멤버 토큰은 해당 계정의 세션과 함께 검증합니다. 온라인 상태는 Socket.IO 연결로 판단하며, `offline_since`는 신청자가 떠난 곡의 제어 권한을 1분 뒤 열기 위한 시각입니다. 서버 재시작 시 연결이 모두 끊기므로 활성 참여자의 시각을 재시작 시점으로 초기화합니다. 오프라인 멤버는 참여자 목록에 남고 익명 참여자는 온라인일 때만 표시합니다.
 
 ## 5. `songs`
 
@@ -201,8 +209,8 @@ stateDiagram-v2
     [*] --> current: 현재 곡 없음
     [*] --> queued: 현재 곡 있음
     queued --> current: advance에서 대기열 선두 선택
-    queued --> removed: controller 또는 신청자가 삭제
-    current --> played: controller·신청자의 advance 또는 재생 종료
+    queued --> removed: controller·신청자·자리를 비운 신청자의 곡에 대한 참여자가 삭제
+    current --> played: controller·신청자·자리를 비운 신청자의 곡에 대한 참여자의 advance 또는 재생 종료
     played --> [*]
     removed --> [*]
 ```
@@ -242,6 +250,7 @@ stateDiagram-v2
 - 매니저 작업은 참여자의 `is_manager`가 1이어야 합니다.
 - controller 작업은 올바른 호스트 토큰, 관리자 토큰 또는 방 소유자 로그인 세션 중 하나가 필요합니다.
 - 일반 참여자는 `songs.added_by`가 자신의 ID인 현재 곡을 건너뛰거나 대기 곡을 삭제할 수 있습니다.
+- 신청자가 명시적으로 방을 나갔다면 즉시, 마지막 연결이 끊긴 뒤 1분이 지났다면 다른 참여자도 그 곡을 건너뛰거나 대기열에서 삭제할 수 있습니다. 재접속하면 이 권한은 다시 닫힙니다.
 
 ### 신청곡
 
@@ -268,7 +277,6 @@ stateDiagram-v2
 - 곡 삭제 및 순서 변경
 - 방 설정 변경
 - 매니저 추가·해제
-- 온라인 매니저 부재 시 자동 승격
 - 채팅 메시지 추가
 - 시스템 활동 로그 추가
 - Discord 사용자 upsert와 로그인 세션 생성

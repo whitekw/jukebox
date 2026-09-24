@@ -10,6 +10,8 @@ export type Song = {
   thumbnailUrl: string
   addedBy: string
   addedById: string
+  addedByAvatarUrl: string | null
+  otherControlAvailableAt: number | null
   position: number
 }
 
@@ -36,6 +38,8 @@ export type RoomParticipant = {
   nickname: string
   avatarUrl: string | null
   isManager: boolean
+  isMember: boolean
+  online: boolean
 }
 
 export type Participant = {
@@ -43,6 +47,7 @@ export type Participant = {
   nickname: string
   avatarUrl: string | null
   isManager: boolean
+  isMember: boolean
 }
 
 export type RoomSession = {

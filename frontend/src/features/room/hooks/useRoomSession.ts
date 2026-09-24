@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ApiError } from '../../../shared/http'
 import { roomApi } from '../api'
 import type { AuthUser } from '../../auth/types'
 import type { Participant } from '../types'
@@ -20,6 +21,9 @@ export function useRoomSession(code: string, user: AuthUser | null) {
   const [participantLoading, setParticipantLoading] = useState(
     () => Boolean(participantToken),
   )
+  const [resumeCheckedFor, setResumeCheckedFor] = useState('')
+  const [participantError, setParticipantError] = useState<unknown>(null)
+  const [resumeAttempt, setResumeAttempt] = useState(0)
   const [isOwner, setIsOwner] = useState(false)
   const [claimingHost, setClaimingHost] = useState(false)
   const [resumeClaimedPlayback, setResumeClaimedPlayback] = useState(false)
@@ -33,11 +37,11 @@ export function useRoomSession(code: string, user: AuthUser | null) {
 
   useEffect(() => {
     if (!participantToken) {
-      setParticipantLoading(false)
       return
     }
     let active = true
     setParticipantLoading(true)
+    setParticipantError(null)
     void roomApi
       .getMe(code, participantToken)
       .then((me) => {
@@ -45,7 +49,10 @@ export function useRoomSession(code: string, user: AuthUser | null) {
       })
       .catch((error: unknown) => {
         if (!active) return
-        if (!isInvalidRoomCredential(error, 'participant')) return
+        if (!isInvalidRoomCredential(error, 'participant')) {
+          setParticipantError(error)
+          return
+        }
         localStorage.removeItem(participantTokenKey(code))
         setParticipantToken('')
         setParticipant(null)
@@ -56,7 +63,43 @@ export function useRoomSession(code: string, user: AuthUser | null) {
     return () => {
       active = false
     }
-  }, [code, participantToken])
+  }, [code, participantToken, resumeAttempt, user?.id])
+
+  useEffect(() => {
+    if (participantToken || !user) {
+      if (!participantToken) setParticipantLoading(false)
+      return
+    }
+    const identityKey = `${code}:${user.id}`
+    let active = true
+    setParticipantLoading(true)
+    setParticipantError(null)
+    void roomApi.resumeRoom(code)
+      .then((resumed) => {
+        if (!active) return
+        localStorage.setItem(participantTokenKey(code), resumed.participantToken)
+        setParticipantToken(resumed.participantToken)
+        setParticipant(resumed.participant)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        if (error instanceof ApiError && error.code === 'MEMBERSHIP_NOT_FOUND') return
+        setParticipantError(error)
+      })
+      .finally(() => {
+        if (active) {
+          setParticipantLoading(false)
+          setResumeCheckedFor(identityKey)
+        }
+      })
+    return () => { active = false }
+  }, [code, participantToken, resumeAttempt, user])
+
+  const retryResume = useCallback(() => {
+    setParticipantLoading(true)
+    setParticipantError(null)
+    setResumeAttempt((attempt) => attempt + 1)
+  }, [])
 
   useEffect(() => {
     if (!user && !hostToken && !participantToken) {
@@ -88,12 +131,12 @@ export function useRoomSession(code: string, user: AuthUser | null) {
   }, [code, hostToken, participantToken, revokeHost, user])
 
   const joinRoom = useCallback(async (nickname: string) => {
-    const joined = await roomApi.joinRoom(code, nickname)
+    const joined = await roomApi.joinRoom(code, nickname, participantToken)
     localStorage.setItem(participantTokenKey(code), joined.participantToken)
     setParticipantToken(joined.participantToken)
     setParticipant(joined.participant)
     return joined.room
-  }, [code])
+  }, [code, participantToken])
 
   const claimPlaybackHost = useCallback(async () => {
     if (!isOwner || claimingHost) return null
@@ -115,7 +158,9 @@ export function useRoomSession(code: string, user: AuthUser | null) {
     isHost: Boolean(hostToken && hostVerified),
     participantToken,
     participant,
-    participantLoading,
+    participantLoading: participantLoading || Boolean(user && !participantToken && resumeCheckedFor !== `${code}:${user.id}`),
+    participantError,
+    retryResume,
     isOwner,
     claimingHost,
     resumeClaimedPlayback,

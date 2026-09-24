@@ -68,9 +68,16 @@ function createDatabase(databasePath = ':memory:') {
       profile_source TEXT NOT NULL DEFAULT 'custom'
         CHECK(profile_source IN ('account', 'custom')),
       avatar_url TEXT,
+      offline_since INTEGER,
       is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1)),
       created_at INTEGER NOT NULL,
       UNIQUE(room_id, token_hash)
+    );
+
+    CREATE TABLE IF NOT EXISTS participant_access_tokens (
+      participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS songs (
@@ -228,6 +235,23 @@ function createDatabase(databasePath = ':memory:') {
   if (!participantColumns.has('avatar_url')) {
     db.exec('ALTER TABLE participants ADD COLUMN avatar_url TEXT')
   }
+  if (!participantColumns.has('left_at')) {
+    db.exec('ALTER TABLE participants ADD COLUMN left_at INTEGER')
+  }
+  if (!participantColumns.has('offline_since')) {
+    db.exec('ALTER TABLE participants ADD COLUMN offline_since INTEGER')
+  }
+  const participantAccessTokenColumns = new Set(
+    db
+      .prepare('PRAGMA table_info(participant_access_tokens)')
+      .all()
+      .map((column) => column.name),
+  )
+  if (!participantAccessTokenColumns.has('created_at')) {
+    db.exec(
+      'ALTER TABLE participant_access_tokens ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0',
+    )
+  }
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
   )
@@ -236,6 +260,9 @@ function createDatabase(databasePath = ':memory:') {
   )
   db.exec(
     'CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id)',
+  )
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS active_members_by_room ON participants(room_id, user_id) WHERE user_id IS NOT NULL AND left_at IS NULL',
   )
 
   // 계정 소유권이 있는 기존 임시 방도 새 정책에 맞춰 수동 삭제 전까지 유지한다.

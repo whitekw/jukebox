@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useAuth } from '../context'
-import { useI18n } from '../../../shared/i18n/i18n-context'
+import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 import {
   DiscordIcon,
@@ -8,11 +8,18 @@ import {
   UserCircleIcon,
 } from '../../../shared/ui/Icons'
 
-export function AccountMenu({ compact = false }: { compact?: boolean }) {
+export function AccountMenu({
+  compact = false,
+  logoutConfirmMessage,
+}: {
+  compact?: boolean
+  logoutConfirmMessage?: string
+}) {
   const { enabled, loading, user, loginUrl, logout } = useAuth()
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -72,10 +79,14 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
   }
 
   async function handleLogout() {
+    if (logoutConfirmMessage && !window.confirm(logoutConfirmMessage)) return
     setLoggingOut(true)
+    setLogoutError('')
     try {
       await logout()
       setOpen(false)
+    } catch (error) {
+      setLogoutError(getErrorMessage(error, t))
     } finally {
       setLoggingOut(false)
     }
@@ -179,6 +190,7 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
             </span>
           </button>
           </div>
+          {logoutError && <p className="m-2 text-xs text-danger" role="alert">{logoutError}</p>}
         </div>
       )}
     </div>

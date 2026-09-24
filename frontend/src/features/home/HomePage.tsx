@@ -26,16 +26,17 @@ export function HomePage() {
   const [loginPromptOpen, setLoginPromptOpen] = useState(false)
   const {
     ownedRooms,
-    recentRoomSessions,
-    deletingRoomCode,
-    ownedRoomError,
+    joinedRooms,
+    busyRoomCode,
+    roomError,
     deleteOwnedRoom,
+    leaveJoinedRoom,
   } = useHomeRooms(user, () => setNotice(t('home.roomDeleted')))
 
   useEffect(() => {
-    const state = location.state as { roomDeleted?: boolean } | null
-    if (!state?.roomDeleted) return
-    setNotice(t('home.roomDeleted'))
+    const state = location.state as { roomDeleted?: boolean; loggedOut?: boolean } | null
+    if (!state?.roomDeleted && !state?.loggedOut) return
+    setNotice(t(state.loggedOut ? 'auth.loggedOutRoom' : 'home.roomDeleted'))
     navigate('/', { replace: true, state: null })
   }, [location.state, navigate, t])
 
@@ -51,7 +52,7 @@ export function HomePage() {
     if (code) navigate(`/room/${code}`)
   }
 
-  const hasRooms = ownedRooms.length > 0 || recentRoomSessions.length > 0
+  const hasRooms = ownedRooms.length > 0 || joinedRooms.length > 0
 
   return (
     <EntryLayout className={cn(!hasRooms && 'flex min-h-dvh flex-col')} headerActions={<AccountMenu />}>
@@ -139,7 +140,7 @@ export function HomePage() {
                     </p>
                     <p className="mt-1 text-xs text-muted">
                       {t('home.activeRoomStats', {
-                        participants: room.participants.length,
+                        participants: room.participants.filter((participant) => participant.online).length,
                         songs: room.queue.length,
                       })}
                     </p>
@@ -153,7 +154,7 @@ export function HomePage() {
                 </Link>
                 <RoomCardMenu
                   roomCode={room.code}
-                  disabled={Boolean(deletingRoomCode)}
+                  disabled={Boolean(busyRoomCode)}
                   onDelete={() => void deleteOwnedRoom(room)}
                 />
               </article>
@@ -162,72 +163,71 @@ export function HomePage() {
         </section>
       )}
 
-      {ownedRoomError && (
-        <div className={noticeStyles({ tone: 'error' })}>{ownedRoomError}</div>
+      {roomError && (
+        <div className={noticeStyles({ tone: 'error' })}>{roomError}</div>
       )}
       {notice && <div className={noticeStyles()}>{notice}</div>}
 
-      {recentRoomSessions.length > 0 && (
+      {joinedRooms.length > 0 && (
         <section className="mx-auto mb-8 max-w-[920px] border-t border-line pt-6">
           <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-base font-bold tracking-[-0.02em]">
-                {t('home.recentRoomsTitle')}
+                {t('home.joinedRoomsTitle')}
               </h2>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            {recentRoomSessions.map((session) => (
-              <Link
-                className={cn(
-                  'group flex min-w-0 items-center gap-3 rounded-xl border border-line bg-white/[0.015] p-3.5',
-                  'transition-colors hover:border-purple/50 hover:bg-purple/[0.08]',
-                )}
-                key={session.room.code}
-                to={`/room/${session.room.code}`}
+            {joinedRooms.map((room) => (
+              <article
+                className="relative min-w-0 rounded-xl border border-line bg-white/[0.015] transition-colors hover:border-purple/50 hover:bg-purple/[0.08]"
+                key={room.code}
               >
-                <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-white/[0.035]">
-                  {session.room.currentSong ? (
-                    <img
-                      className="size-full object-cover"
-                      src={session.room.currentSong.thumbnailUrl}
-                      alt=""
-                    />
-                  ) : (
-                    <MusicIcon className="text-purple-light" size={22} />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex min-w-0 items-center gap-2">
-                    <strong className="font-mono text-sm tracking-[0.12em] text-ink">
-                      {session.room.code}
-                    </strong>
-                    <span className="truncate rounded-full border border-line px-2 py-0.5 text-xs text-muted">
-                      {session.isHost
-                        ? t('home.activeRoomHost')
-                        : t('home.activeRoomParticipant', {
-                            nickname: session.participant?.nickname ?? '',
-                          })}
-                    </span>
-                  </div>
-                  <p className="truncate text-sm text-muted">
-                    {session.room.currentSong?.title ??
-                      t('home.activeRoomWaiting')}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
-                    {t('home.activeRoomStats', {
-                      participants: session.room.participants.length,
-                      songs: session.room.queue.length,
-                    })}
-                  </p>
-                </div>
-                <span
-                  className="shrink-0 text-lg text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-purple-light"
-                  aria-label={t('home.rejoinRoom')}
+                <Link
+                  className="group flex min-h-[104px] min-w-0 items-center gap-3 rounded-xl p-3.5 pr-24 focus-visible:outline-2 focus-visible:outline-purple-light"
+                  to={`/room/${room.code}`}
                 >
-                  →
-                </span>
-              </Link>
+                  <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-white/[0.035]">
+                    {room.currentSong ? (
+                      <img
+                        className="size-full object-cover"
+                        src={room.currentSong.thumbnailUrl}
+                        alt=""
+                      />
+                    ) : (
+                      <MusicIcon className="text-purple-light" size={22} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex min-w-0 items-center gap-2">
+                      <strong className="font-mono text-sm tracking-[0.12em] text-ink">
+                        {room.code}
+                      </strong>
+                      <span className="truncate rounded-full border border-line px-2 py-0.5 text-xs text-muted">
+                        {t('home.memberBadge')}
+                      </span>
+                    </div>
+                    <p className="truncate text-sm text-muted">
+                      {room.currentSong?.title ?? t('home.activeRoomWaiting')}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {t('home.activeRoomStats', {
+                        participants: room.participants.filter((participant) => participant.online).length,
+                        songs: room.queue.length,
+                      })}
+                    </p>
+                  </div>
+                </Link>
+                <button
+                  className="absolute top-1/2 right-3 -translate-y-1/2 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
+                  type="button"
+                  aria-label={`${room.code} · ${t('home.leaveRoom')}`}
+                  disabled={Boolean(busyRoomCode)}
+                  onClick={() => void leaveJoinedRoom(room)}
+                >
+                  {t('home.leaveRoom')}
+                </button>
+              </article>
             ))}
           </div>
         </section>
