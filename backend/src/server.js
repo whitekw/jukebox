@@ -382,6 +382,7 @@ app.delete('/api/rooms/:code/membership', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
   const code = normalizeCode(req.params.code)
   const result = rooms.leaveAccountRoom(code, user?.id)
+  logRoomEvent(code, 'participant_left', { participantId: result.participantId }, {})
   io.to(participantChannel(result.participantId)).emit('room:membership-left')
   presence.removeParticipant(code, result.participantId)
   io.in(participantChannel(result.participantId)).disconnectSockets(true)
@@ -611,6 +612,7 @@ io.on('connection', (socket) => {
             socket.id,
           )
           rooms.markParticipantOnline(normalizedCode, identity.participantId)
+          state = rooms.getPublicRoom(normalizedCode)
           socket.data.roomPresence = {
             code: normalizedCode,
             participantId: identity.participantId,
