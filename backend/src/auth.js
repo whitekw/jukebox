@@ -59,7 +59,7 @@ function serializeCookie(name, value, options = {}) {
 function safeReturnTo(value) {
   if (typeof value !== 'string') return '/'
   if (!value.startsWith('/') || value.startsWith('//')) return '/'
-  if (value.includes('\r') || value.includes('\n')) return '/'
+  if (value.includes('\\') || value.includes('\r') || value.includes('\n')) return '/'
   return value
 }
 
