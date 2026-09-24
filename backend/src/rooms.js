@@ -455,8 +455,8 @@ function createRoomService(db, options = {}) {
 
   function normalizeNickname(nickname) {
     const normalizedNickname = String(nickname ?? '').trim()
-    if (normalizedNickname.length < 2 || normalizedNickname.length > 20) {
-      throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
+    if (normalizedNickname.length < 1 || normalizedNickname.length > 20) {
+      throw new AppError(400, '닉네임은 1~20자로 입력해주세요.', 'INVALID_NICKNAME')
     }
     return normalizedNickname
   }

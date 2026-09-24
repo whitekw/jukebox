@@ -139,7 +139,7 @@ erDiagram
 | `id` | TEXT PK | 참여자 UUID |
 | `room_id` | TEXT FK → `rooms.id`, ON DELETE CASCADE | 소속 방 |
 | `token_hash` | TEXT NOT NULL | 참여자 원본 토큰의 SHA-256 hex |
-| `nickname` | TEXT NOT NULL | 표시 이름, 서비스 규칙상 공백 제거 후 `2..20`자 |
+| `nickname` | TEXT NOT NULL | 표시 이름, 서비스 규칙상 공백 제거 후 `1..20`자 |
 | `user_id` | TEXT nullable FK → `users.id` | 로그인 계정의 방 멤버십. 익명 참여자는 null |
 | `profile_source` | TEXT | `account` 또는 `custom` |
 | `avatar_url` | TEXT nullable | 계정 참여자의 프로필 이미지 스냅샷 |

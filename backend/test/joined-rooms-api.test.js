@@ -52,7 +52,7 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
         created_at, updated_at, last_login_at)
        VALUES (?, ?, ?, ?, NULL, 1, 1, 1)`,
     )
-    insertUser.run(userId, `discord-${userId}`, 'member', 'Member')
+    insertUser.run(userId, `discord-${userId}`, 'member', 'M')
     insertUser.run(ownerId, `discord-${ownerId}`, 'owner', 'Owner')
     db.prepare(
       `INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at)
@@ -65,6 +65,10 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
       nickname: 'Owner', participantUserId: ownerId, profileSource: 'account',
     })
     const joined = rooms.joinRoom(created.code, { nickname: 'Member', userId })
+    const joinTarget = rooms.createRoom({
+      retentionMode: 'permanent', ownerUserId: ownerId,
+      nickname: 'Owner', participantUserId: ownerId, profileSource: 'account',
+    })
     db.close()
     dbClosed = true
 
@@ -88,6 +92,21 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
       items[0].participants.find((participant) => participant.id === joined.participant.id),
       { ...joined.participant, online: false },
     )
+
+    const join = await fetch(`${baseUrl}/api/rooms/${joinTarget.code}/join`, {
+      method: 'POST',
+      headers: { Cookie: `jukebox_session=${sessionToken}` },
+    })
+    assert.equal(join.status, 201)
+    assert.equal((await join.json()).participant.nickname, 'M')
+
+    const create = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { Cookie: `jukebox_session=${sessionToken}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    assert.equal(create.status, 201)
+    assert.equal((await create.json()).participant.nickname, 'M')
 
     const leave = await fetch(`${baseUrl}/api/rooms/${created.code}/membership`, {
       method: 'DELETE',

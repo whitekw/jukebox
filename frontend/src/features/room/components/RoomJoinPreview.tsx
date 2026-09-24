@@ -115,7 +115,7 @@ export function RoomJoinPreview({
                   id="nickname"
                   value={nickname}
                   onChange={(event) => onNicknameChange(event.target.value)}
-                  minLength={2}
+                  minLength={1}
                   maxLength={20}
                   autoComplete="nickname"
                   required

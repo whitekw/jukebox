@@ -273,9 +273,6 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
     throw new AppError(401, '방을 만들려면 로그인해주세요.', 'AUTH_REQUIRED')
   }
   const nickname = user.displayName.slice(0, 20)
-  if (nickname.length < 2 || nickname.length > 20) {
-    throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
-  }
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
     retentionMode: 'permanent',

@@ -566,19 +566,20 @@ test('creates a room and its first participant together', () => {
   const rooms = createRoomService(db)
 
   assert.throws(
-    () => rooms.createRoom({ nickname: 'A' }),
-    /닉네임은 2~20자/,
+    () => rooms.createRoom({ nickname: ' ' }),
+    /닉네임은 1~20자/,
   )
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM rooms').get().count, 0)
 
-  const created = rooms.createRoom({ nickname: 'Creator' })
+  const created = rooms.createRoom({ nickname: 'A' })
   const state = rooms.getPublicRoom(created.code)
   assert.ok(created.participantToken)
-  assert.equal(created.participant.nickname, 'Creator')
+  assert.equal(created.participant.nickname, 'A')
   assert.equal(created.participant.isManager, true)
   assert.equal(state.participants.length, 1)
-  assert.equal(state.participants[0].nickname, 'Creator')
+  assert.equal(state.participants[0].nickname, 'A')
   assert.equal(state.participants[0].isManager, true)
+  assert.equal(rooms.joinRoom(created.code, { nickname: 'B' }).participant.nickname, 'B')
   db.close()
 })
 
