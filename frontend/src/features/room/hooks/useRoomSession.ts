@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { roomApi } from '../api'
 import type { AuthUser } from '../../auth/types'
 import type { Participant } from '../types'
-import { hostTokenKey, participantTokenKey } from '../roomCredentials'
+import {
+  hostTokenKey,
+  isInvalidRoomCredential,
+  participantTokenKey,
+} from '../roomCredentials'
 
 export function useRoomSession(code: string, user: AuthUser | null) {
   const [hostToken, setHostToken] = useState(
@@ -39,8 +43,9 @@ export function useRoomSession(code: string, user: AuthUser | null) {
       .then((me) => {
         if (active) setParticipant(me)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return
+        if (!isInvalidRoomCredential(error, 'participant')) return
         localStorage.removeItem(participantTokenKey(code))
         setParticipantToken('')
         setParticipant(null)
@@ -71,11 +76,11 @@ export function useRoomSession(code: string, user: AuthUser | null) {
         setHostVerified(session.isHost)
         if (hostToken && !session.isHost) revokeHost()
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return
         setIsOwner(false)
         setHostVerified(false)
-        if (hostToken) revokeHost()
+        if (hostToken && isInvalidRoomCredential(error, 'host')) revokeHost()
       })
     return () => {
       active = false

@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   clearStoredRoomCredentials,
   getStoredRoomCredentials,
+  isInvalidRoomCredential,
   normalizeRoomCode,
 } from '../src/features/room/roomCredentials.ts'
 
@@ -32,5 +33,25 @@ test('normalizes room codes and reads only valid stored credentials', () => {
     assert.equal(entries.has('jukebox:participant:ABC123'), false)
   } finally {
     globalThis.localStorage = originalStorage
+  }
+})
+
+test('only invalidates room credentials on explicit authorization errors', () => {
+  assert.equal(
+    isInvalidRoomCredential({ status: 401, code: 'ROOM_SESSION_INVALID' }, 'host'),
+    true,
+  )
+  assert.equal(
+    isInvalidRoomCredential({ status: 401, code: 'PARTICIPANT_REQUIRED' }, 'participant'),
+    true,
+  )
+  for (const error of [
+    new TypeError('Failed to fetch'),
+    { status: 503, code: 'ROOM_SESSION_INVALID' },
+    { status: 401, code: 'AUTH_REQUIRED' },
+    { status: 404, code: 'ROOM_NOT_FOUND' },
+  ]) {
+    assert.equal(isInvalidRoomCredential(error, 'host'), false)
+    assert.equal(isInvalidRoomCredential(error, 'participant'), false)
   }
 })

@@ -16,6 +16,19 @@ export type StoredRoomCredentials = {
   participantToken?: string
 }
 
+export function isInvalidRoomCredential(
+  error: unknown,
+  credential: 'host' | 'participant',
+) {
+  if (!error || typeof error !== 'object') return false
+  if (!('status' in error) || !('code' in error)) return false
+  return (
+    error.status === 401 &&
+    error.code ===
+      (credential === 'host' ? 'ROOM_SESSION_INVALID' : 'PARTICIPANT_REQUIRED')
+  )
+}
+
 export function getStoredRoomCredentials(): StoredRoomCredentials[] {
   const credentialsByCode = new Map<string, StoredRoomCredentials>()
   for (let index = 0; index < localStorage.length; index += 1) {
