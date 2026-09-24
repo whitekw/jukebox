@@ -98,20 +98,29 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout source deployment template
+        uses: actions/checkout@v6
+        with:
+          path: source
+
       - name: Checkout deploy branch
         uses: actions/checkout@v6
         with:
           ref: deploy
+          path: deploy
 
-      - name: Update deployment image
+      - name: Update deployment manifest
+        working-directory: deploy
         env:
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
+          cp ../source/compose.deploy.yaml compose.deploy.yaml
           sed -i \
             "s|^[[:space:]]*image:.*ghcr.io/whitekw/jukebox.*|    image: \"ghcr.io/whitekw/jukebox:${IMAGE_TAG}\"|" \
             compose.deploy.yaml
 
       - name: Commit deployment
+        working-directory: deploy
         run: |
           if git diff --quiet; then
             echo "Deployment image is already up to date."

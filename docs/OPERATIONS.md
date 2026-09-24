@@ -164,7 +164,7 @@ flowchart LR
 - `ghcr.io/whitekw/jukebox:master`
 - `ghcr.io/whitekw/jukebox:sha-{git-sha}`
 
-운영 Compose는 재현 가능한 SHA 태그를 사용합니다.
+운영 Compose는 재현 가능한 SHA 태그를 사용합니다. `master` 게시가 끝나면 CI가 `compose.deploy.yaml` 전체를 `deploy` 브랜치로 복사한 뒤 이미지 태그를 갱신합니다. Portainer의 Git Stack은 갱신된 `deploy` 브랜치를 다시 배포해야 새 환경 변수 매핑을 적용합니다.
 
 ## 9. 운영 점검
 
@@ -195,6 +195,7 @@ docker compose logs --tail=200 jukebox
 
 | 증상 | 우선 확인 |
 | --- | --- |
+| 로그인 기능을 사용할 수 없음 | `/api/auth/session`의 `enabled` 확인. `false`이면 Portainer 변수 값뿐 아니라 배포 중인 `compose.deploy.yaml`의 `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI` 컨테이너 전달 설정 확인 |
 | 방 화면은 열리나 실시간 갱신 안 됨 | 리버스 프록시의 WebSocket upgrade, `/socket.io/` 전달, 브라우저 네트워크 탭 |
 | 모든 사용자가 같은 IP로 제한됨 | 프록시 전달 헤더와 `TRUST_PROXY` 설정 |
 | 검색/추가만 실패 | `YOUTUBE_API_KEY`, 외부 연결, YouTube API 오류 응답 |
