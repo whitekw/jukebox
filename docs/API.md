@@ -11,6 +11,8 @@
 
 ## 2. 인증 헤더
 
+사이트 계정 로그인은 `jukebox_session` HttpOnly 쿠키를 사용합니다. 방 단위 권한은 아래 헤더를 계속 사용하며, 로그인 사용자가 만든 방에는 계정 소유권도 함께 저장됩니다.
+
 | 헤더 | 발급 시점 | 용도 |
 | --- | --- | --- |
 | `x-host-token` | 방 생성 응답 | 호스트 제어, 자동재생 차단 상태 보고 |
@@ -23,7 +25,7 @@ jukebox:host:{ROOM_CODE}
 jukebox:participant:{ROOM_CODE}
 ```
 
-`controller` 권한이 필요한 API는 올바른 호스트 토큰 또는 매니저 중 한 명의 참여자 토큰을 받습니다.
+`controller` 권한이 필요한 API는 올바른 호스트 토큰, 매니저 중 한 명의 참여자 토큰 또는 방 소유자의 로그인 쿠키를 받습니다.
 
 ## 3. 공통 데이터 형식
 
@@ -32,7 +34,8 @@ jukebox:participant:{ROOM_CODE}
 ```ts
 type RoomState = {
   code: string
-  expiresAt: number
+  retentionMode: 'temporary' | 'permanent'
+  expiresAt: number | null
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -117,8 +120,14 @@ type RoomEvent = {
 | --- | --- | --- | --- | --- |
 | GET | `/api/health` | 공개 | 없음 | 상태 확인 |
 | GET | `/api/config` | 공개 | 없음 | 국가/추천 언어 |
+| GET | `/api/auth/session` | 공개 | 없음 | Discord 로그인 활성화 여부와 현재 사용자 |
+| GET | `/api/auth/discord` | 공개 | 인증 | Discord OAuth2 시작 |
+| GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
+| POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 |
 | POST | `/api/rooms` | 공개 | 변경 | 방 생성 정보 |
+| GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 영구 방 목록 |
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
+| GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
 | POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
@@ -132,7 +141,7 @@ type RoomEvent = {
 | DELETE | `/api/rooms/:code/songs/:songId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
-| PATCH | `/api/rooms/:code/managers/:participantId` | 매니저 | 변경 | `RoomState` |
+| PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 
 요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다. 채팅 조회와 전송에는 별도 요청 제한을 적용하지 않습니다.
 
@@ -160,6 +169,25 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 지원 언어는 `ko`, `ja`, `en`입니다. 사용자가 브라우저에 저장한 언어가 있으면 프런트는 이 추천보다 저장 값을 우선합니다.
 
+### Discord 로그인
+
+`GET /api/auth/session`은 로그인 설정이 없을 때도 `200`을 반환합니다.
+
+```json
+{
+  "enabled": true,
+  "user": {
+    "id": "내부 UUID",
+    "discordId": "123456789",
+    "username": "discord-user",
+    "displayName": "Music Friend",
+    "avatarUrl": "https://cdn.discordapp.com/avatars/..."
+  }
+}
+```
+
+비로그인 상태의 `user`는 `null`입니다. `GET /api/auth/discord?returnTo=/room/ABC234`는 `identify` 범위로 Discord 인증 화면에 리다이렉트합니다. callback은 10분 수명의 HttpOnly state 쿠키를 검증하고 성공 시 기본 30일 수명의 `jukebox_session` 쿠키를 설정합니다. `returnTo`는 같은 출처의 `/`로 시작하는 경로만 허용합니다. `POST /api/auth/logout`은 서버 세션과 쿠키를 함께 삭제하고 `204`를 반환합니다.
+
 ## 6. 방과 참여자
 
 ### `POST /api/rooms`
@@ -168,11 +196,17 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ```json
 {
-  "playbackMode": "all_devices"
+  "playbackMode": "all_devices",
+  "retentionMode": "permanent",
+  "nickname": "Alice"
 }
 ```
 
 - `playbackMode`는 `host_only` 또는 `all_devices`이며 생략 시 `host_only`입니다.
+- `retentionMode`은 `temporary` 또는 `permanent`이며 생략 시 `temporary`입니다.
+- `permanent`는 로그인이 필요하며 생성한 계정에 방 소유권이 저장됩니다.
+- `temporary`는 로그인 없이 만들 수 있고, 유효한 방 연결이 모두 끊긴 뒤 기본 1시간이 지나면 삭제됩니다.
+- `nickname`은 필수이며 공백 제거 후 `2..20`자여야 합니다. 방과 최초 참여자를 한 트랜잭션으로 함께 생성합니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -182,9 +216,20 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
   "code": "ABC234",
   "hostToken": "원본-호스트-토큰",
   "playbackMode": "all_devices",
-  "expiresAt": 1789540800000
+  "retentionMode": "permanent",
+  "expiresAt": null,
+  "participantToken": "원본-참여자-토큰",
+  "participant": {
+    "id": "참여자-UUID",
+    "nickname": "Alice",
+    "isManager": true
+  }
 }
 ```
+
+### `GET /api/rooms/owned`
+
+로그인 계정이 소유한 영구 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
 
 ### `GET /api/rooms/:code`
 

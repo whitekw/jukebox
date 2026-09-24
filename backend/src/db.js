@@ -14,10 +14,33 @@ function createDatabase(databasePath = ':memory:') {
   }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      discord_id TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL,
+      global_name TEXT,
+      avatar_hash TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_login_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS rooms (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
       host_token_hash TEXT NOT NULL,
+      owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      retention_mode TEXT NOT NULL DEFAULT 'legacy'
+        CHECK(retention_mode IN ('legacy', 'temporary', 'permanent')),
+      empty_ttl_hours REAL,
       max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
       manager_participant_id TEXT,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
@@ -41,6 +64,10 @@ function createDatabase(databasePath = ':memory:') {
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL,
       nickname TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      profile_source TEXT NOT NULL DEFAULT 'custom'
+        CHECK(profile_source IN ('account', 'custom')),
+      avatar_url TEXT,
       is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1)),
       created_at INTEGER NOT NULL,
       UNIQUE(room_id, token_hash)
@@ -84,6 +111,8 @@ function createDatabase(databasePath = ':memory:') {
     );
 
     CREATE INDEX IF NOT EXISTS rooms_by_expiry ON rooms(expires_at);
+    CREATE INDEX IF NOT EXISTS auth_sessions_by_user ON auth_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS auth_sessions_by_expiry ON auth_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
       ON songs(room_id, status, position);
@@ -160,6 +189,19 @@ function createDatabase(databasePath = ':memory:') {
   if (!roomColumns.has('empty_since')) {
     db.exec('ALTER TABLE rooms ADD COLUMN empty_since INTEGER')
   }
+  if (!roomColumns.has('owner_user_id')) {
+    db.exec(
+      'ALTER TABLE rooms ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
+    )
+  }
+  if (!roomColumns.has('retention_mode')) {
+    db.exec(
+      "ALTER TABLE rooms ADD COLUMN retention_mode TEXT NOT NULL DEFAULT 'legacy' CHECK(retention_mode IN ('legacy', 'temporary', 'permanent'))",
+    )
+  }
+  if (!roomColumns.has('empty_ttl_hours')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN empty_ttl_hours REAL')
+  }
 
   const participantColumns = new Set(
     db
@@ -173,9 +215,36 @@ function createDatabase(databasePath = ':memory:') {
       'ALTER TABLE participants ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1))',
     )
   }
+  if (!participantColumns.has('user_id')) {
+    db.exec(
+      'ALTER TABLE participants ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
+    )
+  }
+  if (!participantColumns.has('profile_source')) {
+    db.exec(
+      "ALTER TABLE participants ADD COLUMN profile_source TEXT NOT NULL DEFAULT 'custom' CHECK(profile_source IN ('account', 'custom'))",
+    )
+  }
+  if (!participantColumns.has('avatar_url')) {
+    db.exec('ALTER TABLE participants ADD COLUMN avatar_url TEXT')
+  }
   db.exec(
     'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
   )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS rooms_by_owner_retention ON rooms(owner_user_id, retention_mode)',
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id)',
+  )
+
+  // 계정 소유권이 있는 기존 임시 방도 새 정책에 맞춰 수동 삭제 전까지 유지한다.
+  db.exec(`
+    UPDATE rooms
+    SET retention_mode = 'permanent', empty_ttl_hours = NULL
+    WHERE owner_user_id IS NOT NULL
+      AND retention_mode = 'temporary';
+  `)
 
   db.prepare(
     `UPDATE rooms

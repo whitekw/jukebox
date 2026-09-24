@@ -1,7 +1,9 @@
 import type {
+  AuthUser,
   ChatMessage,
   Participant,
   PlaybackMode,
+  RoomRetentionMode,
   RoomSession,
   RoomState,
   VideoSearchResult,
@@ -76,6 +78,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getAuthSession() {
+    return request<{
+      enabled: boolean
+      user: AuthUser | null
+    }>('/api/auth/session')
+  },
+
+  logout() {
+    return request<void>('/api/auth/logout', { method: 'POST' })
+  },
+
   getConfig() {
     return request<{
       countryCode: string | null
@@ -83,19 +96,36 @@ export const api = {
     }>('/api/config')
   },
 
-  createRoom(playbackMode: PlaybackMode) {
+  createRoom(
+    playbackMode: PlaybackMode,
+  ) {
     return request<{
       code: string
       hostToken: string
       playbackMode: PlaybackMode
-      expiresAt: number
+      retentionMode: RoomRetentionMode
+      expiresAt: number | null
+      participantToken: string
+      participant: Participant
     }>(
       '/api/rooms',
       {
         method: 'POST',
-        body: JSON.stringify({ playbackMode }),
+        body: JSON.stringify({
+          playbackMode,
+        }),
       },
     )
+  },
+
+  getOwnedRooms() {
+    return request<{ items: RoomState[] }>('/api/rooms/owned')
+  },
+
+  deleteRoom(code: string) {
+    return request<void>(`/api/rooms/${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+    })
   },
 
   getRoom(code: string) {
@@ -257,7 +287,7 @@ export const api = {
 
   setManager(
     code: string,
-    participantToken: string,
+    credentials: ControlCredentials,
     targetParticipantId: string,
     isManager: boolean,
   ) {
@@ -265,7 +295,7 @@ export const api = {
       `/api/rooms/${encodeURIComponent(code)}/managers/${encodeURIComponent(targetParticipantId)}`,
       {
         method: 'PATCH',
-        headers: { 'x-participant-token': participantToken },
+        headers: controlHeaders(credentials),
         body: JSON.stringify({ isManager }),
       },
     )

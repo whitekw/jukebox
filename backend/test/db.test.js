@@ -88,7 +88,7 @@ test('migrates the earliest legacy participant to a manager', () => {
         `SELECT manager_participant_id, host_volume, playback_paused,
                  playback_blocked, playback_mode, playback_position_seconds,
                  playback_anchor_at, playback_pending, playback_revision,
-                 empty_since
+                 empty_since, owner_user_id, retention_mode, empty_ttl_hours
          FROM rooms WHERE id = ?`,
       )
       .get('room-1')
@@ -98,6 +98,9 @@ test('migrates the earliest legacy participant to a manager', () => {
 
     assert.ok(columns.includes('manager_participant_id'))
     assert.ok(participantColumns.includes('is_manager'))
+    assert.ok(participantColumns.includes('user_id'))
+    assert.ok(participantColumns.includes('profile_source'))
+    assert.ok(participantColumns.includes('avatar_url'))
     assert.deepEqual(chatMessageColumns, [
       'id',
       'room_id',
@@ -127,6 +130,9 @@ test('migrates the earliest legacy participant to a manager', () => {
     assert.ok(columns.includes('playback_pending'))
     assert.ok(columns.includes('empty_since'))
     assert.ok(columns.includes('playback_revision'))
+    assert.ok(columns.includes('owner_user_id'))
+    assert.ok(columns.includes('retention_mode'))
+    assert.ok(columns.includes('empty_ttl_hours'))
     assert.equal(migratedRoom.manager_participant_id, null)
     assert.equal(migratedRoom.host_volume, 100)
     assert.equal(migratedRoom.playback_paused, 0)
@@ -137,6 +143,9 @@ test('migrates the earliest legacy participant to a manager', () => {
     assert.equal(migratedRoom.playback_pending, 0)
     assert.equal(migratedRoom.playback_revision, 0)
     assert.equal(migratedRoom.empty_since, null)
+    assert.equal(migratedRoom.owner_user_id, null)
+    assert.equal(migratedRoom.retention_mode, 'legacy')
+    assert.equal(migratedRoom.empty_ttl_hours, null)
     assert.equal(migratedParticipant.is_manager, 1)
 
     db.prepare('UPDATE participants SET is_manager = 0 WHERE id = ?').run(
@@ -200,6 +209,41 @@ test('copies legacy chat messages into the unified room feed once', () => {
         content: 'legacy',
       },
     ])
+  } finally {
+    db?.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('converts existing account-owned temporary rooms to permanent rooms', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  let db
+
+  try {
+    db = createDatabase(databasePath)
+    db.prepare(
+      `INSERT INTO users (
+         id, discord_id, username, global_name, avatar_hash,
+         created_at, updated_at, last_login_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('user-1', 'discord-1', 'owner', 'Owner', null, 1, 1, 1)
+    db.prepare(
+      `INSERT INTO rooms (
+         id, code, host_token_hash, owner_user_id, retention_mode,
+         empty_ttl_hours, playback_anchor_at, created_at, expires_at
+       ) VALUES (?, ?, ?, ?, 'temporary', 1, ?, ?, ?)`,
+    ).run('room-1', 'ABC234', '0'.repeat(64), 'user-1', 1, 1, 2)
+    db.close()
+
+    db = createDatabase(databasePath)
+    const room = db
+      .prepare(
+        'SELECT retention_mode, empty_ttl_hours FROM rooms WHERE id = ?',
+      )
+      .get('room-1')
+    assert.equal(room.retention_mode, 'permanent')
+    assert.equal(room.empty_ttl_hours, null)
   } finally {
     db?.close()
     fs.rmSync(directory, { recursive: true, force: true })

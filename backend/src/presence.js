@@ -66,13 +66,23 @@ function createRoomPresence(options = {}) {
     return new Set(socketsByRoom.get(code)?.keys() ?? [])
   }
 
+  function removeRoom(code) {
+    const prefix = `${code}:`
+    for (const [key, timer] of pendingOfflineTimers) {
+      if (!key.startsWith(prefix)) continue
+      cancel(timer)
+      pendingOfflineTimers.delete(key)
+    }
+    socketsByRoom.delete(code)
+  }
+
   function clear() {
     for (const timer of pendingOfflineTimers.values()) cancel(timer)
     pendingOfflineTimers.clear()
     socketsByRoom.clear()
   }
 
-  return { connect, disconnect, getParticipantIds, clear }
+  return { connect, disconnect, getParticipantIds, removeRoom, clear }
 }
 
 module.exports = { createRoomPresence }

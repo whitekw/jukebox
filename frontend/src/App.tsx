@@ -6,7 +6,9 @@ import {
   useParams,
 } from 'react-router-dom'
 import { HomePage } from './pages/HomePage'
+import { CreateRoomPage } from './pages/CreateRoomPage'
 import { RoomPage } from './pages/room/RoomPage'
+import { AuthNotice } from './components/AuthNotice'
 
 function LegacyHostRedirect() {
   const { code = '' } = useParams()
@@ -16,8 +18,10 @@ function LegacyHostRedirect() {
 function App() {
   return (
     <BrowserRouter>
+      <AuthNotice />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/rooms/new" element={<CreateRoomPage />} />
         <Route path="/host/:code" element={<LegacyHostRedirect />} />
         <Route path="/room/:code" element={<RoomPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
