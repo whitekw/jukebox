@@ -93,7 +93,7 @@ flowchart TB
 
 - 방 코드 및 고엔트로피 토큰 생성
 - 호스트, 계정 소유자, 참여자, 매니저 자격 증명 검증
-- 로그인 여부에 따른 임시/계정 소유 방 생성, 소유 방 조회·삭제
+- 로그인 계정 소유 방 생성, 소유 방 조회·삭제·재생 호스트 복구
 - 공개 `RoomState` 조립
 - 방 내 활성 영상 중복 방지
 - 현재 곡/대기열 전이, 순서 변경, 삭제
@@ -117,7 +117,7 @@ flowchart TB
     CREATE[CreateRoomPage]
     ROOM[RoomPage]
     HOOK[useRoomState]
-    API[api.ts]
+    API[room/api.ts]
     PLAYER[YouTubePlayer]
     PANELS[Participants / Queue / Search / Chat panels]
     I18N[I18nProvider]
@@ -135,12 +135,14 @@ flowchart TB
     HOOK --> API
 ```
 
+코드는 `app`, `features/auth`, `features/home`, `features/room`, `shared`로 나눕니다. `app`은 라우트와 Provider를 조립하고, 각 feature가 화면·상태·API·타입을 소유합니다. `shared`는 HTTP 클라이언트, 번역, 스타일, 공통 UI처럼 기능에 종속되지 않는 코드만 둡니다. 인증 API와 번역 설정 API는 방 API와 분리되어 있습니다. `auth`의 UI는 `components`에 두고, `room`은 `pages`, `hooks`, `components`, `chat`, `playback`으로 나눕니다. 파일이 적은 `home`은 평평한 구조를 유지합니다.
+
 ### 라우트
 
 | 경로 | 화면 | 역할 |
 | --- | --- | --- |
 | `/` | `HomePage` | 방 생성 페이지 진입 또는 코드 입력 |
-| `/rooms/new` | `CreateRoomPage` | 로그인 여부에 따라 참여 프로필을 자동 결정하고 재생 기기를 설정해 방 생성 |
+| `/rooms/new` | `CreateRoomPage` | 로그인 계정 프로필과 재생 기기를 설정해 방 생성 |
 | `/room/:code` | `RoomPage` | 모든 사용자의 참여·신청 기능과 호스트 토큰 보유자의 추가 관리 기능 제공 |
 | `/host/:code` | `LegacyHostRedirect` | 기존 호스트 URL을 통합 룸 경로로 리다이렉트 |
 | 기타 | `/`로 이동 | SPA fallback |
@@ -173,7 +175,7 @@ sequenceDiagram
     participant DB as SQLite
     actor Guest as 참여자
 
-    Host->>FE: /rooms/new에서 설정과 닉네임 제출
+    Host->>FE: Discord 로그인 후 /rooms/new에서 재생 방식 제출
     FE->>API: POST /api/rooms
     API->>RS: createRoom()
     RS->>DB: room + 최초 participant를 한 트랜잭션으로 저장

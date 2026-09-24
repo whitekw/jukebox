@@ -124,10 +124,11 @@ type RoomEvent = {
 | GET | `/api/auth/discord` | 공개 | 인증 | Discord OAuth2 시작 |
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
 | POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 |
-| POST | `/api/rooms` | 공개 | 변경 | 방 생성 정보 |
+| POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
 | GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 영구 방 목록 |
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
+| POST | `/api/rooms/:code/host` | 방 소유자 | 변경 | 새 호스트 토큰과 `RoomState` |
 | POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
@@ -196,17 +197,14 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ```json
 {
-  "playbackMode": "all_devices",
-  "retentionMode": "permanent",
-  "nickname": "Alice"
+  "playbackMode": "all_devices"
 }
 ```
 
 - `playbackMode`는 `host_only` 또는 `all_devices`이며 생략 시 `host_only`입니다.
-- `retentionMode`은 `temporary` 또는 `permanent`이며 생략 시 `temporary`입니다.
-- `permanent`는 로그인이 필요하며 생성한 계정에 방 소유권이 저장됩니다.
-- `temporary`는 로그인 없이 만들 수 있고, 유효한 방 연결이 모두 끊긴 뒤 기본 1시간이 지나면 삭제됩니다.
-- `nickname`은 필수이며 공백 제거 후 `2..20`자여야 합니다. 방과 최초 참여자를 한 트랜잭션으로 함께 생성합니다.
+- Discord 로그인이 필요하며, 비로그인 요청은 `401 AUTH_REQUIRED`로 거부합니다.
+- 방은 로그인 계정에 소유권이 저장되고 소유자가 직접 삭제하기 전까지 유지됩니다.
+- 최초 참여자는 계정 이름과 프로필 사진으로 방과 한 트랜잭션에서 함께 생성됩니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -230,6 +228,10 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 ### `GET /api/rooms/owned`
 
 로그인 계정이 소유한 영구 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
+
+### `POST /api/rooms/:code/host`
+
+방 소유자가 현재 기기를 호스트 전용 모드의 재생 기기로 지정합니다. 새 `hostToken`을 발급하고 기존 토큰을 폐기하며, 기존 호스트 소켓에 `room:host-revoked`를 전송합니다.
 
 ### `GET /api/rooms/:code`
 

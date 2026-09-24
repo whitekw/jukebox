@@ -2,7 +2,7 @@
 
 ## 1. 프로젝트 정의
 
-Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 모든 기기에서 같은 재생 위치를 공유하고, 여러 참여자가 YouTube 신청곡을 추가하는 자가 호스팅 웹 애플리케이션입니다. Discord 계정으로 만든 방은 계정에 귀속되어 사용자가 직접 삭제하기 전까지 유지됩니다. 비로그인 방은 모두 나간 뒤 1시간 후 자동 삭제되며, 6자리 방 코드와 닉네임, 브라우저에 저장한 방별 임시 토큰을 사용합니다.
+Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 모든 기기에서 같은 재생 위치를 공유하고, 여러 참여자가 YouTube 신청곡을 추가하는 자가 호스팅 웹 애플리케이션입니다. 방 생성은 Discord 로그인이 필수이며, 생성한 방은 계정에 귀속되어 사용자가 직접 삭제하기 전까지 유지됩니다. 방 참여는 로그인 없이도 가능하며 6자리 방 코드와 닉네임, 브라우저에 저장한 방별 임시 토큰을 사용합니다.
 
 핵심 설계 목표는 다음과 같습니다.
 
@@ -16,7 +16,7 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 
 ### 호스트
 
-1. 홈에서 방 만들기를 누르고 `/rooms/new`에서 재생 기기 모드를 설정합니다. 로그인 사용자는 Discord 이름과 사진을 자동으로 사용하고, 비로그인 사용자만 해당 방에서 쓸 닉네임을 입력합니다. 로그인 상태에서 만든 방은 자동으로 계정에 귀속됩니다.
+1. 홈에서 방 만들기를 누르면 비로그인 상태에서는 Discord 로그인을 거친 뒤 `/rooms/new`로 돌아옵니다. 계정 이름과 사진을 참여 프로필로 사용하고 재생 기기 모드를 선택합니다.
 2. 서버가 방과 최초 참여자를 한 트랜잭션으로 생성하고, 브라우저가 `hostToken`과 `participantToken`을 `localStorage`에 저장한 뒤 `/room/:code`로 이동합니다.
 3. 방을 만든 사용자도 다른 참여자와 동일하게 신청곡을 검색·추가합니다.
 4. 통합 룸 화면은 호스트 토큰을 감지해 QR 코드, 참여 URL, YouTube IFrame Player와 추가 관리 기능을 표시합니다. 모든 기기 모드에서는 서버 기준 타임라인에 맞춰 재생 위치를 보정합니다.
@@ -57,12 +57,11 @@ Jukebox는 호스트 기기에서만 음악을 재생하거나 방에 참여한 
 jukebox/
 ├─ frontend/
 │  ├─ src/
-│  │  ├─ pages/              # HomePage, CreateRoomPage, 통합 RoomPage와 검색·대기열·채팅 패널
-│  │  ├─ components/         # 플레이어, 곡 목록, 브랜드, 언어 선택기
-│  │  ├─ api.ts              # REST 클라이언트와 토큰 키 규칙
-│  │  ├─ useRoomState.ts     # 최초 조회 + Socket.IO 구독
-│  │  ├─ i18n*.tsx           # ko/ja/en 로케일과 오류 코드 번역
-│  │  └─ types.ts            # 공개 RoomState 중심 타입
+│  │  ├─ app/                # 라우트와 화면 조립
+│  │  ├─ features/auth/      # 로그인 세션, 인증 API·타입, components/
+│  │  ├─ features/home/      # 홈 화면과 방 목록 조회
+│  │  ├─ features/room/      # 방 API·타입, pages/, hooks/, components/, chat/, playback/
+│  │  └─ shared/            # HTTP, 번역, 스타일과 공통 UI
 │  └─ vite.config.ts         # 개발 API/WebSocket 프록시
 ├─ backend/
 │  ├─ src/
@@ -119,7 +118,7 @@ jukebox/
 - 전체 요청 조립: `backend/src/server.js`
 - 핵심 도메인 규칙: `backend/src/rooms.js`
 - DB 스키마: `backend/src/db.js`
-- 재생 및 동기화 흐름: `frontend/src/pages/room/RoomPage.tsx`, `frontend/src/components/YouTubePlayer.tsx`
-- 참여자/매니저 흐름: `frontend/src/pages/room/RoomPage.tsx`
-- 채팅 UI: `frontend/src/pages/room/ChatPanel.tsx`
-- 실시간 상태 구독: `frontend/src/useRoomState.ts`
+- 재생 및 동기화 흐름: `frontend/src/features/room/pages/RoomPage.tsx`, `frontend/src/features/room/playback/YouTubePlayer.tsx`
+- 참여자/매니저 흐름: `frontend/src/features/room/hooks/useRoomSession.ts`, `frontend/src/features/room/roomPermissions.ts`
+- 채팅 UI: `frontend/src/features/room/chat/ChatPanel.tsx`
+- 실시간 상태 구독: `frontend/src/features/room/hooks/useRoomState.ts`

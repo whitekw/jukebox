@@ -21,14 +21,14 @@
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
 | `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
 | `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
-| `DISCORD_CLIENT_ID` | 없음 | Discord 로그인에 필수 | Discord 애플리케이션 Client ID |
-| `DISCORD_CLIENT_SECRET` | 없음 | Discord 로그인에 필수 | 서버에서만 사용하는 Discord Client Secret |
-| `DISCORD_REDIRECT_URI` | 없음 | Discord 로그인에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
+| `DISCORD_CLIENT_ID` | 없음 | 방 생성에 필수 | Discord 애플리케이션 Client ID |
+| `DISCORD_CLIENT_SECRET` | 없음 | 방 생성에 필수 | 서버에서만 사용하는 Discord Client Secret |
+| `DISCORD_REDIRECT_URI` | 없음 | 방 생성에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
 | `AUTH_SESSION_TTL_DAYS` | `30` | 선택 | 로그인 세션 고정 수명(일) |
 | `AUTH_COOKIE_SECURE` | production에서 `true` | 공개 HTTPS 운영 시 필수 | 로그인 쿠키의 `Secure` 속성 |
 
 YouTube API 키는 프런트 코드나 `VITE_*` 환경 변수에 넣지 않습니다.
-Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인 기능이 활성화됩니다.
+Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인과 새 방 생성이 가능합니다. 기존 방 참여는 로그인 없이도 가능합니다.
 
 Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, 운영 시 `https://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다.
 

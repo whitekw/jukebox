@@ -601,6 +601,33 @@ function createRoomService(db, options = {}) {
     })
   }
 
+  function claimHost(code, userId) {
+    if (!userId) {
+      throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      if (!hasOwnerAccess(room, userId)) {
+        throw new AppError(
+          403,
+          '방 소유자만 재생 기기를 변경할 수 있습니다.',
+          'OWNER_FORBIDDEN',
+        )
+      }
+
+      const hostToken = createToken()
+      db.prepare('UPDATE rooms SET host_token_hash = ? WHERE id = ?').run(
+        hashToken(hostToken),
+        room.id,
+      )
+      return {
+        hostToken,
+        room: getPublicRoom(code),
+      }
+    })
+  }
+
   function joinRoom(code, { nickname }) {
     const normalizedNickname = normalizeNickname(nickname)
 
@@ -1203,6 +1230,7 @@ function createRoomService(db, options = {}) {
     getRoomSession,
     listOwnedRooms,
     deleteOwnedRoom,
+    claimHost,
     listChatMessages,
     addChatMessage,
     addRoomEvent,

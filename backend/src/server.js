@@ -104,6 +104,10 @@ function activeRoomChannel(code) {
   return `active-room:${normalizeCode(code)}`
 }
 
+function hostRoomChannel(code) {
+  return `host-room:${normalizeCode(code)}`
+}
+
 const presence = createRoomPresence({
   graceMs: participantLeaveGraceMs,
   onParticipantOffline: ({ code, participantId }) => {
@@ -269,21 +273,21 @@ app.post('/api/auth/logout', mutationLimiter, (req, res) => {
 
 app.post('/api/rooms', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
-  const profileSource = user ? 'account' : 'custom'
-  const nickname = profileSource === 'account'
-    ? user.displayName.slice(0, 20)
-    : String(req.body?.nickname ?? '').trim()
+  if (!user) {
+    throw new AppError(401, '방을 만들려면 로그인해주세요.', 'AUTH_REQUIRED')
+  }
+  const nickname = user.displayName.slice(0, 20)
   if (nickname.length < 2 || nickname.length > 20) {
     throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
   }
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
-    retentionMode: user ? 'permanent' : 'temporary',
-    ownerUserId: user?.id ?? null,
+    retentionMode: 'permanent',
+    ownerUserId: user.id,
     nickname,
-    participantUserId: user?.id ?? null,
-    profileSource,
-    avatarUrl: profileSource === 'account' ? user.avatarUrl : null,
+    participantUserId: user.id,
+    profileSource: 'account',
+    avatarUrl: user.avatarUrl,
   })
   res.status(201).json(created)
 })
@@ -316,6 +320,22 @@ app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
     activeRoomChannel(normalizedCode),
   )
   res.status(204).end()
+})
+
+app.post('/api/rooms/:code/host', mutationLimiter, (req, res) => {
+  const normalizedCode = normalizeCode(req.params.code)
+  const user = requestAuthUser(req)
+  const claimed = rooms.claimHost(normalizedCode, user?.id)
+
+  io.to(hostRoomChannel(normalizedCode)).emit('room:host-revoked')
+  io.in(hostRoomChannel(normalizedCode)).socketsLeave(
+    hostRoomChannel(normalizedCode),
+  )
+
+  res.json({
+    hostToken: claimed.hostToken,
+    room: emitRoom(normalizedCode, claimed.room),
+  })
 })
 
 app.get('/api/rooms/:code', (req, res) => {
@@ -547,6 +567,9 @@ io.on('connection', (socket) => {
         if (identity.isHost || identity.isOwner || identity.participantId) {
           socket.join(activeRoomChannel(normalizedCode))
           rooms.markRoomOccupied(normalizedCode)
+        }
+        if (identity.isHost) {
+          socket.join(hostRoomChannel(normalizedCode))
         }
         if (identity.participantId) {
           socket.join(chatRoomChannel(normalizedCode))

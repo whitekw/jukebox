@@ -1,0 +1,211 @@
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
+import {
+  clamp,
+  clampWindowRect,
+  DEFAULT_WINDOW_HEIGHT,
+  DEFAULT_WINDOW_WIDTH,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  WINDOW_MARGIN,
+  type ChatWindowRect,
+} from './chatWindowGeometry'
+
+type InteractionMode = 'move' | 'nw' | 'ne' | 'sw' | 'se'
+
+type WindowInteraction = {
+  mode: InteractionMode
+  startX: number
+  startY: number
+  startRect: ChatWindowRect
+}
+
+const CHAT_WINDOW_STORAGE_KEY = 'jukebox:chat-window'
+const clampToViewport = (rect: ChatWindowRect) =>
+  clampWindowRect(rect, window.innerWidth, window.innerHeight)
+
+function getInitialWindowRect() {
+  const fallback = clampToViewport({
+    x: window.innerWidth - DEFAULT_WINDOW_WIDTH - 24,
+    y: window.innerHeight - DEFAULT_WINDOW_HEIGHT - 96,
+    width: DEFAULT_WINDOW_WIDTH,
+    height: DEFAULT_WINDOW_HEIGHT,
+  })
+
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(CHAT_WINDOW_STORAGE_KEY) ?? 'null',
+    ) as Partial<ChatWindowRect> | null
+    if (
+      stored &&
+      Number.isFinite(stored.x) &&
+      Number.isFinite(stored.y) &&
+      Number.isFinite(stored.width) &&
+      Number.isFinite(stored.height)
+    ) {
+      return clampToViewport(stored as ChatWindowRect)
+    }
+  } catch {
+    // 손상된 저장값은 기본 위치로 대체합니다.
+  }
+
+  return fallback
+}
+
+export function useChatWindow() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    window.matchMedia('(min-width: 768px)').matches,
+  )
+  const [windowRect, setWindowRect] = useState(getInitialWindowRect)
+  const windowRectRef = useRef(windowRect)
+  const interactionRef = useRef<WindowInteraction | null>(null)
+  const previousUserSelectRef = useRef('')
+  const chatWindowStyle: CSSProperties | undefined = isDesktop
+    ? {
+        left: windowRect.x,
+        top: windowRect.y,
+        width: windowRect.width,
+        height: windowRect.height,
+      }
+    : undefined
+
+  function updateWindowRect(nextRect: ChatWindowRect) {
+    windowRectRef.current = nextRect
+    setWindowRect(nextRect)
+  }
+
+  useEffect(() => {
+    const desktopMedia = window.matchMedia('(min-width: 768px)')
+    const synchronizeViewport = () => {
+      const desktop = desktopMedia.matches
+      setIsDesktop(desktop)
+      if (desktop) updateWindowRect(clampToViewport(windowRectRef.current))
+    }
+
+    desktopMedia.addEventListener('change', synchronizeViewport)
+    window.addEventListener('resize', synchronizeViewport)
+    return () => {
+      desktopMedia.removeEventListener('change', synchronizeViewport)
+      window.removeEventListener('resize', synchronizeViewport)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isDesktop) return
+
+    const moveWindow = (event: PointerEvent) => {
+      const interaction = interactionRef.current
+      if (!interaction) return
+      event.preventDefault()
+
+      const deltaX = event.clientX - interaction.startX
+      const deltaY = event.clientY - interaction.startY
+      const start = interaction.startRect
+      let left = start.x
+      let right = start.x + start.width
+      let top = start.y
+      let bottom = start.y + start.height
+
+      if (interaction.mode === 'move') {
+        updateWindowRect(
+          clampToViewport({
+            ...start,
+            x: start.x + deltaX,
+            y: start.y + deltaY,
+          }),
+        )
+        return
+      }
+
+      if (interaction.mode.includes('w')) {
+        left = clamp(
+          start.x + deltaX,
+          WINDOW_MARGIN,
+          right - Math.min(MIN_WINDOW_WIDTH, right - WINDOW_MARGIN),
+        )
+      }
+      if (interaction.mode.includes('e')) {
+        right = clamp(
+          right + deltaX,
+          left +
+            Math.min(
+              MIN_WINDOW_WIDTH,
+              window.innerWidth - left - WINDOW_MARGIN,
+            ),
+          window.innerWidth - WINDOW_MARGIN,
+        )
+      }
+      if (interaction.mode.includes('n')) {
+        top = clamp(
+          start.y + deltaY,
+          WINDOW_MARGIN,
+          bottom - Math.min(MIN_WINDOW_HEIGHT, bottom - WINDOW_MARGIN),
+        )
+      }
+      if (interaction.mode.includes('s')) {
+        bottom = clamp(
+          bottom + deltaY,
+          top + Math.min(MIN_WINDOW_HEIGHT, window.innerHeight - top - WINDOW_MARGIN),
+          window.innerHeight - WINDOW_MARGIN,
+        )
+      }
+
+      updateWindowRect({
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      })
+    }
+
+    const finishInteraction = () => {
+      if (!interactionRef.current) return
+      interactionRef.current = null
+      document.body.style.userSelect = previousUserSelectRef.current
+      localStorage.setItem(
+        CHAT_WINDOW_STORAGE_KEY,
+        JSON.stringify(windowRectRef.current),
+      )
+    }
+
+    window.addEventListener('pointermove', moveWindow)
+    window.addEventListener('pointerup', finishInteraction)
+    window.addEventListener('pointercancel', finishInteraction)
+    return () => {
+      window.removeEventListener('pointermove', moveWindow)
+      window.removeEventListener('pointerup', finishInteraction)
+      window.removeEventListener('pointercancel', finishInteraction)
+      interactionRef.current = null
+      document.body.style.userSelect = previousUserSelectRef.current
+    }
+  }, [isDesktop])
+
+  function startWindowInteraction(
+    mode: InteractionMode,
+    event: ReactPointerEvent<HTMLElement>,
+  ) {
+    if (!isDesktop || event.button !== 0) return
+    if (
+      mode === 'move' &&
+      (event.target as HTMLElement).closest('button, input')
+    ) {
+      return
+    }
+    event.preventDefault()
+    interactionRef.current = {
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      startRect: windowRectRef.current,
+    }
+    previousUserSelectRef.current = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+  }
+
+  return { isDesktop, chatWindowStyle, startWindowInteraction }
+}

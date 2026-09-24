@@ -609,6 +609,48 @@ test('keeps permanent rooms and grants their account owner control', () => {
   db.close()
 })
 
+test('lets a permanent room owner move host playback to a new device', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  db.prepare(
+    `INSERT INTO users (
+       id, discord_id, username, global_name, avatar_hash,
+       created_at, updated_at, last_login_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run('owner-1', 'discord-1', 'owner', 'Owner', null, 1, 1, 1)
+  const created = rooms.createRoom({
+    retentionMode: 'permanent',
+    ownerUserId: 'owner-1',
+  })
+
+  assert.throws(
+    () => rooms.claimHost(created.code),
+    /로그인/,
+  )
+  assert.throws(
+    () => rooms.claimHost(created.code, 'someone-else'),
+    /소유자/,
+  )
+
+  const claimed = rooms.claimHost(created.code, 'owner-1')
+  assert.notEqual(claimed.hostToken, created.hostToken)
+  assert.equal(claimed.room.code, created.code)
+  assert.throws(
+    () =>
+      rooms.getRoomSession(created.code, {
+        hostToken: created.hostToken,
+      }),
+    /세션이 유효하지/,
+  )
+  assert.equal(
+    rooms.getRoomSession(created.code, {
+      hostToken: claimed.hostToken,
+    }).isHost,
+    true,
+  )
+  db.close()
+})
+
 test('requires an account for permanent rooms and keeps temporary rooms while occupied', () => {
   const db = createDatabase()
   let currentTime = 1_000_000
