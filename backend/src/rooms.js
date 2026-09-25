@@ -4,10 +4,10 @@ const { AppError } = require('./errors')
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
-const RETENTION_MODES = new Set(['temporary', 'permanent'])
 const PROFILE_SOURCES = new Set(['account', 'custom'])
 const CHAT_MESSAGE_MAX_LENGTH = 300
 const CHAT_HISTORY_LIMIT = 100
+const ABANDONED_SONG_GRACE_MS = 60_000
 const ROOM_EVENT_TYPES = new Set([
   'song_added',
   'song_skipped',
@@ -42,37 +42,41 @@ function generateCode(length = 6) {
 }
 
 function createRoomService(db, options = {}) {
-  const roomTtlMs = (options.roomTtlHours ?? 24) * 60 * 60 * 1000
-  const emptyRoomTtlMs =
-    (options.emptyRoomTtlHours ?? 1) * 60 * 60 * 1000
   const now = options.now ?? Date.now
 
   const findRoom = db.prepare(
-    `SELECT * FROM rooms
-     WHERE code = ?
-       AND (retention_mode <> 'legacy' OR expires_at > ?)`,
+    'SELECT * FROM rooms WHERE code = ?',
   )
   const findParticipant = db.prepare(
-    'SELECT * FROM participants WHERE room_id = ? AND token_hash = ?',
+    `SELECT participants.* FROM participants
+     WHERE participants.room_id = ? AND participants.left_at IS NULL
+       AND (participants.token_hash = ? OR EXISTS (
+         SELECT 1 FROM participant_access_tokens AS access
+         WHERE access.participant_id = participants.id AND access.token_hash = ?
+       ))`,
+  )
+  const findAccountParticipant = db.prepare(
+    'SELECT * FROM participants WHERE room_id = ? AND user_id = ? AND left_at IS NULL',
   )
   const findAllDevicesPlaybackRooms = db.prepare(
     `SELECT rooms.code
      FROM rooms
-     WHERE (rooms.retention_mode <> 'legacy' OR rooms.expires_at > ?)
-       AND rooms.playback_mode = 'all_devices'
+     WHERE rooms.playback_mode = 'all_devices'
        AND rooms.playback_paused = 0
        AND rooms.playback_pending = 0
        AND rooms.current_song_id IS NOT NULL`,
   )
 
   function getRoomRecord(code) {
-    const room = findRoom.get(normalizeCode(code), now())
-    if (!room) throw new AppError(404, '존재하지 않거나 만료된 방입니다.', 'ROOM_NOT_FOUND')
+    const room = findRoom.get(normalizeCode(code))
+    if (!room) throw new AppError(404, '존재하지 않는 방입니다.', 'ROOM_NOT_FOUND')
     return room
   }
 
   function hasHostAccess(room, token) {
-    if (!token) return false
+    if (room.playback_mode !== 'host_only' || !token || !room.host_token_hash) {
+      return false
+    }
     const suppliedHash = hashToken(token)
     const expected = Buffer.from(room.host_token_hash, 'hex')
     const supplied = Buffer.from(suppliedHash, 'hex')
@@ -86,16 +90,30 @@ function createRoomService(db, options = {}) {
     return Boolean(userId && room.owner_user_id === String(userId))
   }
 
-  function requireParticipant(room, token) {
-    const participant = findParticipant.get(room.id, hashToken(token))
+  function participantForCredentials(room, token, userId) {
+    const accountParticipant = userId
+      ? findAccountParticipant.get(room.id, String(userId))
+      : null
+    if (accountParticipant) return accountParticipant
+    const tokenParticipant = token
+      ? findParticipant.get(room.id, hashToken(token), hashToken(token))
+      : null
+    if (tokenParticipant && (!tokenParticipant.user_id || tokenParticipant.user_id === String(userId ?? ''))) {
+      return tokenParticipant
+    }
+    return null
+  }
+
+  function requireParticipant(room, token, userId) {
+    const participant = participantForCredentials(room, token, userId)
     if (!participant) {
       throw new AppError(401, '이 방에 다시 참여해주세요.', 'PARTICIPANT_REQUIRED')
     }
     return participant
   }
 
-  function requireManager(room, token) {
-    const participant = requireParticipant(room, token)
+  function requireManager(room, token, userId) {
+    const participant = requireParticipant(room, token, userId)
     if (!participant.is_manager) {
       throw new AppError(403, '관리 권한이 없습니다.', 'MANAGER_FORBIDDEN')
     }
@@ -109,14 +127,23 @@ function createRoomService(db, options = {}) {
         : credentials ?? {}
     if (hasHostAccess(room, normalizedCredentials.hostToken)) return
     if (hasOwnerAccess(room, normalizedCredentials.userId)) return
-    if (normalizedCredentials.participantToken) {
-      requireManager(room, normalizedCredentials.participantToken)
+    if (normalizedCredentials.participantToken || normalizedCredentials.userId) {
+      requireManager(room, normalizedCredentials.participantToken, normalizedCredentials.userId)
       return
     }
     if (normalizedCredentials.hostToken) {
       throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
     }
     throw new AppError(403, '관리 권한이 없습니다.', 'CONTROL_FORBIDDEN')
+  }
+
+  function otherControlAvailableAt(requester) {
+    if (!requester) return null
+    if (requester.left_at != null) return Number(requester.left_at)
+    if (requester.offline_since != null) {
+      return Number(requester.offline_since) + ABANDONED_SONG_GRACE_MS
+    }
+    return null
   }
 
   function requireSongControl(room, credentials, addedByParticipantId) {
@@ -126,10 +153,11 @@ function createRoomService(db, options = {}) {
         : credentials ?? {}
     if (hasHostAccess(room, normalizedCredentials.hostToken)) return
     if (hasOwnerAccess(room, normalizedCredentials.userId)) return
-    if (normalizedCredentials.participantToken) {
+    if (normalizedCredentials.participantToken || normalizedCredentials.userId) {
       const participant = requireParticipant(
         room,
         normalizedCredentials.participantToken,
+        normalizedCredentials.userId,
       )
       if (
         participant.is_manager ||
@@ -137,6 +165,11 @@ function createRoomService(db, options = {}) {
       ) {
         return
       }
+      const requester = db.prepare(
+        'SELECT left_at, offline_since FROM participants WHERE id = ? AND room_id = ?',
+      ).get(addedByParticipantId, room.id)
+      const availableAt = otherControlAvailableAt(requester)
+      if (availableAt !== null && now() >= availableAt) return
       throw new AppError(
         403,
         '본인이 신청한 곡만 삭제하거나 건너뛸 수 있습니다.',
@@ -156,12 +189,11 @@ function createRoomService(db, options = {}) {
         : credentials ?? {}
     const isHost = hasHostAccess(room, normalizedCredentials.hostToken)
     const isOwner = hasOwnerAccess(room, normalizedCredentials.userId)
-    const participant = normalizedCredentials.participantToken
-      ? findParticipant.get(
-          room.id,
-          hashToken(normalizedCredentials.participantToken),
-        )
-      : null
+    const participant = participantForCredentials(
+      room,
+      normalizedCredentials.participantToken,
+      normalizedCredentials.userId,
+    )
     return { isHost, isOwner, participant }
   }
 
@@ -192,6 +224,8 @@ function createRoomService(db, options = {}) {
       thumbnailUrl: row.thumbnail_url,
       addedBy: row.nickname,
       addedById: row.added_by,
+      addedByAvatarUrl: row.avatar_url ?? null,
+      otherControlAvailableAt: otherControlAvailableAt(row),
       position: row.position,
     }
   }
@@ -219,9 +253,9 @@ function createRoomService(db, options = {}) {
     }
   }
 
-  function listChatMessages(code, participantToken) {
+  function listChatMessages(code, participantToken, userId) {
     const room = getRoomRecord(code)
-    requireParticipant(room, participantToken)
+    requireParticipant(room, participantToken, userId)
     return db
       .prepare(
         `SELECT * FROM (
@@ -237,7 +271,7 @@ function createRoomService(db, options = {}) {
       .map(serializeFeedEntry)
   }
 
-  function addChatMessage(code, participantToken, content) {
+  function addChatMessage(code, participantToken, content, userId) {
     const normalizedContent =
       typeof content === 'string' ? content.trim() : ''
     if (
@@ -253,7 +287,7 @@ function createRoomService(db, options = {}) {
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      const participant = requireParticipant(room, participantToken)
+      const participant = requireParticipant(room, participantToken, userId)
       const message = {
         id: crypto.randomUUID(),
         participantId: participant.id,
@@ -293,8 +327,8 @@ function createRoomService(db, options = {}) {
       let participant = null
       let actorType = 'system'
 
-      if (actor.participantToken) {
-        participant = requireParticipant(room, actor.participantToken)
+      if (actor.participantToken || actor.userId) {
+        participant = requireParticipant(room, actor.participantToken, actor.userId)
         actorType = 'participant'
       } else if (actor.participantId) {
         participant = db
@@ -360,7 +394,8 @@ function createRoomService(db, options = {}) {
     const current = room.current_song_id
       ? db
           .prepare(
-            `SELECT songs.*, participants.nickname
+            `SELECT songs.*, participants.nickname, participants.avatar_url,
+                    participants.left_at, participants.offline_since
              FROM songs
              JOIN participants ON participants.id = songs.added_by
              WHERE songs.id = ?`,
@@ -369,7 +404,8 @@ function createRoomService(db, options = {}) {
       : null
     const queue = db
       .prepare(
-        `SELECT songs.*, participants.nickname
+        `SELECT songs.*, participants.nickname, participants.avatar_url,
+                participants.left_at, participants.offline_since
          FROM songs
          JOIN participants ON participants.id = songs.added_by
          WHERE songs.room_id = ? AND songs.status = 'queued'
@@ -378,19 +414,15 @@ function createRoomService(db, options = {}) {
       .all(room.id)
     const participants = db
       .prepare(
-        `SELECT id, nickname, avatar_url, is_manager
+        `SELECT id, nickname, avatar_url, is_manager, user_id
          FROM participants
-         WHERE room_id = ?
+         WHERE room_id = ? AND left_at IS NULL
          ORDER BY created_at ASC, rowid ASC`,
       )
       .all(room.id)
 
     return {
       code: room.code,
-      retentionMode:
-        room.retention_mode === 'permanent' ? 'permanent' : 'temporary',
-      expiresAt:
-        room.retention_mode === 'legacy' ? Number(room.expires_at) : null,
       hostVolume: room.host_volume,
       playbackMode: room.playback_mode,
       playbackPaused: Boolean(room.playback_paused),
@@ -405,6 +437,7 @@ function createRoomService(db, options = {}) {
         nickname: participant.nickname,
         avatarUrl: participant.avatar_url ?? null,
         isManager: Boolean(participant.is_manager),
+        isMember: Boolean(participant.user_id),
       })),
       currentSong: serializeSong(current),
       queue: queue.map(serializeSong),
@@ -413,8 +446,8 @@ function createRoomService(db, options = {}) {
 
   function normalizeNickname(nickname) {
     const normalizedNickname = String(nickname ?? '').trim()
-    if (normalizedNickname.length < 2 || normalizedNickname.length > 20) {
-      throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
+    if (normalizedNickname.length < 1 || normalizedNickname.length > 20) {
+      throw new AppError(400, '닉네임은 1~20자로 입력해주세요.', 'INVALID_NICKNAME')
     }
     return normalizedNickname
   }
@@ -426,6 +459,7 @@ function createRoomService(db, options = {}) {
       userId = null,
       profileSource = 'custom',
       avatarUrl = null,
+      isManager = false,
     },
   ) {
     if (!PROFILE_SOURCES.has(profileSource)) {
@@ -443,11 +477,6 @@ function createRoomService(db, options = {}) {
       )
     }
     const participantToken = createToken()
-    const isManager = !db
-      .prepare(
-        'SELECT 1 FROM participants WHERE room_id = ? AND is_manager = 1 LIMIT 1',
-      )
-      .get(room.id)
     const participant = {
       id: crypto.randomUUID(),
       roomId: room.id,
@@ -483,13 +512,13 @@ function createRoomService(db, options = {}) {
         nickname: participant.nickname,
         avatarUrl: participant.avatarUrl,
         isManager: participant.isManager,
+        isMember: Boolean(participant.userId),
       },
     }
   }
 
   function createRoom({
     playbackMode = 'host_only',
-    retentionMode = 'temporary',
     ownerUserId = null,
     nickname,
     participantUserId = null,
@@ -503,17 +532,10 @@ function createRoomService(db, options = {}) {
         'INVALID_PLAYBACK_MODE',
       )
     }
-    if (!RETENTION_MODES.has(retentionMode)) {
-      throw new AppError(
-        400,
-        '방 유지 방식이 올바르지 않습니다.',
-        'INVALID_RETENTION_MODE',
-      )
-    }
-    if (retentionMode === 'permanent' && !ownerUserId) {
+    if (!ownerUserId) {
       throw new AppError(
         401,
-        '영구 방을 만들려면 로그인해주세요.',
+        '방을 만들려면 로그인해주세요.',
         'AUTH_REQUIRED',
       )
     }
@@ -527,28 +549,21 @@ function createRoomService(db, options = {}) {
       } while (db.prepare('SELECT 1 FROM rooms WHERE code = ?').get(code))
 
       const id = crypto.randomUUID()
-      const hostToken = createToken()
+      const hostToken = playbackMode === 'host_only' ? createToken() : null
       const createdAt = now()
       db.prepare(
         `INSERT INTO rooms (
-          id, code, host_token_hash, owner_user_id, retention_mode,
-          empty_ttl_hours, playback_mode, playback_anchor_at, empty_since,
-          created_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, code, host_token_hash, owner_user_id,
+          playback_mode, playback_anchor_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         code,
-        hashToken(hostToken),
-        ownerUserId ? String(ownerUserId) : null,
-        retentionMode,
-        retentionMode === 'temporary'
-          ? emptyRoomTtlMs / (60 * 60 * 1000)
-          : null,
+        hostToken ? hashToken(hostToken) : '',
+        String(ownerUserId),
         playbackMode,
         createdAt,
         createdAt,
-        createdAt,
-        createdAt + roomTtlMs,
       )
 
       const joined = normalizedNickname
@@ -557,14 +572,13 @@ function createRoomService(db, options = {}) {
             userId: participantUserId,
             profileSource,
             avatarUrl,
+            isManager: true,
           })
         : null
       return {
         code,
-        hostToken,
+        ...(hostToken ? { hostToken } : {}),
         playbackMode,
-        retentionMode,
-        expiresAt: null,
         ...(joined ?? {}),
       }
     })
@@ -576,10 +590,24 @@ function createRoomService(db, options = {}) {
       .prepare(
         `SELECT code
          FROM rooms
-         WHERE owner_user_id = ? AND retention_mode = 'permanent'
+         WHERE owner_user_id = ?
          ORDER BY created_at DESC`,
       )
       .all(String(userId))
+      .map(({ code }) => getPublicRoom(code))
+  }
+
+  function listJoinedRooms(userId) {
+    if (!userId) return []
+    return db
+      .prepare(
+        `SELECT rooms.code FROM rooms
+         JOIN participants ON participants.room_id = rooms.id
+         WHERE participants.user_id = ? AND participants.left_at IS NULL
+           AND rooms.owner_user_id <> ?
+         ORDER BY participants.created_at DESC`,
+      )
+      .all(String(userId), String(userId))
       .map(({ code }) => getPublicRoom(code))
   }
 
@@ -601,12 +629,125 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function joinRoom(code, { nickname }) {
+  function claimHost(code, userId) {
+    if (!userId) {
+      throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+    }
+
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      if (!hasOwnerAccess(room, userId)) {
+        throw new AppError(
+          403,
+          '방 소유자만 재생 기기를 변경할 수 있습니다.',
+          'OWNER_FORBIDDEN',
+        )
+      }
+      if (room.playback_mode !== 'host_only') {
+        throw new AppError(
+          409,
+          '호스트 기기는 한 스피커로 함께 모드에서만 지정할 수 있습니다.',
+          'HOST_ONLY_REQUIRED',
+        )
+      }
+
+      const hostToken = createToken()
+      db.prepare('UPDATE rooms SET host_token_hash = ? WHERE id = ?').run(
+        hashToken(hostToken),
+        room.id,
+      )
+      return {
+        hostToken,
+        room: getPublicRoom(code),
+      }
+    })
+  }
+
+  function issueAccountParticipantToken(participant) {
+    const participantToken = createToken()
+    db.prepare(
+      'INSERT INTO participant_access_tokens (participant_id, token_hash, created_at) VALUES (?, ?, ?)',
+    ).run(participant.id, hashToken(participantToken), now())
+    db.prepare(
+      `DELETE FROM participant_access_tokens
+       WHERE participant_id = ? AND rowid NOT IN (
+         SELECT rowid FROM participant_access_tokens
+         WHERE participant_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 16
+       )`,
+    ).run(participant.id, participant.id)
+    return {
+      participantToken,
+      participant: {
+        id: participant.id,
+        nickname: participant.nickname,
+        avatarUrl: participant.avatar_url ?? null,
+        isManager: Boolean(participant.is_manager),
+        isMember: true,
+      },
+    }
+  }
+
+  function resumeAccountParticipant(code, userId) {
+    if (!userId) throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const participant = findAccountParticipant.get(room.id, String(userId))
+      if (!participant) {
+        throw new AppError(404, '참여한 방이 아닙니다.', 'MEMBERSHIP_NOT_FOUND')
+      }
+      return { ...issueAccountParticipantToken(participant), room: getPublicRoom(code) }
+    })
+  }
+
+  function leaveAccountRoom(code, userId) {
+    if (!userId) throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      if (hasOwnerAccess(room, userId)) {
+        throw new AppError(409, '방 소유자는 방을 나갈 수 없습니다.', 'OWNER_CANNOT_LEAVE')
+      }
+      const participant = findAccountParticipant.get(room.id, String(userId))
+      if (!participant) {
+        throw new AppError(404, '참여한 방이 아닙니다.', 'MEMBERSHIP_NOT_FOUND')
+      }
+      db.prepare(
+        'UPDATE participants SET left_at = ?, is_manager = 0 WHERE id = ?',
+      ).run(now(), participant.id)
+      db.prepare('DELETE FROM participant_access_tokens WHERE participant_id = ?')
+        .run(participant.id)
+      return { participantId: participant.id, room: getPublicRoom(code) }
+    })
+  }
+
+  function joinRoom(code, { nickname, userId = null, avatarUrl = null, participantToken = null }) {
     const normalizedNickname = normalizeNickname(nickname)
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      const joined = insertParticipant(room, { nickname: normalizedNickname })
+      let joined
+      if (userId) {
+        let participant = findAccountParticipant.get(room.id, String(userId))
+        if (!participant && participantToken) {
+          const guest = participantForCredentials(room, participantToken, null)
+          if (guest && !guest.user_id) {
+            db.prepare(
+              `UPDATE participants SET user_id = ?, profile_source = 'account',
+               nickname = ?, avatar_url = ? WHERE id = ?`,
+            ).run(String(userId), normalizedNickname, avatarUrl, guest.id)
+            participant = findAccountParticipant.get(room.id, String(userId))
+          }
+        }
+        joined = participant
+          ? issueAccountParticipantToken(participant)
+          : insertParticipant(room, {
+              nickname: normalizedNickname,
+              userId,
+              profileSource: 'account',
+              avatarUrl,
+            })
+      } else {
+        joined = insertParticipant(room, { nickname: normalizedNickname })
+      }
 
       const state = getPublicRoom(code)
       return {
@@ -616,14 +757,15 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function getParticipantStatus(code, participantToken) {
+  function getParticipantStatus(code, participantToken, userId) {
     const room = getRoomRecord(code)
-    const participant = requireParticipant(room, participantToken)
+    const participant = requireParticipant(room, participantToken, userId)
     return {
       id: participant.id,
       nickname: participant.nickname,
       avatarUrl: participant.avatar_url ?? null,
       isManager: Boolean(participant.is_manager),
+      isMember: Boolean(participant.user_id),
     }
   }
 
@@ -646,16 +788,17 @@ function createRoomService(db, options = {}) {
             nickname: participant.nickname,
             avatarUrl: participant.avatar_url ?? null,
             isManager: Boolean(participant.is_manager),
+            isMember: Boolean(participant.user_id),
           }
         : null,
       room: getPublicRoom(code),
     }
   }
 
-  function addSong(code, participantToken, song) {
+  function addSong(code, participantToken, song, userId) {
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      const participant = requireParticipant(room, participantToken)
+      const participant = requireParticipant(room, participantToken, userId)
 
       const duplicate = db
         .prepare(
@@ -779,7 +922,7 @@ function createRoomService(db, options = {}) {
     const checkedAt = now()
     const advancedRooms = []
 
-    for (const candidate of findAllDevicesPlaybackRooms.all(checkedAt)) {
+    for (const candidate of findAllDevicesPlaybackRooms.all()) {
       const advanced = transaction(db, () => {
         const room = getRoomRecord(candidate.code)
         if (
@@ -851,11 +994,15 @@ function createRoomService(db, options = {}) {
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
+      if (room.playback_mode !== 'host_only') {
+        throw new AppError(
+          409,
+          '호스트 기기는 한 스피커로 함께 모드에서만 지정할 수 있습니다.',
+          'HOST_ONLY_REQUIRED',
+        )
+      }
       if (!hasHostAccess(room, hostToken)) {
         throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
-      }
-      if (room.playback_mode === 'all_devices') {
-        return getPublicRoom(code)
       }
       const changedAt = now()
       if (!room.current_song_id) {
@@ -1058,7 +1205,7 @@ function createRoomService(db, options = {}) {
       requireController(room, normalizedCredentials)
       const target = db
         .prepare(
-          'SELECT id, is_manager FROM participants WHERE id = ? AND room_id = ?',
+          'SELECT id, is_manager FROM participants WHERE id = ? AND room_id = ? AND left_at IS NULL',
         )
         .get(String(targetParticipantId ?? ''), room.id)
       if (!target) {
@@ -1072,23 +1219,6 @@ function createRoomService(db, options = {}) {
         return getPublicRoom(code)
       }
 
-      if (!isManager) {
-        const managerCount = Number(
-          db
-            .prepare(
-              'SELECT COUNT(*) AS count FROM participants WHERE room_id = ? AND is_manager = 1',
-            )
-            .get(room.id).count,
-        )
-        if (managerCount <= 1) {
-          throw new AppError(
-            409,
-            '최소 한 명의 관리자가 필요합니다.',
-            'LAST_MANAGER_REQUIRED',
-          )
-        }
-      }
-
       db.prepare(
         'UPDATE participants SET is_manager = ? WHERE id = ? AND room_id = ?',
       ).run(isManager ? 1 : 0, target.id, room.id)
@@ -1096,113 +1226,38 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function ensureOnlineManager(code, onlineParticipantIds = []) {
-    return transaction(db, () => {
-      const room = getRoomRecord(code)
-      const onlineIds = new Set(
-        Array.from(onlineParticipantIds, (participantId) =>
-          String(participantId),
-        ),
-      )
-      if (onlineIds.size === 0) return getPublicRoom(code)
-
-      const participants = db
-        .prepare(
-          `SELECT id, is_manager
-           FROM participants
-           WHERE room_id = ?
-           ORDER BY created_at ASC, rowid ASC`,
-        )
-        .all(room.id)
-      if (
-        participants.some(
-          (participant) =>
-            participant.is_manager && onlineIds.has(participant.id),
-        )
-      ) {
-        return getPublicRoom(code)
-      }
-
-      const nextManager = participants.find((participant) =>
-        onlineIds.has(participant.id),
-      )
-      if (!nextManager) return getPublicRoom(code)
-
-      db.prepare(
-        'UPDATE participants SET is_manager = 1 WHERE id = ? AND room_id = ?',
-      ).run(nextManager.id, room.id)
-      return getPublicRoom(code)
-    })
+  function markAllParticipantsOffline() {
+    db.prepare(
+      'UPDATE participants SET offline_since = ? WHERE left_at IS NULL',
+    ).run(now())
   }
 
-  function markRoomOccupied(code) {
-    return db
-      .prepare(
-        `UPDATE rooms SET empty_since = NULL
-         WHERE code = ?
-           AND (retention_mode <> 'legacy' OR expires_at > ?)`,
-      )
-      .run(normalizeCode(code), now()).changes
+  function markParticipantOnline(code, participantId) {
+    const room = getRoomRecord(code)
+    db.prepare(
+      'UPDATE participants SET offline_since = NULL WHERE id = ? AND room_id = ? AND left_at IS NULL',
+    ).run(participantId, room.id)
   }
 
-  function markRoomEmpty(code) {
-    const changedAt = now()
-    return db
-      .prepare(
-        `UPDATE rooms
-         SET empty_since = COALESCE(empty_since, ?)
-         WHERE code = ?
-           AND (retention_mode <> 'legacy' OR expires_at > ?)`,
-      )
-      .run(changedAt, normalizeCode(code), changedAt).changes
-  }
-
-  function markAllRoomsEmpty() {
-    const changedAt = now()
-    return db
-      .prepare(
-        `UPDATE rooms
-         SET empty_since = ?
-         WHERE retention_mode <> 'legacy' OR expires_at > ?`,
-      )
-      .run(changedAt, changedAt).changes
-  }
-
-  function deleteExpiredRooms() {
-    const checkedAt = now()
-    return db
-      .prepare(
-        `DELETE FROM rooms
-         WHERE (
-           retention_mode = 'legacy'
-           AND (
-             expires_at <= ?
-             OR (empty_since IS NOT NULL AND empty_since <= ?)
-           )
-         ) OR (
-           retention_mode = 'temporary'
-           AND empty_since IS NOT NULL
-           AND empty_since <= ? - CAST(
-             COALESCE(empty_ttl_hours, ?) * 60 * 60 * 1000 AS INTEGER
-           )
-         )`,
-      )
-      .run(
-        checkedAt,
-        checkedAt - emptyRoomTtlMs,
-        checkedAt,
-        emptyRoomTtlMs / (60 * 60 * 1000),
-      ).changes
+  function markParticipantOffline(code, participantId, offlineSince) {
+    const room = getRoomRecord(code)
+    db.prepare(
+      'UPDATE participants SET offline_since = ? WHERE id = ? AND room_id = ? AND left_at IS NULL',
+    ).run(offlineSince, participantId, room.id)
   }
 
   return {
     createRoom,
     joinRoom,
+    resumeAccountParticipant,
+    leaveAccountRoom,
     getPublicRoom,
     getParticipantStatus,
     getRoomSession,
     listOwnedRooms,
+    listJoinedRooms,
     deleteOwnedRoom,
+    claimHost,
     listChatMessages,
     addChatMessage,
     addRoomEvent,
@@ -1218,11 +1273,9 @@ function createRoomService(db, options = {}) {
     reorderSong,
     updateRoomSettings,
     setManager,
-    ensureOnlineManager,
-    markRoomOccupied,
-    markRoomEmpty,
-    markAllRoomsEmpty,
-    deleteExpiredRooms,
+    markAllParticipantsOffline,
+    markParticipantOnline,
+    markParticipantOffline,
   }
 }
 

@@ -2,6 +2,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
+const SCHEMA_VERSION = 1
+
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
     fs.mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true })
@@ -9,8 +11,15 @@ function createDatabase(databasePath = ':memory:') {
 
   const db = new DatabaseSync(databasePath)
   db.exec('PRAGMA foreign_keys = ON;')
-  if (databasePath !== ':memory:') {
-    db.exec('PRAGMA journal_mode = WAL;')
+  if (databasePath !== ':memory:') db.exec('PRAGMA journal_mode = WAL;')
+
+  const version = db.prepare('PRAGMA user_version').get().user_version
+  const hasExistingSchema = Boolean(db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+  ).get())
+  if (version !== SCHEMA_VERSION && (version !== 0 || hasExistingSchema)) {
+    db.close()
+    throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
 
   db.exec(`
@@ -38,11 +47,6 @@ function createDatabase(databasePath = ':memory:') {
       code TEXT NOT NULL UNIQUE,
       host_token_hash TEXT NOT NULL,
       owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-      retention_mode TEXT NOT NULL DEFAULT 'legacy'
-        CHECK(retention_mode IN ('legacy', 'temporary', 'permanent')),
-      empty_ttl_hours REAL,
-      max_songs_per_participant INTEGER NOT NULL DEFAULT 2,
-      manager_participant_id TEXT,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
       playback_mode TEXT NOT NULL DEFAULT 'host_only'
         CHECK(playback_mode IN ('host_only', 'all_devices')),
@@ -54,9 +58,7 @@ function createDatabase(databasePath = ':memory:') {
       playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1)),
       playback_revision INTEGER NOT NULL DEFAULT 0,
       current_song_id TEXT,
-      empty_since INTEGER,
-      created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS participants (
@@ -68,9 +70,17 @@ function createDatabase(databasePath = ':memory:') {
       profile_source TEXT NOT NULL DEFAULT 'custom'
         CHECK(profile_source IN ('account', 'custom')),
       avatar_url TEXT,
+      left_at INTEGER,
+      offline_since INTEGER,
       is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1)),
       created_at INTEGER NOT NULL,
       UNIQUE(room_id, token_hash)
+    );
+
+    CREATE TABLE IF NOT EXISTS participant_access_tokens (
+      participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS songs (
@@ -84,14 +94,6 @@ function createDatabase(databasePath = ':memory:') {
       added_by TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
       status TEXT NOT NULL CHECK(status IN ('queued', 'current', 'played', 'removed')),
       position INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id TEXT PRIMARY KEY,
-      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-      participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-      content TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
 
@@ -110,196 +112,25 @@ function createDatabase(databasePath = ':memory:') {
       created_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS rooms_by_expiry ON rooms(expires_at);
     CREATE INDEX IF NOT EXISTS auth_sessions_by_user ON auth_sessions(user_id);
     CREATE INDEX IF NOT EXISTS auth_sessions_by_expiry ON auth_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS rooms_by_owner ON rooms(owner_user_id);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
+    CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS active_members_by_room
+      ON participants(room_id, user_id)
+      WHERE user_id IS NOT NULL AND left_at IS NULL;
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
       ON songs(room_id, status, position);
     CREATE UNIQUE INDEX IF NOT EXISTS active_video_per_room
       ON songs(room_id, video_id)
       WHERE status IN ('queued', 'current');
-    CREATE INDEX IF NOT EXISTS chat_messages_by_room_created_at
-      ON chat_messages(room_id, created_at);
     CREATE INDEX IF NOT EXISTS room_feed_entries_by_room_sequence
       ON room_feed_entries(room_id, sequence);
+    PRAGMA user_version = 1;
   `)
 
-  // 채팅 피드 도입 전에 저장된 메시지를 보존한다. 기존 테이블은 이전
-  // 버전으로 롤백할 때를 위해 그대로 두고 이후 쓰기는 통합 피드에만 한다.
-  db.exec(`
-    INSERT OR IGNORE INTO room_feed_entries (
-      id, room_id, entry_type, participant_id, nickname, actor_type,
-      content, created_at
-    )
-    SELECT chat_messages.id, chat_messages.room_id, 'message',
-           chat_messages.participant_id, participants.nickname, 'participant',
-           chat_messages.content, chat_messages.created_at
-    FROM chat_messages
-    JOIN participants ON participants.id = chat_messages.participant_id
-    ORDER BY chat_messages.created_at ASC, chat_messages.rowid ASC;
-  `)
-
-  const roomColumns = new Set(
-    db.prepare('PRAGMA table_info(rooms)').all().map((column) => column.name),
-  )
-  if (!roomColumns.has('manager_participant_id')) {
-    db.exec('ALTER TABLE rooms ADD COLUMN manager_participant_id TEXT')
-  }
-  if (!roomColumns.has('host_volume')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100)',
-    )
-  }
-  if (!roomColumns.has('playback_mode')) {
-    db.exec(
-      "ALTER TABLE rooms ADD COLUMN playback_mode TEXT NOT NULL DEFAULT 'host_only' CHECK(playback_mode IN ('host_only', 'all_devices'))",
-    )
-  }
-  if (!roomColumns.has('playback_paused')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_paused INTEGER NOT NULL DEFAULT 0 CHECK(playback_paused IN (0, 1))',
-    )
-  }
-  if (!roomColumns.has('playback_blocked')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_blocked INTEGER NOT NULL DEFAULT 0 CHECK(playback_blocked IN (0, 1))',
-    )
-  }
-  if (!roomColumns.has('playback_position_seconds')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_position_seconds REAL NOT NULL DEFAULT 0 CHECK(playback_position_seconds >= 0)',
-    )
-  }
-  if (!roomColumns.has('playback_anchor_at')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_anchor_at INTEGER NOT NULL DEFAULT 0',
-    )
-  }
-  if (!roomColumns.has('playback_revision')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_revision INTEGER NOT NULL DEFAULT 0',
-    )
-  }
-  if (!roomColumns.has('playback_pending')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1))',
-    )
-  }
-  if (!roomColumns.has('empty_since')) {
-    db.exec('ALTER TABLE rooms ADD COLUMN empty_since INTEGER')
-  }
-  if (!roomColumns.has('owner_user_id')) {
-    db.exec(
-      'ALTER TABLE rooms ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
-    )
-  }
-  if (!roomColumns.has('retention_mode')) {
-    db.exec(
-      "ALTER TABLE rooms ADD COLUMN retention_mode TEXT NOT NULL DEFAULT 'legacy' CHECK(retention_mode IN ('legacy', 'temporary', 'permanent'))",
-    )
-  }
-  if (!roomColumns.has('empty_ttl_hours')) {
-    db.exec('ALTER TABLE rooms ADD COLUMN empty_ttl_hours REAL')
-  }
-
-  const participantColumns = new Set(
-    db
-      .prepare('PRAGMA table_info(participants)')
-      .all()
-      .map((column) => column.name),
-  )
-  const shouldMigrateManagers = !participantColumns.has('is_manager')
-  if (shouldMigrateManagers) {
-    db.exec(
-      'ALTER TABLE participants ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0 CHECK(is_manager IN (0, 1))',
-    )
-  }
-  if (!participantColumns.has('user_id')) {
-    db.exec(
-      'ALTER TABLE participants ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL',
-    )
-  }
-  if (!participantColumns.has('profile_source')) {
-    db.exec(
-      "ALTER TABLE participants ADD COLUMN profile_source TEXT NOT NULL DEFAULT 'custom' CHECK(profile_source IN ('account', 'custom'))",
-    )
-  }
-  if (!participantColumns.has('avatar_url')) {
-    db.exec('ALTER TABLE participants ADD COLUMN avatar_url TEXT')
-  }
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS rooms_by_empty_since ON rooms(empty_since)',
-  )
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS rooms_by_owner_retention ON rooms(owner_user_id, retention_mode)',
-  )
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id)',
-  )
-
-  // 계정 소유권이 있는 기존 임시 방도 새 정책에 맞춰 수동 삭제 전까지 유지한다.
-  db.exec(`
-    UPDATE rooms
-    SET retention_mode = 'permanent', empty_ttl_hours = NULL
-    WHERE owner_user_id IS NOT NULL
-      AND retention_mode = 'temporary';
-  `)
-
-  db.prepare(
-    `UPDATE rooms
-     SET playback_anchor_at = ?
-     WHERE playback_anchor_at = 0 AND current_song_id IS NOT NULL`,
-  ).run(Date.now())
-
-  if (shouldMigrateManagers) {
-    db.exec(`
-      UPDATE rooms
-      SET manager_participant_id = (
-        SELECT participants.id
-        FROM participants
-        WHERE participants.room_id = rooms.id
-        ORDER BY participants.created_at ASC, participants.rowid ASC
-        LIMIT 1
-      )
-      WHERE manager_participant_id IS NULL
-        AND EXISTS (
-          SELECT 1 FROM participants WHERE participants.room_id = rooms.id
-        );
-
-      UPDATE participants
-      SET is_manager = 1
-      WHERE id IN (
-        SELECT manager_participant_id
-        FROM rooms
-        WHERE manager_participant_id IS NOT NULL
-      );
-
-      UPDATE participants
-      SET is_manager = 1
-      WHERE id IN (
-        SELECT (
-          SELECT candidate.id
-          FROM participants AS candidate
-          WHERE candidate.room_id = rooms.id
-          ORDER BY candidate.created_at ASC, candidate.rowid ASC
-          LIMIT 1
-        )
-        FROM rooms
-        WHERE EXISTS (
-          SELECT 1 FROM participants WHERE participants.room_id = rooms.id
-        )
-          AND NOT EXISTS (
-            SELECT 1
-            FROM participants
-            WHERE participants.room_id = rooms.id
-              AND participants.is_manager = 1
-          )
-      );
-
-      UPDATE rooms SET manager_participant_id = NULL;
-    `)
-  }
+  db.exec("UPDATE rooms SET host_token_hash = '' WHERE playback_mode = 'all_devices' AND host_token_hash <> ''")
 
   return db
 }

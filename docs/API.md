@@ -25,7 +25,7 @@ jukebox:host:{ROOM_CODE}
 jukebox:participant:{ROOM_CODE}
 ```
 
-`controller` 권한이 필요한 API는 올바른 호스트 토큰, 매니저 중 한 명의 참여자 토큰 또는 방 소유자의 로그인 쿠키를 받습니다.
+`controller` 권한이 필요한 API는 `host_only` 방의 올바른 호스트 토큰, 매니저 중 한 명의 참여자 토큰 또는 방 소유자의 로그인 쿠키를 받습니다.
 
 ## 3. 공통 데이터 형식
 
@@ -34,8 +34,6 @@ jukebox:participant:{ROOM_CODE}
 ```ts
 type RoomState = {
   code: string
-  retentionMode: 'temporary' | 'permanent'
-  expiresAt: number | null
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -48,6 +46,8 @@ type RoomState = {
     id: string
     nickname: string
     isManager: boolean
+    isMember: boolean
+    online: boolean
   }>
   currentSong: Song | null
   queue: Song[]
@@ -66,9 +66,13 @@ type Song = {
   thumbnailUrl: string
   addedBy: string
   addedById: string
+  addedByAvatarUrl: string | null
+  otherControlAvailableAt: number | null
   position: number
 }
 ```
+
+`otherControlAvailableAt`은 신청자가 방을 나갔거나 연결이 끊긴 뒤 다른 참여자가 그 곡을 삭제·건너뛸 수 있게 되는 epoch ms 시각입니다. 신청자가 온라인이면 `null`입니다.
 
 ### `VideoSearchResult`
 
@@ -123,22 +127,26 @@ type RoomEvent = {
 | GET | `/api/auth/session` | 공개 | 없음 | Discord 로그인 활성화 여부와 현재 사용자 |
 | GET | `/api/auth/discord` | 공개 | 인증 | Discord OAuth2 시작 |
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
-| POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 |
-| POST | `/api/rooms` | 공개 | 변경 | 방 생성 정보 |
-| GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 영구 방 목록 |
+| POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 및 해당 세션의 실시간 연결 종료 |
+| POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
+| GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 방 목록 |
+| GET | `/api/rooms/joined` | 로그인 | 없음 | 계정으로 참여한 방 목록(소유 방 제외) |
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
-| POST | `/api/rooms/:code/join` | 공개 | 변경 | 참여 토큰/정보/룸 |
+| POST | `/api/rooms/:code/host` | 방 소유자 | 변경 | 새 호스트 토큰과 `RoomState` |
+| POST | `/api/rooms/:code/join` | 공개 | 변경 | 익명 참여 또는 로그인 계정 멤버십 생성, 참여 토큰/정보/룸 |
+| POST | `/api/rooms/:code/resume` | 로그인 멤버 | 변경 | 다른 기기에서 멤버십을 재개할 참여 토큰/정보/룸 |
+| DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 없음 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
-| POST | `/api/rooms/:code/advance` | controller | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
-| DELETE | `/api/rooms/:code/songs/:songId` | controller | 변경 | `RoomState` |
+| DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
@@ -186,7 +194,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 }
 ```
 
-비로그인 상태의 `user`는 `null`입니다. `GET /api/auth/discord?returnTo=/room/ABC234`는 `identify` 범위로 Discord 인증 화면에 리다이렉트합니다. callback은 10분 수명의 HttpOnly state 쿠키를 검증하고 성공 시 기본 30일 수명의 `jukebox_session` 쿠키를 설정합니다. `returnTo`는 같은 출처의 `/`로 시작하는 경로만 허용합니다. `POST /api/auth/logout`은 서버 세션과 쿠키를 함께 삭제하고 `204`를 반환합니다.
+비로그인 상태의 `user`는 `null`입니다. `GET /api/auth/discord?returnTo=/room/ABC234`는 `identify` 범위로 Discord 인증 화면에 리다이렉트합니다. callback은 10분 수명의 HttpOnly state 쿠키를 검증하고 성공 시 기본 30일 수명의 `jukebox_session` 쿠키를 설정합니다. `returnTo`는 같은 출처의 `/`로 시작하는 경로만 허용합니다. `POST /api/auth/logout`은 서버 세션과 쿠키를 삭제하고, 그 세션으로 인증한 Socket.IO 연결을 종료한 뒤 `204`를 반환합니다. 방 멤버십은 삭제하지 않습니다.
 
 ## 6. 방과 참여자
 
@@ -196,17 +204,15 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ```json
 {
-  "playbackMode": "all_devices",
-  "retentionMode": "permanent",
-  "nickname": "Alice"
+  "playbackMode": "all_devices"
 }
 ```
 
 - `playbackMode`는 `host_only` 또는 `all_devices`이며 생략 시 `host_only`입니다.
-- `retentionMode`은 `temporary` 또는 `permanent`이며 생략 시 `temporary`입니다.
-- `permanent`는 로그인이 필요하며 생성한 계정에 방 소유권이 저장됩니다.
-- `temporary`는 로그인 없이 만들 수 있고, 유효한 방 연결이 모두 끊긴 뒤 기본 1시간이 지나면 삭제됩니다.
-- `nickname`은 필수이며 공백 제거 후 `2..20`자여야 합니다. 방과 최초 참여자를 한 트랜잭션으로 함께 생성합니다.
+- Discord 로그인이 필요하며, 비로그인 요청은 `401 AUTH_REQUIRED`로 거부합니다.
+- 방은 로그인 계정에 소유권이 저장되고 소유자가 직접 삭제하기 전까지 유지됩니다.
+- 최초 참여자는 계정 이름과 프로필 사진으로 방과 한 트랜잭션에서 함께 생성됩니다.
+- `hostToken`은 `host_only` 모드에서만 발급됩니다. `all_devices` 응답에는 포함되지 않습니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -215,9 +221,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 {
   "code": "ABC234",
   "hostToken": "원본-호스트-토큰",
-  "playbackMode": "all_devices",
-  "retentionMode": "permanent",
-  "expiresAt": null,
+  "playbackMode": "host_only",
   "participantToken": "원본-참여자-토큰",
   "participant": {
     "id": "참여자-UUID",
@@ -229,11 +233,15 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ### `GET /api/rooms/owned`
 
-로그인 계정이 소유한 영구 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
+로그인 계정이 소유한 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
+
+### `POST /api/rooms/:code/host`
+
+`host_only` 방의 소유자가 현재 기기를 재생 기기로 지정합니다. 새 `hostToken`을 발급하고 기존 토큰을 폐기하며, 기존 호스트 소켓에 `room:host-revoked`를 전송합니다. `all_devices` 방에서는 `409 HOST_ONLY_REQUIRED`를 반환합니다.
 
 ### `GET /api/rooms/:code`
 
-유효하고 만료되지 않은 방의 공개 `RoomState`를 반환합니다. 토큰 해시와 내부 레코드 ID는 노출하지 않습니다. 단, UI 동기화와 매니저 표시에 필요한 참여자 ID 및 곡 ID는 공개 상태에 포함됩니다.
+존재하는 방의 공개 `RoomState`를 반환합니다. 토큰 해시와 내부 레코드 ID는 노출하지 않습니다. 단, UI 동기화와 매니저 표시에 필요한 참여자 ID 및 곡 ID는 공개 상태에 포함됩니다.
 
 ### `POST /api/rooms/:code/join`
 
@@ -243,9 +251,9 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 { "nickname": "Alice" }
 ```
 
-- 앞뒤 공백을 제거한 길이가 `2..20`이어야 합니다.
+- 앞뒤 공백을 제거한 길이가 `1..20`이어야 합니다. 로그인 사용자는 Discord 표시 이름을 닉네임으로 사용합니다.
 - 닉네임 중복은 허용됩니다.
-- 첫 참여자는 자동으로 룸 매니저가 됩니다.
+- 방 생성 시 생성자가 매니저가 되며, 이후 참여자는 자동으로 매니저가 되지 않습니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -366,7 +374,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ### `POST /api/rooms/:code/advance`
 
-필수 권한: controller
+필수 권한: controller, 신청자 또는 신청자가 명시적으로 방을 나갔거나 마지막 연결이 끊긴 지 1분이 지난 경우의 다른 참여자
 
 - 현재 곡을 `played`로 바꿉니다.
 - 가장 앞의 `queued` 곡을 `current`로 바꿉니다.
@@ -414,7 +422,7 @@ position = playbackPositionSeconds
 
 ### `DELETE /api/rooms/:code/songs/:songId`
 
-필수 권한: controller. `queued` 상태의 곡만 `removed`로 바꿀 수 있습니다. 현재 재생 곡 삭제는 지원하지 않습니다.
+필수 권한: controller, 신청자 또는 신청자가 명시적으로 방을 나갔거나 마지막 연결이 끊긴 지 1분이 지난 경우의 다른 참여자. `queued` 상태의 곡만 `removed`로 바꿀 수 있습니다. 현재 재생 곡 삭제는 지원하지 않습니다.
 
 ### `POST /api/rooms/:code/songs/:songId/move`
 
@@ -440,13 +448,13 @@ position = playbackPositionSeconds
 
 ### `PATCH /api/rooms/:code/managers/:participantId`
 
-필수 헤더: 관리자 중 한 명의 `x-participant-token`
+권한: 방 소유자의 로그인 세션 또는 관리자의 `x-participant-token`
 
 ```json
 { "isManager": true }
 ```
 
-같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 최소 한 명의 관리자는 반드시 유지됩니다.
+같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다.
 
 ## 10. Socket.IO 계약
 
@@ -478,7 +486,7 @@ socket.emit(
 {
   "ok": false,
   "code": "ROOM_NOT_FOUND",
-  "message": "존재하지 않거나 만료된 방입니다."
+  "message": "존재하지 않는 방입니다."
 }
 ```
 
@@ -508,9 +516,9 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 | 분류 | 코드 |
 | --- | --- |
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
-| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `CONTROL_FORBIDDEN` |
+| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE`, `LAST_MANAGER_REQUIRED` |
+| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

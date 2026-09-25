@@ -54,7 +54,7 @@ flowchart LR
 | 언어 선택 | 브라우저 `localStorage` | 서버는 최초 추천 로케일만 제공 |
 | Discord 사용자 | `users` 테이블 | 프런트 `AuthProvider`의 공개 프로필 |
 | 로그인 세션 | `auth_sessions`의 토큰 해시 | 브라우저 HttpOnly `jukebox_session` 원본 쿠키 |
-| 영구 방 소유권 | `rooms.owner_user_id` | 로그인 쿠키로 기기 간 복구 |
+| 계정 소유 방 | `rooms.owner_user_id` | 로그인 쿠키로 기기 간 복구 |
 
 ## 4. 백엔드 레이어
 
@@ -86,14 +86,14 @@ flowchart TB
 - 변경 API가 성공하면 `room:{정규화된 코드}` 채널로 `room:state`를 보내고, 새 채팅과 활동 로그는 인증된 참여자 전용 `chat-room:{코드}` 채널로 보냅니다.
 - `frontend/dist`를 정적 제공하며 SPA 경로는 `index.html`로 폴백합니다.
 - Discord Authorization Code 흐름의 state를 HttpOnly 쿠키로 검증하고 로그인 세션을 발급·삭제합니다.
-- 시작 시 한 번, 이후 1분마다 레거시 만료 방, TTL을 넘긴 비로그인 임시 방과 만료된 로그인 세션을 삭제합니다. 계정 소유 방은 사용자가 직접 삭제합니다.
+- 시작 시 한 번, 이후 1분마다 만료된 로그인 세션을 삭제합니다. 방은 소유자가 직접 삭제합니다.
 - `SIGINT`와 `SIGTERM`에서 HTTP 서버와 DB를 닫습니다.
 
 ### `rooms.js`: 도메인 서비스
 
 - 방 코드 및 고엔트로피 토큰 생성
 - 호스트, 계정 소유자, 참여자, 매니저 자격 증명 검증
-- 로그인 여부에 따른 임시/계정 소유 방 생성, 소유 방 조회·삭제
+- 로그인 계정 소유 방 생성, 소유 방 조회·삭제·재생 호스트 복구
 - 공개 `RoomState` 조립
 - 방 내 활성 영상 중복 방지
 - 현재 곡/대기열 전이, 순서 변경, 삭제
@@ -117,7 +117,7 @@ flowchart TB
     CREATE[CreateRoomPage]
     ROOM[RoomPage]
     HOOK[useRoomState]
-    API[api.ts]
+    API[room/api.ts]
     PLAYER[YouTubePlayer]
     PANELS[Participants / Queue / Search / Chat panels]
     I18N[I18nProvider]
@@ -135,14 +135,15 @@ flowchart TB
     HOOK --> API
 ```
 
+코드는 `app`, `features/auth`, `features/home`, `features/room`, `shared`로 나눕니다. `app`은 라우트와 Provider를 조립하고, 각 feature가 화면·상태·API·타입을 소유합니다. `shared`는 HTTP 클라이언트, 번역, 스타일, 공통 UI처럼 기능에 종속되지 않는 코드만 둡니다. 인증 API와 번역 설정 API는 방 API와 분리되어 있습니다. `auth`의 UI는 `components`에 두고, `room`은 `pages`, `hooks`, `components`, `chat`, `playback`으로 나눕니다. 파일이 적은 `home`은 평평한 구조를 유지합니다.
+
 ### 라우트
 
 | 경로 | 화면 | 역할 |
 | --- | --- | --- |
 | `/` | `HomePage` | 방 생성 페이지 진입 또는 코드 입력 |
-| `/rooms/new` | `CreateRoomPage` | 로그인 여부에 따라 참여 프로필을 자동 결정하고 재생 기기를 설정해 방 생성 |
+| `/rooms/new` | `CreateRoomPage` | 로그인 계정 프로필과 재생 기기를 설정해 방 생성 |
 | `/room/:code` | `RoomPage` | 모든 사용자의 참여·신청 기능과 호스트 토큰 보유자의 추가 관리 기능 제공 |
-| `/host/:code` | `LegacyHostRedirect` | 기존 호스트 URL을 통합 룸 경로로 리다이렉트 |
 | 기타 | `/`로 이동 | SPA fallback |
 
 ### 상태 동기화 훅
@@ -150,9 +151,9 @@ flowchart TB
 `useRoomState(code, hostToken, participantToken)`는 두 경로로 동일 상태를 갱신합니다.
 
 1. 마운트 시 `GET /api/rooms/:code`로 최초 스냅샷을 받습니다.
-2. Socket.IO를 polling 우선으로 연결하고 토큰과 함께 `room:subscribe` 후 `room:state`를 계속 받습니다. 가능한 환경에서는 Socket.IO가 WebSocket으로 승격합니다. 유효한 호스트 또는 참여자 세션만 방의 활성 연결 수에 포함됩니다.
+2. Socket.IO를 polling 우선으로 연결하고 토큰과 함께 `room:subscribe` 후 `room:state`를 계속 받습니다. 가능한 환경에서는 Socket.IO가 WebSocket으로 승격합니다.
 
-참여자 목록은 DB에 저장된 전체 세션이 아니라 현재 Socket.IO 연결이 있는 참여자만 표시합니다. 동일 참여자의 여러 탭은 소켓 단위로 집계하며 마지막 연결이 끊긴 뒤 5초 안에 재연결되면 새로고침으로 간주합니다. 유예 시간이 지난 뒤 온라인 매니저가 한 명도 없으면 현재 접속 중인 일반 참여자 가운데 가장 먼저 생성된 세션을 추가 매니저로 자동 승격합니다. 기존 매니저의 권한은 해제하지 않으므로 재접속 후에도 유지됩니다.
+참여자 목록은 로그인 회원과 현재 Socket.IO 연결이 있는 익명 참여자를 표시합니다. 동일 참여자의 여러 탭은 소켓 단위로 집계하며 마지막 연결이 끊긴 뒤 5초 안에 재연결되면 새로고침으로 간주합니다. 매니저가 오프라인이 되어도 다른 참여자의 권한은 바뀌지 않으며, 기존 매니저의 권한은 재접속 후에도 유지됩니다.
 
 연결 직후와 30초 간격으로 `time:sync`를 호출해 서버와 브라우저 시계의 오차를 추정합니다. 모든 기기 모드의 플레이어는 기준 위치와 기준 서버 시각으로 예상 위치를 계산하고, 3초마다 실제 위치가 0.75초보다 크게 벗어나면 `seekTo()`로 보정합니다. 단, 플레이어가 `ENDED` 상태에 도달하면 다음 곡 상태를 받을 때까지 위치 보정과 재생 재시도를 중단합니다.
 
@@ -173,17 +174,17 @@ sequenceDiagram
     participant DB as SQLite
     actor Guest as 참여자
 
-    Host->>FE: /rooms/new에서 설정과 닉네임 제출
+    Host->>FE: Discord 로그인 후 /rooms/new에서 재생 방식 제출
     FE->>API: POST /api/rooms
     API->>RS: createRoom()
     RS->>DB: room + 최초 participant를 한 트랜잭션으로 저장
-    API-->>FE: code, hostToken, participantToken, retentionMode
-    FE->>FE: 두 토큰을 localStorage에 저장
+    API-->>FE: code, participantToken, playbackMode (+ host_only일 때 hostToken)
+    FE->>FE: participantToken과 선택적 hostToken을 localStorage에 저장
 
-    Guest->>FE: 코드/QR로 입장, 닉네임 제출
+    Guest->>FE: 링크/코드로 입장, 닉네임 제출
     FE->>API: POST /api/rooms/:code/join
     API->>RS: joinRoom()
-    RS->>DB: 방별 프로필과 participant 저장, 최초 참여자를 manager로 지정
+    RS->>DB: 방별 프로필과 participant 저장
     API-->>FE: participantToken + room
     API-->>Host: room:state 브로드캐스트
 ```
@@ -263,7 +264,7 @@ YouTube IFrame 내부의 재생·일시정지는 로컬 상태입니다. 한 기
 | 매니저 추가·해제 | X | X | O | X |
 | 자동재생 차단 상태 보고 | X | X | X | O |
 
-호스트는 참여자 레코드가 아니므로 곡을 직접 신청하지 않습니다. 일반 참여자는 `songs.added_by`가 자신의 참여자 ID인 곡만 삭제하거나 건너뛸 수 있으며, 매니저와 호스트는 모든 곡을 제어합니다. 매니저 추가·해제는 매니저의 참여자 토큰 기반이며 최소 한 명의 관리자를 유지합니다.
+호스트 기기는 참여자 레코드가 아니므로 곡을 직접 신청하지 않습니다. 일반 참여자는 `songs.added_by`가 자신의 참여자 ID인 곡만 삭제하거나 건너뛸 수 있으며, 매니저와 호스트 기기는 모든 곡을 제어합니다. 방 소유자는 로그인 계정으로 방을 제어하고, 매니저가 0명인 상태에서도 직접 매니저를 지정할 수 있습니다.
 
 ## 8. 보안 경계
 
@@ -300,7 +301,7 @@ flowchart LR
 - Socket.IO 룸 브로드캐스트를 위한 공유 어댑터
 - 공유 요청 제한 및 인기 차트 캐시
 - 여러 인스턴스가 안전하게 접근할 외부 데이터베이스
-- 만료 정리 작업의 단일 실행 또는 분산 잠금
+- 로그인 세션 만료 정리 작업의 단일 실행 또는 분산 잠금
 
 ## 10. 주요 아키텍처 결정
 

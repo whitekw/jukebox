@@ -4,6 +4,7 @@ const express = require('express')
 const { Server } = require('socket.io')
 const {
   createDiscordAuth,
+  hashToken,
   parseCookies,
   safeReturnTo,
   serializeCookie,
@@ -19,8 +20,6 @@ const { createYouTubeService } = require('./youtube')
 
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
-const roomTtlHours = Number(process.env.ROOM_TTL_HOURS ?? 24)
-const emptyRoomTtlHours = Number(process.env.EMPTY_ROOM_TTL_HOURS ?? 1)
 const configuredParticipantLeaveGraceMs = Number(
   process.env.PARTICIPANT_LEAVE_GRACE_MS ?? 5_000,
 )
@@ -47,7 +46,8 @@ const oauthReturnCookie = 'jukebox_oauth_return_to'
 const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
-const rooms = createRoomService(db, { roomTtlHours, emptyRoomTtlHours })
+const rooms = createRoomService(db)
+rooms.markAllParticipantsOffline()
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
 const auth = createDiscordAuth(db, {
   clientId: process.env.DISCORD_CLIENT_ID,
@@ -100,22 +100,30 @@ function chatRoomChannel(code) {
   return `chat-room:${normalizeCode(code)}`
 }
 
-function activeRoomChannel(code) {
-  return `active-room:${normalizeCode(code)}`
+function hostRoomChannel(code) {
+  return `host-room:${normalizeCode(code)}`
+}
+
+function participantChannel(participantId) {
+  return `participant:${participantId}`
+}
+
+function authSessionChannel(sessionToken) {
+  return `auth-session:${hashToken(sessionToken)}`
 }
 
 const presence = createRoomPresence({
   graceMs: participantLeaveGraceMs,
-  onParticipantOffline: ({ code, participantId }) => {
+  onParticipantOffline: ({ code, participantId, offlineSince }) => {
     try {
+      rooms.markParticipantOffline(code, participantId, offlineSince)
       logRoomEvent(
         code,
         'participant_left',
         { participantId },
         {},
       )
-      const state = ensureOnlineManagerWithActivity(code)
-      emitRoom(code, state)
+      emitRoom(code)
     } catch (error) {
       if (error?.code !== 'ROOM_NOT_FOUND') {
         console.error('Failed to update participant presence.', error)
@@ -131,9 +139,12 @@ function withOnlineParticipants(state, additionalParticipantIds = []) {
   }
   return {
     ...state,
-    participants: state.participants.filter((participant) =>
-      onlineParticipantIds.has(participant.id),
-    ),
+    participants: state.participants
+      .filter((participant) => participant.isMember || onlineParticipantIds.has(participant.id))
+      .map((participant) => ({
+        ...participant,
+        online: onlineParticipantIds.has(participant.id),
+      })),
   }
 }
 
@@ -145,11 +156,18 @@ function emitRoom(code, state) {
   return visibleState
 }
 
-function requestActivityActor(req) {
-  const participantToken = req.get('x-participant-token')
-  if (participantToken) return { participantToken }
-  const hostToken = req.get('x-host-token')
-  return hostToken ? { hostToken } : {}
+function requestActivityActor(req, code) {
+  const credentials = controlCredentials(req)
+  const identity = rooms.getPresenceIdentity(code, credentials)
+  if (identity.participantId) {
+    return {
+      participantToken: credentials.participantToken,
+      userId: credentials.userId,
+    }
+  }
+  if (identity.isHost) return { hostToken: credentials.hostToken }
+  if (identity.isOwner) return { userId: credentials.userId }
+  return {}
 }
 
 function logRoomEvent(code, eventType, actor, data) {
@@ -157,29 +175,6 @@ function logRoomEvent(code, eventType, actor, data) {
   const entry = rooms.addRoomEvent(normalizedCode, eventType, actor, data)
   io.to(chatRoomChannel(normalizedCode)).emit('chat:message', entry)
   return entry
-}
-
-function ensureOnlineManagerWithActivity(code) {
-  const normalizedCode = normalizeCode(code)
-  const before = rooms.getPublicRoom(normalizedCode)
-  const state = rooms.ensureOnlineManager(
-    normalizedCode,
-    presence.getParticipantIds(normalizedCode),
-  )
-  const previousManagerIds = new Set(
-    before.participants
-      .filter((participant) => participant.isManager)
-      .map((participant) => participant.id),
-  )
-  for (const participant of state.participants) {
-    if (participant.isManager && !previousManagerIds.has(participant.id)) {
-      logRoomEvent(normalizedCode, 'manager_added', {}, {
-        target: participant.nickname,
-        automatic: true,
-      })
-    }
-  }
-  return state
 }
 
 function asyncRoute(handler) {
@@ -262,28 +257,28 @@ app.get(
 
 app.post('/api/auth/logout', mutationLimiter, (req, res) => {
   const cookies = parseCookies(req.get('cookie'))
-  auth.deleteSession(cookies[authSessionCookie])
+  const sessionToken = cookies[authSessionCookie]
+  auth.deleteSession(sessionToken)
+  if (sessionToken) {
+    io.in(authSessionChannel(sessionToken)).disconnectSockets(true)
+  }
   clearCookie(res, authSessionCookie)
   res.status(204).end()
 })
 
 app.post('/api/rooms', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
-  const profileSource = user ? 'account' : 'custom'
-  const nickname = profileSource === 'account'
-    ? user.displayName.slice(0, 20)
-    : String(req.body?.nickname ?? '').trim()
-  if (nickname.length < 2 || nickname.length > 20) {
-    throw new AppError(400, '닉네임은 2~20자로 입력해주세요.', 'INVALID_NICKNAME')
+  if (!user) {
+    throw new AppError(401, '방을 만들려면 로그인해주세요.', 'AUTH_REQUIRED')
   }
+  const nickname = user.displayName.slice(0, 20)
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
-    retentionMode: user ? 'permanent' : 'temporary',
-    ownerUserId: user?.id ?? null,
+    ownerUserId: user.id,
     nickname,
-    participantUserId: user?.id ?? null,
-    profileSource,
-    avatarUrl: profileSource === 'account' ? user.avatarUrl : null,
+    participantUserId: user.id,
+    profileSource: 'account',
+    avatarUrl: user.avatarUrl,
   })
   res.status(201).json(created)
 })
@@ -300,6 +295,14 @@ app.get('/api/rooms/owned', (req, res) => {
   })
 })
 
+app.get('/api/rooms/joined', (req, res) => {
+  const user = requestAuthUser(req)
+  if (!user) throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+  res.json({
+    items: rooms.listJoinedRooms(user.id).map((room) => withOnlineParticipants(room)),
+  })
+})
+
 app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
   const normalizedCode = normalizeCode(req.params.code)
@@ -312,10 +315,23 @@ app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
   io.in(chatRoomChannel(normalizedCode)).socketsLeave(
     chatRoomChannel(normalizedCode),
   )
-  io.in(activeRoomChannel(normalizedCode)).socketsLeave(
-    activeRoomChannel(normalizedCode),
-  )
   res.status(204).end()
+})
+
+app.post('/api/rooms/:code/host', mutationLimiter, (req, res) => {
+  const normalizedCode = normalizeCode(req.params.code)
+  const user = requestAuthUser(req)
+  const claimed = rooms.claimHost(normalizedCode, user?.id)
+
+  io.to(hostRoomChannel(normalizedCode)).emit('room:host-revoked')
+  io.in(hostRoomChannel(normalizedCode)).socketsLeave(
+    hostRoomChannel(normalizedCode),
+  )
+
+  res.json({
+    hostToken: claimed.hostToken,
+    room: emitRoom(normalizedCode, claimed.room),
+  })
 })
 
 app.get('/api/rooms/:code', (req, res) => {
@@ -334,7 +350,13 @@ app.get('/api/rooms/:code/session', (req, res) => {
 })
 
 app.post('/api/rooms/:code/join', mutationLimiter, (req, res) => {
-  const result = rooms.joinRoom(req.params.code, req.body)
+  const user = requestAuthUser(req)
+  const result = rooms.joinRoom(req.params.code, {
+    nickname: user ? user.displayName.slice(0, 20) : req.body?.nickname,
+    userId: user?.id,
+    avatarUrl: user?.avatarUrl,
+    participantToken: req.get('x-participant-token'),
+  })
   emitRoom(req.params.code, result.room)
   res.status(201).json({
     ...result,
@@ -342,9 +364,27 @@ app.post('/api/rooms/:code/join', mutationLimiter, (req, res) => {
   })
 })
 
+app.post('/api/rooms/:code/resume', mutationLimiter, (req, res) => {
+  const user = requestAuthUser(req)
+  const result = rooms.resumeAccountParticipant(req.params.code, user?.id)
+  res.json({ ...result, room: withOnlineParticipants(result.room) })
+})
+
+app.delete('/api/rooms/:code/membership', mutationLimiter, (req, res) => {
+  const user = requestAuthUser(req)
+  const code = normalizeCode(req.params.code)
+  const result = rooms.leaveAccountRoom(code, user?.id)
+  logRoomEvent(code, 'participant_left', { participantId: result.participantId }, {})
+  io.to(participantChannel(result.participantId)).emit('room:membership-left')
+  presence.removeParticipant(code, result.participantId)
+  io.in(participantChannel(result.participantId)).disconnectSockets(true)
+  emitRoom(code)
+  res.status(204).end()
+})
+
 app.get('/api/rooms/:code/me', (req, res) => {
   res.json(
-    rooms.getParticipantStatus(req.params.code, req.get('x-participant-token')),
+    rooms.getParticipantStatus(req.params.code, req.get('x-participant-token'), requestAuthUser(req)?.id),
   )
 })
 
@@ -353,6 +393,7 @@ app.get('/api/rooms/:code/messages', (req, res) => {
     items: rooms.listChatMessages(
       req.params.code,
       req.get('x-participant-token'),
+      requestAuthUser(req)?.id,
     ),
   })
 })
@@ -363,6 +404,7 @@ app.post('/api/rooms/:code/messages', (req, res) => {
     normalizedCode,
     req.get('x-participant-token'),
     req.body?.content,
+    requestAuthUser(req)?.id,
   )
   io.to(chatRoomChannel(normalizedCode)).emit('chat:message', message)
   res.status(201).json(message)
@@ -385,6 +427,7 @@ app.post(
       req.params.code,
       req.get('x-participant-token'),
       song,
+      requestAuthUser(req)?.id,
     )
     res.status(201).json(emitRoom(req.params.code, state))
   }),
@@ -396,7 +439,7 @@ app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   logRoomEvent(
     req.params.code,
     'song_skipped',
-    requestActivityActor(req),
+    requestActivityActor(req, req.params.code),
     { title: currentSong?.title ?? '' },
   )
   res.json(emitRoom(req.params.code, state))
@@ -413,7 +456,7 @@ app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
     logRoomEvent(
       req.params.code,
       state.playbackPaused ? 'playback_paused' : 'playback_resumed',
-      requestActivityActor(req),
+      requestActivityActor(req, req.params.code),
       {},
     )
   }
@@ -455,7 +498,7 @@ app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
   logRoomEvent(
     req.params.code,
     'song_removed',
-    requestActivityActor(req),
+    requestActivityActor(req, req.params.code),
     { title: removedSong?.title ?? '' },
   )
   res.json(emitRoom(req.params.code, state))
@@ -477,7 +520,7 @@ app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) =
     logRoomEvent(
       req.params.code,
       'queue_reordered',
-      requestActivityActor(req),
+      requestActivityActor(req, req.params.code),
       {
         title: movedSong?.title ?? '',
         position: Number(req.body.targetIndex) + 1,
@@ -513,18 +556,19 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
     logRoomEvent(
       normalizedCode,
       req.body.isManager ? 'manager_added' : 'manager_removed',
-      requestActivityActor(req),
+      requestActivityActor(req, normalizedCode),
       { target: target.nickname, automatic: false },
     )
   }
-  const state = ensureOnlineManagerWithActivity(normalizedCode)
-  res.json(emitRoom(normalizedCode, state))
+  res.json(emitRoom(normalizedCode))
 })
 
 io.on('connection', (socket) => {
+  const sessionToken = parseCookies(socket.handshake.headers.cookie)[authSessionCookie]
   const socketUser = auth.getSessionUser(
-    parseCookies(socket.handshake.headers.cookie)[authSessionCookie],
+    sessionToken,
   )
+  if (socketUser) socket.join(authSessionChannel(sessionToken))
 
   socket.on('time:sync', (acknowledge) => {
     if (typeof acknowledge === 'function') {
@@ -544,17 +588,19 @@ io.on('connection', (socket) => {
           userId: socketUser?.id,
         })
         socket.join(roomChannel(normalizedCode))
-        if (identity.isHost || identity.isOwner || identity.participantId) {
-          socket.join(activeRoomChannel(normalizedCode))
-          rooms.markRoomOccupied(normalizedCode)
+        if (identity.isHost) {
+          socket.join(hostRoomChannel(normalizedCode))
         }
         if (identity.participantId) {
+          socket.join(participantChannel(identity.participantId))
           socket.join(chatRoomChannel(normalizedCode))
           const becameOnline = presence.connect(
             normalizedCode,
             identity.participantId,
             socket.id,
           )
+          rooms.markParticipantOnline(normalizedCode, identity.participantId)
+          state = rooms.getPublicRoom(normalizedCode)
           socket.data.roomPresence = {
             code: normalizedCode,
             participantId: identity.participantId,
@@ -567,7 +613,6 @@ io.on('connection', (socket) => {
               {},
             )
           }
-          state = ensureOnlineManagerWithActivity(normalizedCode)
         }
         emitRoom(normalizedCode, state)
         if (typeof acknowledge === 'function') acknowledge({ ok: true })
@@ -593,11 +638,6 @@ io.on('connection', (socket) => {
         socket.id,
       )
       socket.data.roomPresence = null
-    }
-    for (const channel of socket.rooms) {
-      if (!channel.startsWith('active-room:')) continue
-      if (io.sockets.adapter.rooms.get(channel)?.size !== 1) continue
-      rooms.markRoomEmpty(channel.slice('active-room:'.length))
     }
   })
 })
@@ -633,11 +673,8 @@ app.use((error, _req, res, _next) => {
   })
 })
 
-rooms.markAllRoomsEmpty()
-rooms.deleteExpiredRooms()
 auth.deleteExpiredSessions()
 const cleanupTimer = setInterval(() => {
-  rooms.deleteExpiredRooms()
   auth.deleteExpiredSessions()
 }, 60 * 1000)
 cleanupTimer.unref()

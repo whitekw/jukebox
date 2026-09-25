@@ -15,20 +15,18 @@
 | --- | --- | --- | --- |
 | `PORT` | `3001` | 선택 | HTTP/Socket.IO 수신 포트 |
 | `DATABASE_PATH` | `./data/jukebox.sqlite` | 선택 | SQLite 파일 경로 |
-| `ROOM_TTL_HOURS` | `24` | 선택 | 마이그레이션 전 레거시 방의 고정 수명 호환값 |
-| `EMPTY_ROOM_TTL_HOURS` | `1` | 선택 | 새 임시 방이 빈 뒤 유지되는 시간 및 레거시 빈 방 보존 시간 |
 | `PARTICIPANT_LEAVE_GRACE_MS` | `5000` | 선택 | 마지막 연결 종료 후 참여자를 오프라인 처리하기까지의 유예 시간(ms) |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
 | `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
 | `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
-| `DISCORD_CLIENT_ID` | 없음 | Discord 로그인에 필수 | Discord 애플리케이션 Client ID |
-| `DISCORD_CLIENT_SECRET` | 없음 | Discord 로그인에 필수 | 서버에서만 사용하는 Discord Client Secret |
-| `DISCORD_REDIRECT_URI` | 없음 | Discord 로그인에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
+| `DISCORD_CLIENT_ID` | 없음 | 방 생성에 필수 | Discord 애플리케이션 Client ID |
+| `DISCORD_CLIENT_SECRET` | 없음 | 방 생성에 필수 | 서버에서만 사용하는 Discord Client Secret |
+| `DISCORD_REDIRECT_URI` | 없음 | 방 생성에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
 | `AUTH_SESSION_TTL_DAYS` | `30` | 선택 | 로그인 세션 고정 수명(일) |
 | `AUTH_COOKIE_SECURE` | production에서 `true` | 공개 HTTPS 운영 시 필수 | 로그인 쿠키의 `Secure` 속성 |
 
 YouTube API 키는 프런트 코드나 `VITE_*` 환경 변수에 넣지 않습니다.
-Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인 기능이 활성화됩니다.
+Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인과 새 방 생성이 가능합니다. 기존 방 참여는 로그인 없이도 가능합니다.
 
 Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, 운영 시 `https://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다.
 
@@ -66,11 +64,11 @@ npm run build
 
 현재 자동 검증 범위:
 
-- DB의 레거시 단일 매니저를 참여자별 공동 관리자 상태로 마이그레이션
+- 새 DB 스키마 생성과 구버전 스키마 거부
 - Discord OAuth2 URL, 계정 upsert, 해시 세션, 만료와 쿠키 보안 유틸리티
 - 방 생성, 참여, 곡 추가/한도/중복, 다음 곡 전환
 - 재생 모드 기본값/검증과 공유 재생 타임라인 계산
-- 호스트/공동 관리자 권한, 재생 상태, 설정, 관리자 추가·해제·자동 승격
+- 호스트/공동 관리자 권한, 재생 상태, 설정, 관리자 추가·해제와 접속 해제 시 권한 유지
 - 국가/언어 판별
 - YouTube URL 파싱, 재생 가능성 필터, 인기 차트 캐시와 지역 폴백
 - 프런트 정적 lint, TypeScript 빌드
@@ -115,6 +113,14 @@ docker compose down
 ```
 
 `docker compose down -v`는 SQLite 영속 볼륨까지 삭제하므로 데이터 폐기가 명확히 필요한 경우에만 사용합니다.
+
+### 기존 DB 초기화
+
+현재 앱은 새 SQLite 스키마 버전 1만 지원합니다. 이전 버전의 DB가 연결돼 있으면 서버가 시작 시 초기화 안내 오류를 출력하고 중단합니다. **이 버전을 배포하기 전에 기존 방·참여자·로그인 세션 데이터를 폐기해야 합니다.** 데이터가 필요하다면 먼저 백업하세요.
+
+- 로컬 실행: 백엔드를 중지한 뒤 `DATABASE_PATH`가 가리키는 DB 파일과 같은 이름의 `-wal`, `-shm` 파일을 제거하고 다시 시작합니다. 기본 경로는 `backend/data/jukebox.sqlite`입니다.
+- `compose.yaml`: 서비스를 중지한 뒤 해당 프로젝트의 `jukebox-data` 볼륨을 제거하고 다시 생성합니다. 다른 프로젝트가 같은 이름의 볼륨을 사용하는지 확인하세요.
+- Portainer의 `compose.deploy.yaml`: Stack을 중지한 뒤 외부 볼륨 `jukebox-data`를 제거하고, 동일한 이름으로 새 볼륨을 만든 뒤 Stack을 배포합니다. Stack 재배포만으로는 외부 볼륨이 초기화되지 않습니다.
 
 ### 게시 이미지로 배포
 
@@ -164,7 +170,7 @@ flowchart LR
 - `ghcr.io/whitekw/jukebox:master`
 - `ghcr.io/whitekw/jukebox:sha-{git-sha}`
 
-운영 Compose는 재현 가능한 SHA 태그를 사용합니다.
+운영 Compose는 재현 가능한 SHA 태그를 사용합니다. `master` 게시가 끝나면 CI가 `compose.deploy.yaml` 전체를 `deploy` 브랜치로 복사한 뒤 이미지 태그를 갱신합니다. Portainer의 Git Stack은 갱신된 `deploy` 브랜치를 다시 배포해야 새 환경 변수 매핑을 적용합니다.
 
 ## 9. 운영 점검
 
@@ -181,9 +187,8 @@ docker compose logs --tail=200 jukebox
 ### 데이터
 
 - `jukebox-data` 볼륨 사용 여부와 여유 공간을 확인합니다.
-- 방 수명은 생성 시점부터 고정이며 기본 24시간입니다.
-- 인증된 호스트·참여자 연결이 모두 끊긴 방은 기본 1시간 뒤 삭제됩니다.
-- 만료 정리는 시작 시와 1분 간격으로 실행됩니다.
+- 방은 계정 소유자가 직접 삭제할 때까지 유지됩니다.
+- 만료된 로그인 세션은 시작 시와 1분 간격으로 삭제됩니다.
 - 백업 시 WAL 일관성을 고려합니다. 자세한 내용은 [DATA_MODEL.md](./DATA_MODEL.md)를 참고합니다.
 
 ### YouTube 연동
@@ -195,15 +200,16 @@ docker compose logs --tail=200 jukebox
 
 | 증상 | 우선 확인 |
 | --- | --- |
+| 로그인 기능을 사용할 수 없음 | `/api/auth/session`의 `enabled` 확인. `false`이면 Portainer 변수 값뿐 아니라 배포 중인 `compose.deploy.yaml`의 `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI` 컨테이너 전달 설정 확인 |
 | 방 화면은 열리나 실시간 갱신 안 됨 | 리버스 프록시의 WebSocket upgrade, `/socket.io/` 전달, 브라우저 네트워크 탭 |
 | 모든 사용자가 같은 IP로 제한됨 | 프록시 전달 헤더와 `TRUST_PROXY` 설정 |
 | 검색/추가만 실패 | `YOUTUBE_API_KEY`, 외부 연결, YouTube API 오류 응답 |
 | 컨테이너 재생성 후 방 소실 | `/app/data`의 named volume 연결 여부 |
 | 호스트 제어 불가 | 해당 브라우저의 `jukebox:host:{CODE}` localStorage 키 존재 여부 |
-| 참여자 재입장 요구 | 해당 브라우저의 참여자 토큰 삭제/불일치 또는 방 만료 여부 |
+| 참여자 재입장 요구 | 해당 브라우저의 참여자 토큰 삭제/불일치 또는 멤버십 탈퇴 여부 |
 | 자동재생 차단 표시 | 해당 기기에서 `재생 계속` 사용, 호스트 전용 모드라면 호스트 브라우저의 자동재생 정책도 확인 |
 
-호스트 토큰을 잃은 경우 서버에 원본 토큰이 없으므로 복구할 수 없습니다. 단, 참여자 매니저가 존재하면 매니저 화면에서 대부분의 재생 및 대기열 제어는 계속할 수 있습니다.
+`host_only` 방의 호스트 토큰을 잃은 경우 방 소유자가 로그인해 현재 기기를 새 호스트로 지정할 수 있습니다. 기존 원본 토큰은 복구할 수 없습니다. 모든 기기 재생 방에는 호스트 토큰이 없습니다.
 
 ## 11. 운영 변경 전 체크리스트
 

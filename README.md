@@ -6,19 +6,18 @@
 
 - 6자리 룸 코드와 QR 입장
 - Discord OAuth2 로그인과 서버 세션
-- 로그인 사용자의 임시·영구 방 선택과 계정별 영구 방 복구
+- 로그인 계정 소유 방 생성과 기기 간 복구
 - 방 생성 시 호스트 전용 재생 또는 모든 기기 동기화 재생 선택
 - 가입 없는 닉네임 기반 참여
-- 참여자별 활성 신청곡 수 제한
 - YouTube 키워드 검색(최대 15개)
 - YouTube, YouTube Music, `youtu.be`, Shorts URL 직접 추가
 - 중복 영상과 임베드 불가 영상 차단
 - 공동 관리자의 재생·정지, 건너뛰기, 순서 변경, 삭제
-- 관리자 추가·해제와 전원 오프라인 시 자동 승격
+- 관리자 추가·해제와 접속 해제 후에도 유지되는 관리자 권한
 - YouTube 공식 IFrame Player 자동 재생 및 종료 후 다음 곡 처리
 - Socket.IO 룸 단위 실시간 동기화
 - 참여자 전용 실시간 방 채팅과 대기열 제어·재생·입퇴장·관리자 활동 로그
-- SQLite 영속 저장, 빈 임시 방 정리와 자동 만료 없는 영구 방
+- SQLite 영속 저장과 사용자가 직접 삭제하기 전까지 유지되는 계정 소유 방
 - 호스트·참여자 토큰 해시 검증과 기본 요청 제한
 
 ## 구조
@@ -51,8 +50,6 @@ backend (Express)
 ```dotenv
 PORT=3001
 DATABASE_PATH=./data/jukebox.sqlite
-ROOM_TTL_HOURS=24
-EMPTY_ROOM_TTL_HOURS=1
 PARTICIPANT_LEAVE_GRACE_MS=5000
 YOUTUBE_API_KEY=your_api_key
 TRUST_PROXY=false
@@ -65,7 +62,7 @@ AUTH_COOKIE_SECURE=false
 
 리버스 프록시 뒤에서 운영한다면 실제 클라이언트 IP를 요청 제한에 사용하도록 `TRUST_PROXY=true`로 설정합니다.
 
-Discord Developer Portal에서 OAuth2 Redirect URI를 `DISCORD_REDIRECT_URI`와 완전히 동일하게 등록해야 합니다. 운영 주소가 HTTPS라면 `AUTH_COOKIE_SECURE=true`를 사용합니다. 세 Discord 환경 변수 중 하나라도 비어 있으면 로그인 UI와 엔드포인트는 비활성화되며 기존 임시 방 기능은 그대로 동작합니다.
+Discord Developer Portal에서 OAuth2 Redirect URI를 `DISCORD_REDIRECT_URI`와 완전히 동일하게 등록해야 합니다. 운영 주소가 HTTPS라면 `AUTH_COOKIE_SECURE=true`를 사용합니다. 방 생성은 로그인이 필수이므로 세 Discord 환경 변수를 모두 설정해야 합니다. 로그인하지 않은 사용자도 기존 방에는 참여할 수 있습니다.
 
 ## 개발 실행
 
@@ -167,9 +164,9 @@ npm run build
 
 ## 중요한 운영 메모
 
-- 호스트 키와 참여자 키는 각 브라우저의 `localStorage`에 저장됩니다. 호스트 키를 잃으면 해당 방의 제어 권한을 복구할 수 없습니다.
+- 호스트 키와 참여자 키는 각 브라우저의 `localStorage`에 저장됩니다. 방 소유자는 다른 기기에서 재생 호스트를 다시 지정할 수 있으며, 이때 기존 호스트 키는 폐기됩니다.
 - Discord 로그인 세션 원본은 `HttpOnly` 쿠키로만 전달하고 SQLite에는 SHA-256 해시만 저장합니다. Discord 액세스·리프레시 토큰은 저장하지 않습니다.
-- 현재 방은 기본 24시간 후 삭제됩니다.
+- 새로 생성한 방은 소유자가 직접 삭제하기 전까지 유지됩니다.
 - YouTube API 키는 반드시 백엔드 환경 변수에만 저장하며 프런트엔드에 넣지 않습니다.
 - YouTube 플레이어 광고를 차단하거나 플레이어를 숨기지 않습니다.
 - SQLite 파일이 유실되지 않도록 `backend/data`를 정기 백업하세요.

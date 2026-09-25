@@ -2,6 +2,7 @@ function createRoomPresence(options = {}) {
   const graceMs = options.graceMs ?? 5_000
   const schedule = options.setTimeout ?? setTimeout
   const cancel = options.clearTimeout ?? clearTimeout
+  const now = options.now ?? Date.now
   const onParticipantOffline = options.onParticipantOffline ?? (() => {})
   const socketsByRoom = new Map()
   const pendingOfflineTimers = new Map()
@@ -48,6 +49,7 @@ function createRoomPresence(options = {}) {
     const key = participantKey(code, participantId)
     if (pendingOfflineTimers.has(key)) return
 
+    const offlineSince = now()
     const timer = schedule(() => {
       pendingOfflineTimers.delete(key)
       const currentRoom = socketsByRoom.get(code)
@@ -56,7 +58,7 @@ function createRoomPresence(options = {}) {
 
       currentRoom.delete(participantId)
       if (currentRoom.size === 0) socketsByRoom.delete(code)
-      onParticipantOffline({ code, participantId })
+      onParticipantOffline({ code, participantId, offlineSince })
     }, graceMs)
     timer.unref?.()
     pendingOfflineTimers.set(key, timer)
@@ -76,13 +78,25 @@ function createRoomPresence(options = {}) {
     socketsByRoom.delete(code)
   }
 
+  function removeParticipant(code, participantId) {
+    const key = participantKey(code, participantId)
+    const timer = pendingOfflineTimers.get(key)
+    if (timer) {
+      cancel(timer)
+      pendingOfflineTimers.delete(key)
+    }
+    const roomParticipants = socketsByRoom.get(code)
+    roomParticipants?.delete(participantId)
+    if (roomParticipants?.size === 0) socketsByRoom.delete(code)
+  }
+
   function clear() {
     for (const timer of pendingOfflineTimers.values()) cancel(timer)
     pendingOfflineTimers.clear()
     socketsByRoom.clear()
   }
 
-  return { connect, disconnect, getParticipantIds, removeRoom, clear }
+  return { connect, disconnect, getParticipantIds, removeParticipant, removeRoom, clear }
 }
 
 module.exports = { createRoomPresence }

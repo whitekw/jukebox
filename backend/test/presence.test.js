@@ -48,6 +48,7 @@ test('cancels leaving when a participant reconnects during the grace period', ()
   const presence = createRoomPresence({
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
+    now: () => 1_234,
     onParticipantOffline: (event) => offline.push(event),
   })
 
@@ -64,5 +65,23 @@ test('cancels leaving when a participant reconnects during the grace period', ()
   timers.run(timers.timers[1])
 
   assert.deepEqual([...presence.getParticipantIds('ABC123')], [])
-  assert.deepEqual(offline, [{ code: 'ABC123', participantId: 'alice' }])
+  assert.deepEqual(offline, [{ code: 'ABC123', participantId: 'alice', offlineSince: 1_234 }])
+})
+
+test('removes every socket and pending offline timer when a member leaves', () => {
+  const timers = createFakeTimers()
+  const offline = []
+  const presence = createRoomPresence({
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    onParticipantOffline: (event) => offline.push(event),
+  })
+
+  presence.connect('ABC123', 'member', 'socket-1')
+  presence.disconnect('ABC123', 'member', 'socket-1')
+  presence.removeParticipant('ABC123', 'member')
+  timers.run(timers.timers[0])
+
+  assert.deepEqual([...presence.getParticipantIds('ABC123')], [])
+  assert.deepEqual(offline, [])
 })
