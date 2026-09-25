@@ -61,14 +61,22 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
 
     const rooms = createRoomService(db)
     const created = rooms.createRoom({
-      retentionMode: 'permanent', ownerUserId: ownerId,
+      ownerUserId: ownerId,
       nickname: 'Owner', participantUserId: ownerId, profileSource: 'account',
     })
     const joined = rooms.joinRoom(created.code, { nickname: 'Member', userId })
     const joinTarget = rooms.createRoom({
-      retentionMode: 'permanent', ownerUserId: ownerId,
+      ownerUserId: ownerId,
       nickname: 'Owner', participantUserId: ownerId, profileSource: 'account',
     })
+    const hostTarget = rooms.createRoom({
+      ownerUserId: ownerId,
+      nickname: 'Owner', participantUserId: ownerId, profileSource: 'account',
+    })
+    rooms.addSong(hostTarget.code, hostTarget.participantToken, {
+      videoId: 'aaaaaaaaaaa', title: 'Playing', artist: 'Artist',
+      durationSeconds: 180, thumbnailUrl: 'https://example.com/cover.jpg',
+    }, ownerId)
     db.close()
     dbClosed = true
 
@@ -108,6 +116,33 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
     assert.equal(create.status, 201)
     assert.equal((await create.json()).participant.nickname, 'M')
 
+    const allDevicesCreate = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { Cookie: `jukebox_session=${sessionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playbackMode: 'all_devices' }),
+    })
+    assert.equal(allDevicesCreate.status, 201)
+    const allDevicesRoom = await allDevicesCreate.json()
+    assert.equal(allDevicesRoom.playbackMode, 'all_devices')
+    assert.equal(Object.hasOwn(allDevicesRoom, 'hostToken'), false)
+    assert.ok(allDevicesRoom.participantToken)
+    const hostClaim = await fetch(`${baseUrl}/api/rooms/${allDevicesRoom.code}/host`, {
+      method: 'POST',
+      headers: { Cookie: `jukebox_session=${sessionToken}` },
+    })
+    assert.equal(hostClaim.status, 409)
+    assert.equal((await hostClaim.json()).error.code, 'HOST_ONLY_REQUIRED')
+
+    const hostControl = await fetch(`${baseUrl}/api/rooms/${hostTarget.code}/advance`, {
+      method: 'POST',
+      headers: {
+        Cookie: `jukebox_session=${sessionToken}`,
+        'x-host-token': hostTarget.hostToken,
+      },
+    })
+    assert.equal(hostControl.status, 200)
+    assert.equal((await hostControl.json()).currentSong, null)
+
     const leave = await fetch(`${baseUrl}/api/rooms/${created.code}/membership`, {
       method: 'DELETE',
       headers: { Cookie: `jukebox_session=${sessionToken}` },
@@ -123,6 +158,15 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
         participant_id: joined.participant.id,
         nickname: joined.participant.nickname,
       }])
+      const hostEvent = verificationDb.prepare(
+        `SELECT actor_type FROM room_feed_entries
+         WHERE room_id = (SELECT id FROM rooms WHERE code = ?) AND event_type = 'song_skipped'`,
+      ).get(hostTarget.code)
+      assert.equal(hostEvent.actor_type, 'host')
+      assert.equal(
+        verificationDb.prepare('SELECT host_token_hash FROM rooms WHERE code = ?').get(allDevicesRoom.code).host_token_hash,
+        '',
+      )
     } finally {
       verificationDb.close()
     }
@@ -149,8 +193,14 @@ test('broadcasts the refreshed song permissions when a requester reconnects', { 
   let child
 
   try {
+    const ownerId = crypto.randomUUID()
+    db.prepare(
+      `INSERT INTO users (id, discord_id, username, global_name, avatar_hash,
+        created_at, updated_at, last_login_at)
+       VALUES (?, ?, 'owner', 'Owner', NULL, 1, 1, 1)`,
+    ).run(ownerId, `discord-${ownerId}`)
     const rooms = createRoomService(db)
-    const created = rooms.createRoom()
+    const created = rooms.createRoom({ ownerUserId: ownerId })
     const requester = rooms.joinRoom(created.code, { nickname: 'Requester' })
     rooms.addSong(created.code, requester.participantToken, {
       videoId: 'aaaaaaaaaaa', title: 'Playing', artist: 'Artist',

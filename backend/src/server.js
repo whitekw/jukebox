@@ -20,8 +20,6 @@ const { createYouTubeService } = require('./youtube')
 
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
-const roomTtlHours = Number(process.env.ROOM_TTL_HOURS ?? 24)
-const emptyRoomTtlHours = Number(process.env.EMPTY_ROOM_TTL_HOURS ?? 1)
 const configuredParticipantLeaveGraceMs = Number(
   process.env.PARTICIPANT_LEAVE_GRACE_MS ?? 5_000,
 )
@@ -48,7 +46,7 @@ const oauthReturnCookie = 'jukebox_oauth_return_to'
 const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
-const rooms = createRoomService(db, { roomTtlHours, emptyRoomTtlHours })
+const rooms = createRoomService(db)
 rooms.markAllParticipantsOffline()
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
 const auth = createDiscordAuth(db, {
@@ -100,10 +98,6 @@ function roomChannel(code) {
 
 function chatRoomChannel(code) {
   return `chat-room:${normalizeCode(code)}`
-}
-
-function activeRoomChannel(code) {
-  return `active-room:${normalizeCode(code)}`
 }
 
 function hostRoomChannel(code) {
@@ -162,13 +156,18 @@ function emitRoom(code, state) {
   return visibleState
 }
 
-function requestActivityActor(req) {
-  const participantToken = req.get('x-participant-token')
-  if (participantToken) return { participantToken, userId: requestAuthUser(req)?.id }
-  const userId = requestAuthUser(req)?.id
-  if (userId) return { userId }
-  const hostToken = req.get('x-host-token')
-  return hostToken ? { hostToken } : {}
+function requestActivityActor(req, code) {
+  const credentials = controlCredentials(req)
+  const identity = rooms.getPresenceIdentity(code, credentials)
+  if (identity.participantId) {
+    return {
+      participantToken: credentials.participantToken,
+      userId: credentials.userId,
+    }
+  }
+  if (identity.isHost) return { hostToken: credentials.hostToken }
+  if (identity.isOwner) return { userId: credentials.userId }
+  return {}
 }
 
 function logRoomEvent(code, eventType, actor, data) {
@@ -275,7 +274,6 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
   const nickname = user.displayName.slice(0, 20)
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
-    retentionMode: 'permanent',
     ownerUserId: user.id,
     nickname,
     participantUserId: user.id,
@@ -316,9 +314,6 @@ app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
   io.in(roomChannel(normalizedCode)).socketsLeave(roomChannel(normalizedCode))
   io.in(chatRoomChannel(normalizedCode)).socketsLeave(
     chatRoomChannel(normalizedCode),
-  )
-  io.in(activeRoomChannel(normalizedCode)).socketsLeave(
-    activeRoomChannel(normalizedCode),
   )
   res.status(204).end()
 })
@@ -444,7 +439,7 @@ app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   logRoomEvent(
     req.params.code,
     'song_skipped',
-    requestActivityActor(req),
+    requestActivityActor(req, req.params.code),
     { title: currentSong?.title ?? '' },
   )
   res.json(emitRoom(req.params.code, state))
@@ -461,7 +456,7 @@ app.patch('/api/rooms/:code/playback', mutationLimiter, (req, res) => {
     logRoomEvent(
       req.params.code,
       state.playbackPaused ? 'playback_paused' : 'playback_resumed',
-      requestActivityActor(req),
+      requestActivityActor(req, req.params.code),
       {},
     )
   }
@@ -503,7 +498,7 @@ app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
   logRoomEvent(
     req.params.code,
     'song_removed',
-    requestActivityActor(req),
+    requestActivityActor(req, req.params.code),
     { title: removedSong?.title ?? '' },
   )
   res.json(emitRoom(req.params.code, state))
@@ -525,7 +520,7 @@ app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) =
     logRoomEvent(
       req.params.code,
       'queue_reordered',
-      requestActivityActor(req),
+      requestActivityActor(req, req.params.code),
       {
         title: movedSong?.title ?? '',
         position: Number(req.body.targetIndex) + 1,
@@ -561,7 +556,7 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
     logRoomEvent(
       normalizedCode,
       req.body.isManager ? 'manager_added' : 'manager_removed',
-      requestActivityActor(req),
+      requestActivityActor(req, normalizedCode),
       { target: target.nickname, automatic: false },
     )
   }
@@ -593,10 +588,6 @@ io.on('connection', (socket) => {
           userId: socketUser?.id,
         })
         socket.join(roomChannel(normalizedCode))
-        if (identity.isHost || identity.isOwner || identity.participantId) {
-          socket.join(activeRoomChannel(normalizedCode))
-          rooms.markRoomOccupied(normalizedCode)
-        }
         if (identity.isHost) {
           socket.join(hostRoomChannel(normalizedCode))
         }
@@ -648,11 +639,6 @@ io.on('connection', (socket) => {
       )
       socket.data.roomPresence = null
     }
-    for (const channel of socket.rooms) {
-      if (!channel.startsWith('active-room:')) continue
-      if (io.sockets.adapter.rooms.get(channel)?.size !== 1) continue
-      rooms.markRoomEmpty(channel.slice('active-room:'.length))
-    }
   })
 })
 
@@ -687,11 +673,8 @@ app.use((error, _req, res, _next) => {
   })
 })
 
-rooms.markAllRoomsEmpty()
-rooms.deleteExpiredRooms()
 auth.deleteExpiredSessions()
 const cleanupTimer = setInterval(() => {
-  rooms.deleteExpiredRooms()
   auth.deleteExpiredSessions()
 }, 60 * 1000)
 cleanupTimer.unref()

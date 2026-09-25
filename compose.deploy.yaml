@@ -7,8 +7,6 @@ services:
       NODE_ENV: production
       PORT: 3001
       DATABASE_PATH: /app/data/jukebox.sqlite
-      ROOM_TTL_HOURS: "${ROOM_TTL_HOURS:-24}"
-      EMPTY_ROOM_TTL_HOURS: "${EMPTY_ROOM_TTL_HOURS:-1}"
       PARTICIPANT_LEAVE_GRACE_MS: "${PARTICIPANT_LEAVE_GRACE_MS:-5000}"
       YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in Portainer}"
       TRUST_PROXY: "${TRUST_PROXY:-false}"

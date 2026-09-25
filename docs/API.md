@@ -25,7 +25,7 @@ jukebox:host:{ROOM_CODE}
 jukebox:participant:{ROOM_CODE}
 ```
 
-`controller` 권한이 필요한 API는 올바른 호스트 토큰, 매니저 중 한 명의 참여자 토큰 또는 방 소유자의 로그인 쿠키를 받습니다.
+`controller` 권한이 필요한 API는 `host_only` 방의 올바른 호스트 토큰, 매니저 중 한 명의 참여자 토큰 또는 방 소유자의 로그인 쿠키를 받습니다.
 
 ## 3. 공통 데이터 형식
 
@@ -34,8 +34,6 @@ jukebox:participant:{ROOM_CODE}
 ```ts
 type RoomState = {
   code: string
-  retentionMode: 'temporary' | 'permanent'
-  expiresAt: number | null
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -131,7 +129,7 @@ type RoomEvent = {
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
 | POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 및 해당 세션의 실시간 연결 종료 |
 | POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
-| GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 영구 방 목록 |
+| GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 방 목록 |
 | GET | `/api/rooms/joined` | 로그인 | 없음 | 계정으로 참여한 방 목록(소유 방 제외) |
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
@@ -214,6 +212,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 - Discord 로그인이 필요하며, 비로그인 요청은 `401 AUTH_REQUIRED`로 거부합니다.
 - 방은 로그인 계정에 소유권이 저장되고 소유자가 직접 삭제하기 전까지 유지됩니다.
 - 최초 참여자는 계정 이름과 프로필 사진으로 방과 한 트랜잭션에서 함께 생성됩니다.
+- `hostToken`은 `host_only` 모드에서만 발급됩니다. `all_devices` 응답에는 포함되지 않습니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -222,9 +221,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 {
   "code": "ABC234",
   "hostToken": "원본-호스트-토큰",
-  "playbackMode": "all_devices",
-  "retentionMode": "permanent",
-  "expiresAt": null,
+  "playbackMode": "host_only",
   "participantToken": "원본-참여자-토큰",
   "participant": {
     "id": "참여자-UUID",
@@ -236,15 +233,15 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ### `GET /api/rooms/owned`
 
-로그인 계정이 소유한 영구 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
+로그인 계정이 소유한 방을 최신 생성 순서로 반환합니다. 응답은 `{ "items": RoomState[] }` 형식이며 비로그인 요청은 `401 AUTH_REQUIRED`입니다.
 
 ### `POST /api/rooms/:code/host`
 
-방 소유자가 현재 기기를 호스트 전용 모드의 재생 기기로 지정합니다. 새 `hostToken`을 발급하고 기존 토큰을 폐기하며, 기존 호스트 소켓에 `room:host-revoked`를 전송합니다.
+`host_only` 방의 소유자가 현재 기기를 재생 기기로 지정합니다. 새 `hostToken`을 발급하고 기존 토큰을 폐기하며, 기존 호스트 소켓에 `room:host-revoked`를 전송합니다. `all_devices` 방에서는 `409 HOST_ONLY_REQUIRED`를 반환합니다.
 
 ### `GET /api/rooms/:code`
 
-유효하고 만료되지 않은 방의 공개 `RoomState`를 반환합니다. 토큰 해시와 내부 레코드 ID는 노출하지 않습니다. 단, UI 동기화와 매니저 표시에 필요한 참여자 ID 및 곡 ID는 공개 상태에 포함됩니다.
+존재하는 방의 공개 `RoomState`를 반환합니다. 토큰 해시와 내부 레코드 ID는 노출하지 않습니다. 단, UI 동기화와 매니저 표시에 필요한 참여자 ID 및 곡 ID는 공개 상태에 포함됩니다.
 
 ### `POST /api/rooms/:code/join`
 
@@ -489,7 +486,7 @@ socket.emit(
 {
   "ok": false,
   "code": "ROOM_NOT_FOUND",
-  "message": "존재하지 않거나 만료된 방입니다."
+  "message": "존재하지 않는 방입니다."
 }
 ```
 
@@ -519,7 +516,7 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 | 분류 | 코드 |
 | --- | --- |
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
-| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `CONTROL_FORBIDDEN` |
+| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
 | 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE`, `LAST_MANAGER_REQUIRED` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |

@@ -60,7 +60,9 @@ export function CreateRoomPage() {
     setError('')
     try {
       const created = await roomApi.createRoom(playbackMode)
-      localStorage.setItem(hostTokenKey(created.code), created.hostToken)
+      if (created.hostToken) {
+        localStorage.setItem(hostTokenKey(created.code), created.hostToken)
+      }
       localStorage.setItem(
         participantTokenKey(created.code),
         created.participantToken,

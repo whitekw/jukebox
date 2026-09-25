@@ -6,6 +6,7 @@ import type { Participant } from '../types'
 import {
   hostTokenKey,
   isInvalidRoomCredential,
+  isTransientRoomSessionError,
   participantTokenKey,
 } from '../roomCredentials'
 
@@ -108,27 +109,38 @@ export function useRoomSession(code: string, user: AuthUser | null) {
       return
     }
     let active = true
-    void roomApi
-      .getRoomSession(code, {
-        ...(hostToken ? { hostToken } : {}),
-        ...(participantToken ? { participantToken } : {}),
-      })
-      .then((session) => {
+    let retryTimer: number | undefined
+    let retryDelayMs = 1_000
+
+    async function verifyRoomSession() {
+      try {
+        const session = await roomApi.getRoomSession(code, {
+          ...(hostToken ? { hostToken } : {}),
+          ...(participantToken ? { participantToken } : {}),
+        })
         if (!active) return
         setIsOwner(session.isOwner)
         setHostVerified(session.isHost)
         if (hostToken && !session.isHost) revokeHost()
-      })
-      .catch((error: unknown) => {
+      } catch (error) {
         if (!active) return
+        if (isTransientRoomSessionError(error)) {
+          retryTimer = window.setTimeout(() => void verifyRoomSession(), retryDelayMs)
+          retryDelayMs = Math.min(retryDelayMs * 2, 30_000)
+          return
+        }
         setIsOwner(false)
         setHostVerified(false)
         if (hostToken && isInvalidRoomCredential(error, 'host')) revokeHost()
-      })
+      }
+    }
+
+    void verifyRoomSession()
     return () => {
       active = false
+      window.clearTimeout(retryTimer)
     }
-  }, [code, hostToken, participantToken, revokeHost, user])
+  }, [code, hostToken, participantToken, revokeHost, resumeAttempt, user])
 
   const joinRoom = useCallback(async (nickname: string) => {
     const joined = await roomApi.joinRoom(code, nickname, participantToken)

@@ -9,7 +9,6 @@
 - 로그인 계정 소유 방 생성과 기기 간 복구
 - 방 생성 시 호스트 전용 재생 또는 모든 기기 동기화 재생 선택
 - 가입 없는 닉네임 기반 참여
-- 참여자별 활성 신청곡 수 제한
 - YouTube 키워드 검색(최대 15개)
 - YouTube, YouTube Music, `youtu.be`, Shorts URL 직접 추가
 - 중복 영상과 임베드 불가 영상 차단
@@ -51,8 +50,6 @@ backend (Express)
 ```dotenv
 PORT=3001
 DATABASE_PATH=./data/jukebox.sqlite
-ROOM_TTL_HOURS=24
-EMPTY_ROOM_TTL_HOURS=1
 PARTICIPANT_LEAVE_GRACE_MS=5000
 YOUTUBE_API_KEY=your_api_key
 TRUST_PROXY=false

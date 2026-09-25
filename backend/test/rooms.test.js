@@ -1,7 +1,21 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createDatabase } = require('../src/db')
-const { createRoomService } = require('../src/rooms')
+const { createRoomService: createProductionRoomService } = require('../src/rooms')
+
+function createRoomService(db, options) {
+  const service = createProductionRoomService(db, options)
+  const createRoom = service.createRoom
+  let ownerNumber = 0
+  service.createRoom = (settings = {}) => {
+    const ownerUserId = settings.ownerUserId ?? `test-owner-${++ownerNumber}`
+    if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(ownerUserId)) {
+      insertUser(db, ownerUserId)
+    }
+    return createRoom({ ...settings, ownerUserId })
+  }
+  return service
+}
 
 function song(videoId, title, durationSeconds = 180) {
   return {
@@ -28,7 +42,7 @@ test('keeps account membership across devices and preserves songs after leaving'
   insertUser(db, 'member')
   const rooms = createRoomService(db)
   const created = rooms.createRoom({
-    retentionMode: 'permanent', ownerUserId: 'owner',
+    ownerUserId: 'owner',
     nickname: 'Owner', participantUserId: 'owner', profileSource: 'account',
   })
   const joined = rooms.joinRoom(created.code, {
@@ -76,7 +90,7 @@ test('upgrades a guest participant when they explicitly join with an account', (
 
 test('creates, joins, queues and advances a room', () => {
   const db = createDatabase()
-  const rooms = createRoomService(db, { roomTtlHours: 1 })
+  const rooms = createRoomService(db)
   const created = rooms.createRoom()
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
@@ -307,7 +321,6 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
   const db = createDatabase()
   let currentTime = 1_000_000
   const rooms = createRoomService(db, {
-    roomTtlHours: 1,
     now: () => currentTime,
   })
   const created = rooms.createRoom({
@@ -375,10 +388,40 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
   assert.equal(state.playbackRevision, 4)
 
   currentTime += 2_000
-  state = rooms.reportPlaybackBlocked(created.code, created.hostToken, true)
+  assert.throws(
+    () => rooms.reportPlaybackBlocked(created.code, 'unused-host-token', true),
+    (error) => error.code === 'HOST_ONLY_REQUIRED',
+  )
+  state = rooms.getPublicRoom(created.code)
   assert.equal(state.playbackPaused, false)
   assert.equal(state.playbackBlocked, false)
   assert.equal(state.playbackRevision, 4)
+  db.close()
+})
+
+test('all-device rooms have no host token and use account or participant control', () => {
+  const db = createDatabase()
+  insertUser(db, 'owner')
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom({
+    playbackMode: 'all_devices',
+    ownerUserId: 'owner',
+    nickname: 'Owner',
+    participantUserId: 'owner',
+    profileSource: 'account',
+  })
+
+  assert.equal(Object.hasOwn(created, 'hostToken'), false)
+  assert.equal(
+    db.prepare('SELECT host_token_hash FROM rooms WHERE code = ?').get(created.code).host_token_hash,
+    '',
+  )
+  assert.equal(rooms.hasActiveSession(created.code, { hostToken: 'unused' }), false)
+  assert.equal(rooms.getRoomSession(created.code, { userId: 'owner' }).isOwner, true)
+  assert.throws(
+    () => rooms.claimHost(created.code, 'owner'),
+    (error) => error.code === 'HOST_ONLY_REQUIRED',
+  )
   db.close()
 })
 
@@ -386,7 +429,6 @@ test('automatically advances completed all-device playback from the server timel
   const db = createDatabase()
   let currentTime = 1_000_000
   const rooms = createRoomService(db, {
-    roomTtlHours: 1,
     now: () => currentTime,
   })
   const created = rooms.createRoom({
@@ -467,6 +509,7 @@ test('defaults to host-only playback and rejects unknown playback modes', () => 
   const created = rooms.createRoom()
 
   assert.equal(created.playbackMode, 'host_only')
+  assert.ok(created.hostToken)
   assert.equal(rooms.getPublicRoom(created.code).playbackMode, 'host_only')
   assert.throws(
     () => rooms.createRoom({ playbackMode: 'somewhere_else' }),
@@ -509,32 +552,6 @@ test('validates stored room sessions for hosts and participants', () => {
       }),
     /저장된 세션/,
   )
-  db.close()
-})
-
-test('deletes a room after it remains empty for one hour', () => {
-  const db = createDatabase()
-  let currentTime = 1_000_000
-  const rooms = createRoomService(db, {
-    roomTtlHours: 24,
-    emptyRoomTtlHours: 1,
-    now: () => currentTime,
-  })
-  const created = rooms.createRoom()
-
-  currentTime += 60 * 60 * 1000 - 1
-  assert.equal(rooms.deleteExpiredRooms(), 0)
-
-  rooms.markRoomOccupied(created.code)
-  currentTime += 2 * 60 * 60 * 1000
-  assert.equal(rooms.deleteExpiredRooms(), 0)
-
-  rooms.markRoomEmpty(created.code)
-  currentTime += 60 * 60 * 1000 - 1
-  assert.equal(rooms.deleteExpiredRooms(), 0)
-  currentTime += 1
-  assert.equal(rooms.deleteExpiredRooms(), 1)
-  assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않거나 만료/)
   db.close()
 })
 
@@ -625,7 +642,7 @@ test('stores an account profile snapshot for the room participant', () => {
   db.close()
 })
 
-test('keeps permanent rooms and grants their account owner control', () => {
+test('keeps account-owned rooms and grants their owner control', () => {
   const db = createDatabase()
   let currentTime = 1_000_000
   db.prepare(
@@ -643,21 +660,14 @@ test('keeps permanent rooms and grants their account owner control', () => {
     currentTime,
     currentTime,
   )
-  const rooms = createRoomService(db, {
-    roomTtlHours: 1,
-    emptyRoomTtlHours: 1,
-    now: () => currentTime,
-  })
+  const rooms = createRoomService(db, { now: () => currentTime })
   const created = rooms.createRoom({
-    retentionMode: 'permanent',
     ownerUserId: 'owner-1',
   })
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
   rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One'))
 
-  assert.equal(created.expiresAt, null)
-  assert.equal(rooms.getPublicRoom(created.code).retentionMode, 'permanent')
   assert.equal(
     rooms.getRoomSession(created.code, { userId: 'owner-1' }).isOwner,
     true,
@@ -678,9 +688,7 @@ test('keeps permanent rooms and grants their account owner control', () => {
   rooms.setPlaybackPaused(created.code, { userId: 'owner-1' }, true)
   assert.equal(rooms.listOwnedRooms('owner-1').length, 1)
 
-  rooms.markRoomEmpty(created.code)
   currentTime += 7 * 24 * 60 * 60 * 1000
-  assert.equal(rooms.deleteExpiredRooms(), 0)
   assert.equal(rooms.getPublicRoom(created.code).code, created.code)
   assert.throws(
     () => rooms.deleteOwnedRoom(created.code, 'someone-else'),
@@ -690,11 +698,11 @@ test('keeps permanent rooms and grants their account owner control', () => {
     code: created.code,
   })
   assert.equal(rooms.listOwnedRooms('owner-1').length, 0)
-  assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않거나 만료/)
+  assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않는 방/)
   db.close()
 })
 
-test('lets a permanent room owner move host playback to a new device', () => {
+test('lets a room owner move host playback to a new device', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
   db.prepare(
@@ -704,7 +712,6 @@ test('lets a permanent room owner move host playback to a new device', () => {
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run('owner-1', 'discord-1', 'owner', 'Owner', null, 1, 1, 1)
   const created = rooms.createRoom({
-    retentionMode: 'permanent',
     ownerUserId: 'owner-1',
   })
 
@@ -736,29 +743,14 @@ test('lets a permanent room owner move host playback to a new device', () => {
   db.close()
 })
 
-test('requires an account for permanent rooms and keeps temporary rooms while occupied', () => {
+test('requires an account to create a room', () => {
   const db = createDatabase()
-  let currentTime = 1_000_000
-  const rooms = createRoomService(db, {
-    roomTtlHours: 1,
-    emptyRoomTtlHours: 1,
-    now: () => currentTime,
-  })
+  const rooms = createProductionRoomService(db)
 
   assert.throws(
-    () => rooms.createRoom({ retentionMode: 'permanent' }),
+    () => rooms.createRoom(),
     /로그인/,
   )
-  assert.throws(
-    () => rooms.createRoom({ retentionMode: 'unknown' }),
-    /유지 방식/,
-  )
-
-  const created = rooms.createRoom({ retentionMode: 'temporary' })
-  rooms.markRoomOccupied(created.code)
-  currentTime += 2 * 60 * 60 * 1000
-  assert.equal(rooms.deleteExpiredRooms(), 0)
-  assert.equal(rooms.getPublicRoom(created.code).code, created.code)
   db.close()
 })
 

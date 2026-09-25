@@ -4,6 +4,7 @@ import {
   clearAllStoredRoomCredentials,
   clearStoredRoomCredentials,
   isInvalidRoomCredential,
+  isTransientRoomSessionError,
   normalizeRoomCode,
 } from '../src/features/room/roomCredentials.ts'
 
@@ -48,6 +49,17 @@ test('only invalidates room credentials on explicit authorization errors', () =>
     assert.equal(isInvalidRoomCredential(error, 'host'), false)
     assert.equal(isInvalidRoomCredential(error, 'participant'), false)
   }
+})
+
+test('retries transient session failures without retrying invalid credentials', () => {
+  assert.equal(isTransientRoomSessionError(new TypeError('Failed to fetch')), true)
+  assert.equal(isTransientRoomSessionError({ status: 503 }), true)
+  assert.equal(isTransientRoomSessionError({ status: 429 }), true)
+  assert.equal(
+    isTransientRoomSessionError({ status: 401, code: 'ROOM_SESSION_INVALID' }),
+    false,
+  )
+  assert.equal(isTransientRoomSessionError({ status: 404, code: 'ROOM_NOT_FOUND' }), false)
 })
 
 test('logout clears room credentials while preserving other preferences', () => {

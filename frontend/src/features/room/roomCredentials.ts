@@ -23,6 +23,13 @@ export function isInvalidRoomCredential(
   )
 }
 
+export function isTransientRoomSessionError(error: unknown) {
+  if (error instanceof TypeError) return true
+  if (!error || typeof error !== 'object' || !('status' in error)) return false
+  const status = error.status
+  return typeof status === 'number' && (status === 429 || status >= 500)
+}
+
 export function clearStoredRoomCredentials(code: string) {
   localStorage.removeItem(hostTokenKey(code))
   localStorage.removeItem(participantTokenKey(code))

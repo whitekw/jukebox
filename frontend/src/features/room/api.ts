@@ -2,7 +2,6 @@ import type {
   ChatMessage,
   Participant,
   PlaybackMode,
-  RoomRetentionMode,
   RoomSession,
   RoomState,
   VideoSearchResult,
@@ -36,10 +35,8 @@ export const roomApi = {
   ) {
     return request<{
       code: string
-      hostToken: string
+      hostToken?: string
       playbackMode: PlaybackMode
-      retentionMode: RoomRetentionMode
-      expiresAt: number | null
       participantToken: string
       participant: Participant
     }>(

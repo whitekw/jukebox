@@ -1,6 +1,4 @@
 export type PlaybackMode = 'host_only' | 'all_devices'
-export type RoomRetentionMode = 'temporary' | 'permanent'
-
 export type Song = {
   id: string
   videoId: string
@@ -17,8 +15,6 @@ export type Song = {
 
 export type RoomState = {
   code: string
-  retentionMode: RoomRetentionMode
-  expiresAt: number | null
   hostVolume: number
   playbackMode: PlaybackMode
   playbackPaused: boolean
