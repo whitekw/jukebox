@@ -46,6 +46,7 @@ type RoomState = {
     id: string
     nickname: string
     isManager: boolean
+    isOwner: boolean
     isMember: boolean
     online: boolean
   }>
@@ -111,7 +112,6 @@ type RoomEvent = {
   eventType:
     | 'song_added' | 'song_skipped' | 'song_removed' | 'queue_reordered'
     | 'playback_paused' | 'playback_resumed'
-    | 'participant_joined' | 'participant_left'
     | 'manager_added' | 'manager_removed'
   data: Record<string, string | number | boolean>
   createdAt: number
@@ -150,6 +150,7 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
 요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다. 채팅 조회와 전송에는 별도 요청 제한을 적용하지 않습니다.
 
@@ -328,7 +329,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 앞뒤 공백을 제거한 일반 텍스트 `1..300`자만 허용합니다. 성공하면 `201 Created`와 저장된 `ChatMessage`를 반환하고, 인증된 방 참여자에게 `chat:message`로 전달합니다. 메시지 삭제 API는 제공하지 않습니다.
 
-건너뛰기·대기열 삭제·순서 변경·전체 일시정지/재개·입장/퇴장·관리자 지정/해제도 `RoomEvent`로 저장되어 같은 `chat:message` 이벤트로 전달됩니다. 곡 추가는 대기열에 신청자가 표시되므로 활동 로그를 생성하지 않습니다. 입장/퇴장은 참여자의 첫 소켓 연결과 마지막 소켓 종료 후 재연결 유예 시간이 지난 시점을 기준으로 하므로, 새로고침이나 여러 탭 사용으로 로그가 중복되지 않습니다.
+건너뛰기·대기열 삭제·순서 변경·전체 일시정지/재개·관리자 지정/해제도 `RoomEvent`로 저장되어 같은 `chat:message` 이벤트로 전달됩니다. 곡 추가는 대기열에 신청자가 표시되므로 활동 로그를 생성하지 않습니다. 입장·퇴장은 채팅 피드에 기록하지 않으며, 이전 버전에서 저장된 입장·퇴장 로그도 조회 결과에서 제외합니다.
 
 ## 8. YouTube 조회
 
@@ -454,7 +455,11 @@ position = playbackPositionSeconds
 { "isManager": true }
 ```
 
-같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다.
+같은 방의 소유자가 아닌 참여자에게 관리 권한을 추가하거나 해제합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다. 소유자 자신은 `OWNER_MODERATION_FORBIDDEN`으로 변경할 수 없습니다.
+
+### `POST /api/rooms/:code/participants/:participantId/disconnect`
+
+방 소유자의 로그인 세션이 필요합니다. 대상의 현재 Socket.IO 연결을 모두 종료하고 즉시 오프라인으로 표시합니다. 로그인 멤버십과 익명 참여 토큰은 유지되므로 다시 입장할 수 있습니다. 연결 중이 아니면 `PARTICIPANT_OFFLINE`을 반환합니다. 방 소유자를 대상으로 할 수 없습니다.
 
 ## 10. Socket.IO 계약
 
@@ -496,6 +501,10 @@ socket.emit(
 
 payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생 상태, 방 설정, 매니저 변경 후 해당 방의 모든 구독자에게 전달됩니다.
 
+### 서버 → 클라이언트: `room:disconnected`
+
+방 소유자가 연결을 끊은 대상의 소켓에만 전송합니다. 클라이언트는 홈으로 이동하고 해당 소켓은 서버에서 강제로 종료됩니다. 멤버십과 참여 토큰이 유지되어 다시 참여할 수 있습니다.
+
 ### 서버 → 클라이언트: `chat:message`
 
 payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한 참여자 토큰으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 항목 ID를 기준으로 병합합니다.
@@ -516,9 +525,9 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 | 분류 | 코드 |
 | --- | --- |
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
-| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN` |
+| 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN`, `OWNER_FORBIDDEN`, `OWNER_MODERATION_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE` |
+| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `PARTICIPANT_OFFLINE`, `INVALID_MANAGER_STATE` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

@@ -189,10 +189,11 @@ test('stores structured room events in the chat timeline', () => {
   const created = rooms.createRoom()
   const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
 
-  const joined = rooms.addRoomEvent(
+  const removed = rooms.addRoomEvent(
     created.code,
-    'participant_joined',
+    'song_removed',
     { participantId: alice.participant.id },
+    { title: 'Old song' },
   )
   currentTime += 1
   const added = rooms.addRoomEvent(
@@ -215,31 +216,60 @@ test('stores structured room events in the chat timeline', () => {
     { target: 'Alice', automatic: true },
   )
 
-  assert.deepEqual(joined, {
-    id: joined.id,
-    sequence: joined.sequence,
+  assert.deepEqual(removed, {
+    id: removed.id,
+    sequence: removed.sequence,
     type: 'system',
     participantId: alice.participant.id,
     nickname: 'Alice',
     actorType: 'participant',
-    eventType: 'participant_joined',
-    data: {},
+    eventType: 'song_removed',
+    data: { title: 'Old song' },
     createdAt: 2_000,
   })
-  assert.ok(added.sequence > joined.sequence)
+  assert.ok(added.sequence > removed.sequence)
   assert.equal(added.data.title, 'One')
   assert.equal(paused.actorType, 'host')
   assert.equal(paused.nickname, null)
   assert.equal(promoted.actorType, 'system')
   assert.deepEqual(
     rooms.listChatMessages(created.code, alice.participantToken),
-    [joined, added, paused, promoted],
+    [removed, added, paused, promoted],
+  )
+  assert.throws(
+    () => rooms.addRoomEvent(created.code, 'participant_joined'),
+    /Unsupported room event type/,
   )
   assert.throws(
     () => rooms.addRoomEvent(created.code, 'unknown_event'),
     /Unsupported room event type/,
   )
 
+  db.close()
+})
+
+test('excludes old presence logs before limiting chat history', () => {
+  const db = createDatabase()
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom()
+  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const first = rooms.addChatMessage(created.code, alice.participantToken, 'First')
+  const roomId = db.prepare('SELECT id FROM rooms WHERE code = ?').get(created.code).id
+  const insertOldPresence = db.prepare(
+    `INSERT INTO room_feed_entries (id, room_id, entry_type, actor_type, event_type, created_at)
+     VALUES (?, ?, 'system', 'participant', ?, ?)`,
+  )
+  for (let index = 0; index < 101; index += 1) {
+    insertOldPresence.run(
+      `old-presence-${index}`,
+      roomId,
+      index % 2 === 0 ? 'participant_joined' : 'participant_left',
+      index + 1,
+    )
+  }
+  const last = rooms.addChatMessage(created.code, alice.participantToken, 'Last')
+
+  assert.deepEqual(rooms.listChatMessages(created.code, alice.participantToken), [first, last])
   db.close()
 })
 
@@ -1074,14 +1104,12 @@ test('does not promote a newcomer when the last manager leaves', () => {
   insertUser(db, 'member')
   const rooms = createRoomService(db)
   const created = rooms.createRoom({
-    ownerUserId: 'owner', nickname: 'Owner', participantUserId: 'owner', profileSource: 'account',
+    ownerUserId: 'owner',
   })
   const member = rooms.joinRoom(created.code, { nickname: 'Member', userId: 'member' })
-  assert.equal(created.participant.isManager, true)
   assert.equal(member.participant.isManager, false)
 
   rooms.setManager(created.code, { userId: 'owner' }, member.participant.id, true)
-  rooms.setManager(created.code, { userId: 'owner' }, created.participant.id, false)
   rooms.leaveAccountRoom(created.code, 'member')
 
   const newcomer = rooms.joinRoom(created.code, { nickname: 'Newcomer' })
@@ -1094,5 +1122,41 @@ test('does not promote a newcomer when the last manager leaves', () => {
 
   rooms.setManager(created.code, { userId: 'owner' }, newcomer.participant.id, true)
   assert.equal(rooms.getParticipantStatus(created.code, newcomer.participantToken).isManager, true)
+  db.close()
+})
+
+test('shows the owner as host and protects owner moderation', () => {
+  const db = createDatabase()
+  insertUser(db, 'owner')
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom({
+    ownerUserId: 'owner', nickname: 'Owner', participantUserId: 'owner', profileSource: 'account',
+  })
+  const guest = rooms.joinRoom(created.code, { nickname: 'Guest' })
+  const owner = rooms.getPublicRoom(created.code).participants.find(({ id }) => id === created.participant.id)
+  assert.equal(owner.isOwner, true)
+  assert.equal(owner.isManager, true)
+  assert.equal(rooms.getPublicRoom(created.code).participants.find(({ id }) => id === guest.participant.id).isOwner, false)
+  assert.throws(() => rooms.setManager(created.code, { userId: 'owner' }, owner.id, false), { code: 'OWNER_MODERATION_FORBIDDEN' })
+  assert.throws(() => rooms.disconnectParticipant(created.code, 'owner', owner.id), { code: 'OWNER_MODERATION_FORBIDDEN' })
+  db.close()
+})
+
+test('disconnect keeps account membership and guest token valid', () => {
+  const db = createDatabase()
+  insertUser(db, 'owner')
+  insertUser(db, 'member')
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom({ ownerUserId: 'owner' })
+  const member = rooms.joinRoom(created.code, { nickname: 'Member', userId: 'member' })
+  const guest = rooms.joinRoom(created.code, { nickname: 'Guest' })
+
+  assert.throws(() => rooms.disconnectParticipant(created.code, 'member', guest.participant.id), { code: 'OWNER_FORBIDDEN' })
+  assert.throws(() => rooms.disconnectParticipant(created.code, 'owner', guest.participant.id, false), { code: 'PARTICIPANT_OFFLINE' })
+  rooms.disconnectParticipant(created.code, 'owner', member.participant.id)
+  assert.equal(rooms.resumeAccountParticipant(created.code, 'member').participant.id, member.participant.id)
+  assert.equal(rooms.listJoinedRooms('member').length, 1)
+  rooms.disconnectParticipant(created.code, 'owner', guest.participant.id)
+  assert.equal(rooms.getParticipantStatus(created.code, guest.participantToken).id, guest.participant.id)
   db.close()
 })

@@ -34,9 +34,10 @@ export function HomePage() {
   } = useHomeRooms(user, () => setNotice(t('home.roomDeleted')))
 
   useEffect(() => {
-    const state = location.state as { roomDeleted?: boolean; loggedOut?: boolean } | null
-    if (!state?.roomDeleted && !state?.loggedOut) return
-    setNotice(t(state.loggedOut ? 'auth.loggedOutRoom' : 'home.roomDeleted'))
+    const state = location.state as { roomDeleted?: boolean; loggedOut?: boolean; roomDisconnected?: boolean } | null
+    if (!state?.roomDeleted && !state?.loggedOut && !state?.roomDisconnected) return
+    setNotice(t(state.roomDisconnected ? 'participants.disconnectedNotice'
+      : state.loggedOut ? 'auth.loggedOutRoom' : 'home.roomDeleted'))
     navigate('/', { replace: true, state: null })
   }, [location.state, navigate, t])
 

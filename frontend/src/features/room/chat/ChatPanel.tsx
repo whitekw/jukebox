@@ -53,10 +53,6 @@ function formatSystemMessage(message: SystemChatMessage, t: Translate) {
       return t('chat.event.playbackPaused', { actor })
     case 'playback_resumed':
       return t('chat.event.playbackResumed', { actor })
-    case 'participant_joined':
-      return t('chat.event.participantJoined', { actor })
-    case 'participant_left':
-      return t('chat.event.participantLeft', { actor })
     case 'manager_added':
       return message.data.automatic
         ? t('chat.event.managerAutoAdded', { target })

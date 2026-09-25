@@ -40,6 +40,7 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-joined-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
   const sessionToken = crypto.randomBytes(32).toString('base64url')
+  const ownerSessionToken = crypto.randomBytes(32).toString('base64url')
   const db = createDatabase(databasePath)
   let dbClosed = false
   let child
@@ -58,6 +59,10 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
       `INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at)
        VALUES (?, ?, ?, ?, ?)`,
     ).run(crypto.randomUUID(), userId, hashToken(sessionToken), Date.now(), Date.now() + 60_000)
+    db.prepare(
+      `INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(crypto.randomUUID(), ownerId, hashToken(ownerSessionToken), Date.now(), Date.now() + 60_000)
 
     const rooms = createRoomService(db)
     const created = rooms.createRoom({
@@ -98,7 +103,7 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
     assert.equal(items[0].participants.length, 2)
     assert.deepEqual(
       items[0].participants.find((participant) => participant.id === joined.participant.id),
-      { ...joined.participant, online: false },
+      { ...joined.participant, isOwner: false, online: false },
     )
 
     const join = await fetch(`${baseUrl}/api/rooms/${joinTarget.code}/join`, {
@@ -106,7 +111,20 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
       headers: { Cookie: `jukebox_session=${sessionToken}` },
     })
     assert.equal(join.status, 201)
-    assert.equal((await join.json()).participant.nickname, 'M')
+    const joinedTarget = await join.json()
+    assert.equal(joinedTarget.participant.nickname, 'M')
+    const nonOwnerDisconnect = await fetch(`${baseUrl}/api/rooms/${joinTarget.code}/participants/${joinedTarget.participant.id}/disconnect`, {
+      method: 'POST', headers: { Cookie: `jukebox_session=${sessionToken}` },
+    })
+    assert.equal(nonOwnerDisconnect.status, 403)
+    const offlineDisconnect = await fetch(`${baseUrl}/api/rooms/${joinTarget.code}/participants/${joinedTarget.participant.id}/disconnect`, {
+      method: 'POST', headers: { Cookie: `jukebox_session=${ownerSessionToken}` },
+    })
+    assert.equal(offlineDisconnect.status, 409)
+    const resumeAfterDisconnect = await fetch(`${baseUrl}/api/rooms/${joinTarget.code}/resume`, {
+      method: 'POST', headers: { Cookie: `jukebox_session=${sessionToken}` },
+    })
+    assert.equal(resumeAfterDisconnect.status, 200)
 
     const create = await fetch(`${baseUrl}/api/rooms`, {
       method: 'POST',
@@ -151,13 +169,10 @@ test('lists rooms joined with an account through the home API', { timeout: 10_00
     const verificationDb = createDatabase(databasePath)
     try {
       const departures = verificationDb.prepare(
-        `SELECT participant_id, nickname FROM room_feed_entries
-         WHERE event_type = 'participant_left'`,
-      ).all()
-      assert.deepEqual(departures.map((row) => ({ ...row })), [{
-        participant_id: joined.participant.id,
-        nickname: joined.participant.nickname,
-      }])
+        `SELECT COUNT(*) AS count FROM room_feed_entries
+         WHERE event_type IN ('participant_joined', 'participant_left')`,
+      ).get()
+      assert.equal(departures.count, 0)
       const hostEvent = verificationDb.prepare(
         `SELECT actor_type FROM room_feed_entries
          WHERE room_id = (SELECT id FROM rooms WHERE code = ?) AND event_type = 'song_skipped'`,
