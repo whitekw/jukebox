@@ -21,6 +21,10 @@ test('creates the current schema and reopens it without migration', () => {
       `INSERT INTO rooms (id, code, host_token_hash, playback_mode, created_at)
        VALUES ('room-1', 'ABC234', 'old-host-hash', 'all_devices', 1)`,
     ).run()
+    db.prepare(
+      `INSERT INTO participants (id, room_id, token_hash, nickname, is_manager, created_at)
+       VALUES ('guest-1', 'room-1', 'guest-token', 'Guest', 1, 1)`,
+    ).run()
     db.close()
     db = createDatabase(databasePath)
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1)
@@ -28,6 +32,7 @@ test('creates the current schema and reopens it without migration', () => {
       db.prepare("SELECT host_token_hash FROM rooms WHERE code = 'ABC234'").get().host_token_hash,
       '',
     )
+    assert.equal(db.prepare("SELECT is_manager FROM participants WHERE id = 'guest-1'").get().is_manager, 0)
     db.close()
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })

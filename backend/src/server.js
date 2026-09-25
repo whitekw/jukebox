@@ -129,12 +129,6 @@ const presence = createRoomPresence({
   onParticipantOffline: ({ code, participantId, offlineSince }) => {
     try {
       rooms.markParticipantOffline(code, participantId, offlineSince)
-      logRoomEvent(
-        code,
-        'participant_left',
-        { participantId },
-        {},
-      )
       emitRoom(code)
     } catch (error) {
       if (error?.code !== 'ROOM_NOT_FOUND') {
@@ -386,7 +380,6 @@ app.delete('/api/rooms/:code/membership', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
   const code = normalizeCode(req.params.code)
   const result = rooms.leaveAccountRoom(code, user?.id)
-  logRoomEvent(code, 'participant_left', { participantId: result.participantId }, {})
   io.to(participantChannel(result.participantId)).emit('room:membership-left')
   presence.removeParticipant(code, result.participantId)
   io.in(participantChannel(result.participantId)).disconnectSockets(true)
@@ -578,6 +571,18 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
   res.json(emitRoom(normalizedCode))
 })
 
+app.post('/api/rooms/:code/participants/:participantId/disconnect', mutationLimiter, (req, res) => {
+  const code = normalizeCode(req.params.code)
+  const result = rooms.disconnectParticipant(
+    code, requestAuthUser(req)?.id, req.params.participantId,
+    presence.getParticipantIds(code).has(req.params.participantId),
+  )
+  io.to(participantChannel(result.participantId)).emit('room:disconnected')
+  presence.removeParticipant(code, result.participantId)
+  io.in(participantChannel(result.participantId)).disconnectSockets(true)
+  res.json(emitRoom(code))
+})
+
 io.on('connection', (socket) => {
   const sessionToken = parseCookies(socket.handshake.headers.cookie)[authSessionCookie]
   const socketUser = auth.getSessionUser(sessionToken)
@@ -644,7 +649,7 @@ io.on('connection', (socket) => {
         if (identity.participantId) {
           socket.join(participantChannel(identity.participantId))
           socket.join(chatRoomChannel(normalizedCode))
-          const becameOnline = presence.connect(
+          presence.connect(
             normalizedCode,
             identity.participantId,
             socket.id,
@@ -654,14 +659,6 @@ io.on('connection', (socket) => {
           socket.data.roomPresence = {
             code: normalizedCode,
             participantId: identity.participantId,
-          }
-          if (becameOnline) {
-            logRoomEvent(
-              normalizedCode,
-              'participant_joined',
-              { participantId: identity.participantId },
-              {},
-            )
           }
         }
         emitRoom(normalizedCode, state)

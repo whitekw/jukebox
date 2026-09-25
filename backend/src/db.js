@@ -131,6 +131,7 @@ function createDatabase(databasePath = ':memory:') {
   `)
 
   db.exec("UPDATE rooms SET host_token_hash = '' WHERE playback_mode = 'all_devices' AND host_token_hash <> ''")
+  db.exec('UPDATE participants SET is_manager = 0 WHERE user_id IS NULL AND is_manager = 1')
 
   return db
 }

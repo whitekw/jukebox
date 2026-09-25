@@ -34,6 +34,7 @@ export type RoomParticipant = {
   nickname: string
   avatarUrl: string | null
   isManager: boolean
+  isOwner: boolean
   isMember: boolean
   online: boolean
 }
@@ -60,8 +61,6 @@ export type RoomEventType =
   | 'queue_reordered'
   | 'playback_paused'
   | 'playback_resumed'
-  | 'participant_joined'
-  | 'participant_left'
   | 'manager_added'
   | 'manager_removed'
 

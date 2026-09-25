@@ -261,4 +261,12 @@ export const roomApi = {
       },
     )
   },
+
+  disconnectParticipant(code: string, targetParticipantId: string) {
+    return request<RoomState>(
+      `/api/rooms/${encodeURIComponent(code)}/participants/${encodeURIComponent(targetParticipantId)}/disconnect`,
+      { method: 'POST', body: '{}' },
+    )
+  },
+
 }
