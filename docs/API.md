@@ -455,7 +455,7 @@ position = playbackPositionSeconds
 { "isManager": true }
 ```
 
-같은 방의 소유자가 아닌 참여자에게 관리 권한을 추가하거나 해제합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다. 소유자 자신은 `OWNER_MODERATION_FORBIDDEN`으로 변경할 수 없습니다.
+같은 방의 소유자가 아닌 로그인 참여자에게 관리 권한을 추가하거나 해제합니다. 익명 참여자를 관리자로 지정하면 `MANAGER_ACCOUNT_REQUIRED`를 반환합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다. 소유자 자신은 `OWNER_MODERATION_FORBIDDEN`으로 변경할 수 없습니다.
 
 ### `POST /api/rooms/:code/participants/:participantId/disconnect`
 
@@ -527,7 +527,7 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN`, `OWNER_FORBIDDEN`, `OWNER_MODERATION_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `PARTICIPANT_OFFLINE`, `INVALID_MANAGER_STATE` |
+| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `PARTICIPANT_OFFLINE`, `INVALID_MANAGER_STATE`, `MANAGER_ACCOUNT_REQUIRED` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

@@ -59,7 +59,7 @@ export function ParticipantsMenu({
   }, [open, actionParticipantId])
 
   async function setManager(participant: RoomParticipant) {
-    if (!onSetManager || busyParticipantId) return
+    if (!onSetManager || !participant.isMember || busyParticipantId) return
     const nextIsManager = !participant.isManager
     if (
       !window.confirm(
@@ -148,7 +148,8 @@ export function ParticipantsMenu({
           <ul className="m-0 flex max-h-[320px] list-none flex-col gap-1 overflow-y-auto p-0">
             {[...onlineParticipants, ...offlineMembers].map((roomParticipant, index) => {
               const isCurrent = roomParticipant.id === currentParticipantId
-              const hasActions = !roomParticipant.isOwner && !isCurrent && Boolean(onSetManager || onDisconnect)
+              const canSetManager = Boolean(onSetManager && roomParticipant.isMember)
+              const hasActions = !roomParticipant.isOwner && !isCurrent && (canSetManager || Boolean(onDisconnect && roomParticipant.online))
               return (
                 <li
                   className={cn('rounded-xl px-2.5 py-2 transition-colors hover:bg-white/[0.04]', !roomParticipant.online && 'opacity-70', index === onlineParticipants.length && offlineMembers.length > 0 && 'mt-2 border-t border-line pt-3')}
@@ -202,7 +203,7 @@ export function ParticipantsMenu({
                   </div>
                   {actionParticipantId === roomParticipant.id && hasActions && (
                     <div className="mt-2 grid gap-0.5 border-t border-line pt-2" role="group" aria-label={t('participants.actionsFor', { nickname: roomParticipant.nickname })}>
-                      {onSetManager && <button className="rounded-lg px-2 py-2 text-left text-xs text-lime hover:bg-lime/[0.08] disabled:opacity-50" type="button" disabled={Boolean(busyParticipantId)} onClick={() => void setManager(roomParticipant)}>{roomParticipant.isManager ? t('manager.removeButton') : t('manager.addButton')}</button>}
+                      {canSetManager && <button className="rounded-lg px-2 py-2 text-left text-xs text-lime hover:bg-lime/[0.08] disabled:opacity-50" type="button" disabled={Boolean(busyParticipantId)} onClick={() => void setManager(roomParticipant)}>{roomParticipant.isManager ? t('manager.removeButton') : t('manager.addButton')}</button>}
                       {onDisconnect && roomParticipant.online && <button className="rounded-lg px-2 py-2 text-left text-xs text-muted hover:bg-white/[0.06] hover:text-ink disabled:opacity-50" type="button" disabled={Boolean(busyParticipantId)} onClick={() => void disconnect(roomParticipant)}>{t('participants.disconnect')}</button>}
                     </div>
                   )}

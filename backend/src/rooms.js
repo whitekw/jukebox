@@ -112,7 +112,7 @@ function createRoomService(db, options = {}) {
 
   function requireManager(room, token, userId) {
     const participant = requireParticipant(room, token, userId)
-    if (!participant.is_manager) {
+    if (!participant.user_id || !participant.is_manager) {
       throw new AppError(403, '관리 권한이 없습니다.', 'MANAGER_FORBIDDEN')
     }
     return participant
@@ -158,7 +158,7 @@ function createRoomService(db, options = {}) {
         normalizedCredentials.userId,
       )
       if (
-        participant.is_manager ||
+        (participant.user_id && participant.is_manager) ||
         participant.id === addedByParticipantId
       ) {
         return
@@ -435,7 +435,7 @@ function createRoomService(db, options = {}) {
         id: participant.id,
         nickname: participant.nickname,
         avatarUrl: participant.avatar_url ?? null,
-        isManager: Boolean(participant.is_manager),
+        isManager: Boolean(participant.user_id && participant.is_manager),
         isMember: Boolean(participant.user_id),
         isOwner: Boolean(participant.user_id && participant.user_id === room.owner_user_id),
       })),
@@ -572,7 +572,7 @@ function createRoomService(db, options = {}) {
             userId: participantUserId,
             profileSource,
             avatarUrl,
-            isManager: true,
+            isManager: Boolean(participantUserId),
           })
         : null
       return {
@@ -681,7 +681,7 @@ function createRoomService(db, options = {}) {
         id: participant.id,
         nickname: participant.nickname,
         avatarUrl: participant.avatar_url ?? null,
-        isManager: Boolean(participant.is_manager),
+        isManager: Boolean(participant.user_id && participant.is_manager),
         isMember: true,
       },
     }
@@ -732,7 +732,7 @@ function createRoomService(db, options = {}) {
           if (guest && !guest.user_id) {
             db.prepare(
               `UPDATE participants SET user_id = ?, profile_source = 'account',
-               nickname = ?, avatar_url = ? WHERE id = ?`,
+               nickname = ?, avatar_url = ?, is_manager = 0 WHERE id = ?`,
             ).run(String(userId), normalizedNickname, avatarUrl, guest.id)
             participant = findAccountParticipant.get(room.id, String(userId))
           }
@@ -764,7 +764,7 @@ function createRoomService(db, options = {}) {
       id: participant.id,
       nickname: participant.nickname,
       avatarUrl: participant.avatar_url ?? null,
-      isManager: Boolean(participant.is_manager),
+      isManager: Boolean(participant.user_id && participant.is_manager),
       isMember: Boolean(participant.user_id),
     }
   }
@@ -787,7 +787,7 @@ function createRoomService(db, options = {}) {
             id: participant.id,
             nickname: participant.nickname,
             avatarUrl: participant.avatar_url ?? null,
-            isManager: Boolean(participant.is_manager),
+            isManager: Boolean(participant.user_id && participant.is_manager),
             isMember: Boolean(participant.user_id),
           }
         : null,
@@ -1217,6 +1217,9 @@ function createRoomService(db, options = {}) {
       }
       if (target.user_id && target.user_id === room.owner_user_id) {
         throw new AppError(409, '방 호스트의 관리자 권한은 변경할 수 없습니다.', 'OWNER_MODERATION_FORBIDDEN')
+      }
+      if (isManager && !target.user_id) {
+        throw new AppError(409, '로그인한 참여자만 관리자로 지정할 수 있습니다.', 'MANAGER_ACCOUNT_REQUIRED')
       }
       if (Boolean(target.is_manager) === isManager) {
         return getPublicRoom(code)

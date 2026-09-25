@@ -63,10 +63,9 @@ export function SearchPanel({ onAddSong }: SearchPanelProps) {
         </div>
       </div>
       <form
-        className="flex items-center gap-2.5 rounded-xl border border-line bg-white/[0.035] py-1.5 pr-[7px] pl-2.5 text-dim focus-within:border-purple/65 md:pl-3.5"
+        className="flex items-center gap-2.5 rounded-xl border border-line bg-white/[0.035] py-1.5 pr-[7px] pl-3.5 text-dim focus-within:border-purple/65"
         onSubmit={search}
       >
-        <SearchIcon size={21} />
         <input
           className="h-[42px] min-w-0 flex-1 border-0 bg-transparent p-0 text-ink outline-none placeholder:text-white/20"
           value={query}
@@ -78,12 +77,13 @@ export function SearchPanel({ onAddSong }: SearchPanelProps) {
         <button
           className={cn(
             buttonStyles({ intent: 'primary', size: 'sm' }),
-            'h-[38px] min-h-[38px] rounded-lg px-3 font-[850] md:px-[17px]',
+            'size-11 min-h-11 shrink-0 rounded-lg px-0',
           )}
           type="submit"
           disabled={searching}
+          aria-label={searching ? t('search.searching') : t('search.button')}
         >
-          {searching ? t('search.searching') : t('search.button')}
+          <SearchIcon size={20} />
         </button>
       </form>
       <p className="mx-[3px] mt-2 text-[10px] text-[#67616f]">
