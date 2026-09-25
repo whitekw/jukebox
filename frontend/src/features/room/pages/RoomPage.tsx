@@ -42,6 +42,9 @@ export function RoomPage() {
     clearStoredRoomCredentials(code)
     navigate('/', { replace: true })
   }, [code, navigate])
+  const onDisconnected = useCallback(() => {
+    navigate('/', { replace: true, state: { roomDisconnected: true } })
+  }, [navigate])
   const {
     hostToken,
     isHost,
@@ -67,7 +70,7 @@ export function RoomPage() {
     appendChatMessage,
     deleted,
     error: roomError,
-  } = useRoomState(code, hostToken, participantToken, revokeHost, onMembershipLeft, user?.id ?? '')
+  } = useRoomState(code, hostToken, participantToken, revokeHost, onMembershipLeft, user?.id ?? '', onDisconnected)
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [songControlTick, setSongControlTick] = useState(0)
@@ -263,6 +266,10 @@ export function RoomPage() {
                       )
                   : undefined
               }
+              onDisconnect={isOwner
+                ? (targetParticipantId) => runControllerAction(() =>
+                    roomApi.disconnectParticipant(code, targetParticipantId))
+                : undefined}
             />
           )}
           <InviteRoomButton code={code} joinUrl={joinUrl} />

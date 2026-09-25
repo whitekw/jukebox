@@ -15,8 +15,6 @@ const ROOM_EVENT_TYPES = new Set([
   'queue_reordered',
   'playback_paused',
   'playback_resumed',
-  'participant_joined',
-  'participant_left',
   'manager_added',
   'manager_removed',
 ])
@@ -114,7 +112,7 @@ function createRoomService(db, options = {}) {
 
   function requireManager(room, token, userId) {
     const participant = requireParticipant(room, token, userId)
-    if (!participant.is_manager) {
+    if (!participant.user_id || !participant.is_manager) {
       throw new AppError(403, '관리 권한이 없습니다.', 'MANAGER_FORBIDDEN')
     }
     return participant
@@ -160,7 +158,7 @@ function createRoomService(db, options = {}) {
         normalizedCredentials.userId,
       )
       if (
-        participant.is_manager ||
+        (participant.user_id && participant.is_manager) ||
         participant.id === addedByParticipantId
       ) {
         return
@@ -262,6 +260,7 @@ function createRoomService(db, options = {}) {
            SELECT *
            FROM room_feed_entries
            WHERE room_id = ?
+             AND (event_type IS NULL OR event_type NOT IN ('participant_joined', 'participant_left'))
            ORDER BY sequence DESC
            LIMIT ?
          )
@@ -436,8 +435,9 @@ function createRoomService(db, options = {}) {
         id: participant.id,
         nickname: participant.nickname,
         avatarUrl: participant.avatar_url ?? null,
-        isManager: Boolean(participant.is_manager),
+        isManager: Boolean(participant.user_id && participant.is_manager),
         isMember: Boolean(participant.user_id),
+        isOwner: Boolean(participant.user_id && participant.user_id === room.owner_user_id),
       })),
       currentSong: serializeSong(current),
       queue: queue.map(serializeSong),
@@ -572,7 +572,7 @@ function createRoomService(db, options = {}) {
             userId: participantUserId,
             profileSource,
             avatarUrl,
-            isManager: true,
+            isManager: Boolean(participantUserId),
           })
         : null
       return {
@@ -681,7 +681,7 @@ function createRoomService(db, options = {}) {
         id: participant.id,
         nickname: participant.nickname,
         avatarUrl: participant.avatar_url ?? null,
-        isManager: Boolean(participant.is_manager),
+        isManager: Boolean(participant.user_id && participant.is_manager),
         isMember: true,
       },
     }
@@ -732,7 +732,7 @@ function createRoomService(db, options = {}) {
           if (guest && !guest.user_id) {
             db.prepare(
               `UPDATE participants SET user_id = ?, profile_source = 'account',
-               nickname = ?, avatar_url = ? WHERE id = ?`,
+               nickname = ?, avatar_url = ?, is_manager = 0 WHERE id = ?`,
             ).run(String(userId), normalizedNickname, avatarUrl, guest.id)
             participant = findAccountParticipant.get(room.id, String(userId))
           }
@@ -764,7 +764,7 @@ function createRoomService(db, options = {}) {
       id: participant.id,
       nickname: participant.nickname,
       avatarUrl: participant.avatar_url ?? null,
-      isManager: Boolean(participant.is_manager),
+      isManager: Boolean(participant.user_id && participant.is_manager),
       isMember: Boolean(participant.user_id),
     }
   }
@@ -787,7 +787,7 @@ function createRoomService(db, options = {}) {
             id: participant.id,
             nickname: participant.nickname,
             avatarUrl: participant.avatar_url ?? null,
-            isManager: Boolean(participant.is_manager),
+            isManager: Boolean(participant.user_id && participant.is_manager),
             isMember: Boolean(participant.user_id),
           }
         : null,
@@ -1205,7 +1205,7 @@ function createRoomService(db, options = {}) {
       requireController(room, normalizedCredentials)
       const target = db
         .prepare(
-          'SELECT id, is_manager FROM participants WHERE id = ? AND room_id = ? AND left_at IS NULL',
+          'SELECT id, user_id, is_manager FROM participants WHERE id = ? AND room_id = ? AND left_at IS NULL',
         )
         .get(String(targetParticipantId ?? ''), room.id)
       if (!target) {
@@ -1215,6 +1215,12 @@ function createRoomService(db, options = {}) {
           'PARTICIPANT_NOT_FOUND',
         )
       }
+      if (target.user_id && target.user_id === room.owner_user_id) {
+        throw new AppError(409, '방 호스트의 관리자 권한은 변경할 수 없습니다.', 'OWNER_MODERATION_FORBIDDEN')
+      }
+      if (isManager && !target.user_id) {
+        throw new AppError(409, '로그인한 참여자만 관리자로 지정할 수 있습니다.', 'MANAGER_ACCOUNT_REQUIRED')
+      }
       if (Boolean(target.is_manager) === isManager) {
         return getPublicRoom(code)
       }
@@ -1223,6 +1229,34 @@ function createRoomService(db, options = {}) {
         'UPDATE participants SET is_manager = ? WHERE id = ? AND room_id = ?',
       ).run(isManager ? 1 : 0, target.id, room.id)
       return getPublicRoom(code)
+    })
+  }
+
+  function requireOwnerModerationTarget(room, ownerUserId, targetParticipantId) {
+    if (!hasOwnerAccess(room, ownerUserId)) {
+      throw new AppError(403, '방 호스트만 참여자를 관리할 수 있습니다.', 'OWNER_FORBIDDEN')
+    }
+    const target = db.prepare(
+      'SELECT * FROM participants WHERE id = ? AND room_id = ? AND left_at IS NULL',
+    ).get(String(targetParticipantId ?? ''), room.id)
+    if (!target) {
+      throw new AppError(404, '참여자를 찾지 못했습니다.', 'PARTICIPANT_NOT_FOUND')
+    }
+    if (target.user_id && target.user_id === room.owner_user_id) {
+      throw new AppError(409, '방 호스트의 연결은 끊을 수 없습니다.', 'OWNER_MODERATION_FORBIDDEN')
+    }
+    return target
+  }
+
+  function disconnectParticipant(code, ownerUserId, targetParticipantId, online = true) {
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const target = requireOwnerModerationTarget(room, ownerUserId, targetParticipantId)
+      if (!online) {
+        throw new AppError(409, '현재 연결된 참여자가 아닙니다.', 'PARTICIPANT_OFFLINE')
+      }
+      db.prepare('UPDATE participants SET offline_since = ? WHERE id = ?').run(now(), target.id)
+      return { participantId: target.id, room: getPublicRoom(code) }
     })
   }
 
@@ -1273,6 +1307,7 @@ function createRoomService(db, options = {}) {
     reorderSong,
     updateRoomSettings,
     setManager,
+    disconnectParticipant,
     markAllParticipantsOffline,
     markParticipantOnline,
     markParticipantOffline,

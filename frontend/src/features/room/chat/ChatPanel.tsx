@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from 'react'
-import { CloseIcon, MessageCircleIcon } from '../../../shared/ui/Icons'
+import { CloseIcon, MessageCircleIcon, SendIcon } from '../../../shared/ui/Icons'
 import {
   getErrorMessage,
   useI18n,
@@ -53,10 +53,6 @@ function formatSystemMessage(message: SystemChatMessage, t: Translate) {
       return t('chat.event.playbackPaused', { actor })
     case 'playback_resumed':
       return t('chat.event.playbackResumed', { actor })
-    case 'participant_joined':
-      return t('chat.event.participantJoined', { actor })
-    case 'participant_left':
-      return t('chat.event.participantLeft', { actor })
     case 'manager_added':
       return message.data.automatic
         ? t('chat.event.managerAutoAdded', { target })
@@ -133,7 +129,7 @@ export function ChatPanel({
         <section
           className={cn(
             panelStyles({ padding: 'none' }),
-            'fixed right-3 bottom-[84px] z-40 flex h-[min(560px,calc(100dvh-104px))] w-[calc(100vw-24px)] max-w-[400px] flex-col overflow-hidden bg-[#110f16]/95 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl md:right-auto md:bottom-auto md:h-auto md:w-auto md:max-w-none',
+            'fixed right-3 bottom-[84px] z-[70] flex h-[min(560px,calc(100dvh-104px))] w-[calc(100vw-24px)] max-w-[400px] flex-col overflow-hidden bg-[#110f16]/95 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl md:right-auto md:bottom-auto md:h-auto md:w-auto md:max-w-none',
           )}
           style={chatWindowStyle}
           role="dialog"
@@ -226,7 +222,7 @@ export function ChatPanel({
 
             <form className="mt-3 flex items-center gap-2" onSubmit={send}>
               <input
-                className={formControlStyles()}
+                className={cn(formControlStyles(), 'min-w-0')}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 maxLength={300}
@@ -236,12 +232,13 @@ export function ChatPanel({
               <button
                 className={cn(
                   buttonStyles({ intent: 'primary', size: 'md' }),
-                  'shrink-0 px-4',
+                  'size-11 min-h-11 shrink-0 px-0',
                 )}
                 type="submit"
                 disabled={sending || draft.trim().length === 0}
+                aria-label={sending ? t('chat.sending') : t('chat.send')}
               >
-                {sending ? t('chat.sending') : t('chat.send')}
+                <SendIcon size={20} />
               </button>
             </form>
             {sendError !== null && (
@@ -279,7 +276,7 @@ export function ChatPanel({
       )}
 
       <button
-        className="fixed right-4 bottom-4 z-40 grid size-14 place-items-center rounded-full border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-6"
+        className="fixed right-4 bottom-4 z-[70] grid size-14 place-items-center rounded-full border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-6"
         type="button"
         aria-label={open ? t('chat.close') : t('chat.open')}
         aria-expanded={open}
