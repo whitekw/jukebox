@@ -459,6 +459,7 @@ function createRoomService(db, options = {}) {
       userId = null,
       profileSource = 'custom',
       avatarUrl = null,
+      isManager = false,
     },
   ) {
     if (!PROFILE_SOURCES.has(profileSource)) {
@@ -476,11 +477,6 @@ function createRoomService(db, options = {}) {
       )
     }
     const participantToken = createToken()
-    const isManager = !db
-      .prepare(
-        'SELECT 1 FROM participants WHERE room_id = ? AND is_manager = 1 LIMIT 1',
-      )
-      .get(room.id)
     const participant = {
       id: crypto.randomUUID(),
       roomId: room.id,
@@ -576,6 +572,7 @@ function createRoomService(db, options = {}) {
             userId: participantUserId,
             profileSource,
             avatarUrl,
+            isManager: true,
           })
         : null
       return {
@@ -1220,23 +1217,6 @@ function createRoomService(db, options = {}) {
       }
       if (Boolean(target.is_manager) === isManager) {
         return getPublicRoom(code)
-      }
-
-      if (!isManager) {
-        const managerCount = Number(
-          db
-            .prepare(
-              'SELECT COUNT(*) AS count FROM participants WHERE room_id = ? AND left_at IS NULL AND is_manager = 1',
-            )
-            .get(room.id).count,
-        )
-        if (managerCount <= 1) {
-          throw new AppError(
-            409,
-            '최소 한 명의 관리자가 필요합니다.',
-            'LAST_MANAGER_REQUIRED',
-          )
-        }
       }
 
       db.prepare(

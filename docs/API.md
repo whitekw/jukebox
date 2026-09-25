@@ -253,7 +253,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 - 앞뒤 공백을 제거한 길이가 `1..20`이어야 합니다. 로그인 사용자는 Discord 표시 이름을 닉네임으로 사용합니다.
 - 닉네임 중복은 허용됩니다.
-- 첫 참여자는 자동으로 룸 매니저가 됩니다.
+- 방 생성 시 생성자가 매니저가 되며, 이후 참여자는 자동으로 매니저가 되지 않습니다.
 - 응답 상태: `201 Created`
 
 응답:
@@ -448,13 +448,13 @@ position = playbackPositionSeconds
 
 ### `PATCH /api/rooms/:code/managers/:participantId`
 
-필수 헤더: 관리자 중 한 명의 `x-participant-token`
+권한: 방 소유자의 로그인 세션 또는 관리자의 `x-participant-token`
 
 ```json
 { "isManager": true }
 ```
 
-같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 최소 한 명의 관리자는 반드시 유지됩니다.
+같은 방의 참여자에게 관리 권한을 추가하거나 해제합니다. 관리자가 없어도 방 소유자는 관리 권한을 사용할 수 있습니다.
 
 ## 10. Socket.IO 계약
 
@@ -518,7 +518,7 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 | 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
-| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE`, `LAST_MANAGER_REQUIRED` |
+| 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |
 

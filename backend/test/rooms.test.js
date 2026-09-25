@@ -267,8 +267,8 @@ test('allows unlimited requests while enforcing duplicate prevention and host to
 test('reorders queued songs by their final index', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
-  const created = rooms.createRoom()
-  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const created = rooms.createRoom({ nickname: 'Alice' })
+  const alice = created
 
   rooms.addSong(created.code, alice.participantToken, song('aaaaaaaaaaa', 'One'))
   rooms.addSong(created.code, alice.participantToken, song('bbbbbbbbbbb', 'Two'))
@@ -325,8 +325,9 @@ test('stores the selected playback mode and maintains a shared timeline', () => 
   })
   const created = rooms.createRoom({
     playbackMode: 'all_devices',
+    nickname: 'Alice',
   })
-  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const alice = created
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
   assert.equal(created.playbackMode, 'all_devices')
@@ -478,10 +479,10 @@ test('does not server-advance host-only or paused playback', () => {
     song('aaaaaaaaaaa', 'Host song', 10),
   )
 
-  const synchronized = rooms.createRoom({ playbackMode: 'all_devices' })
-  const synchronizedParticipant = rooms.joinRoom(synchronized.code, {
-    nickname: 'Synchronized mode',
+  const synchronized = rooms.createRoom({
+    playbackMode: 'all_devices', nickname: 'Synchronized mode',
   })
+  const synchronizedParticipant = synchronized
   rooms.addSong(
     synchronized.code,
     synchronizedParticipant.participantToken,
@@ -880,8 +881,8 @@ test('unlocks a departed member songs immediately', () => {
 test('assigns multiple managers and enforces participant manager controls', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
-  const created = rooms.createRoom()
-  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const created = rooms.createRoom({ nickname: 'Alice' })
+  const alice = created
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
 
   let state = rooms.getPublicRoom(created.code)
@@ -1022,24 +1023,21 @@ test('assigns multiple managers and enforces participant manager controls', () =
     { hostVolume: 50 },
   )
   assert.equal(state.hostVolume, 50)
-  assert.throws(
-    () =>
-      rooms.setManager(
-        created.code,
-        bob.participantToken,
-        bob.participant.id,
-        false,
-      ),
-    /최소 한 명/,
+  state = rooms.setManager(
+    created.code,
+    bob.participantToken,
+    bob.participant.id,
+    false,
   )
+  assert.equal(state.participants.some(({ isManager }) => isManager), false)
   db.close()
 })
 
 test('does not grant manager access when the existing manager disconnects', () => {
   const db = createDatabase()
   const rooms = createRoomService(db)
-  const created = rooms.createRoom()
-  const alice = rooms.joinRoom(created.code, { nickname: 'Alice' })
+  const created = rooms.createRoom({ nickname: 'Alice' })
+  const alice = created
   const bob = rooms.joinRoom(created.code, { nickname: 'Bob' })
   const charlie = rooms.joinRoom(created.code, { nickname: 'Charlie' })
 
@@ -1067,5 +1065,34 @@ test('does not grant manager access when the existing manager disconnects', () =
     state.participants.filter(({ isManager }) => isManager).map(({ id }) => id),
     [alice.participant.id],
   )
+  db.close()
+})
+
+test('does not promote a newcomer when the last manager leaves', () => {
+  const db = createDatabase()
+  insertUser(db, 'owner')
+  insertUser(db, 'member')
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom({
+    ownerUserId: 'owner', nickname: 'Owner', participantUserId: 'owner', profileSource: 'account',
+  })
+  const member = rooms.joinRoom(created.code, { nickname: 'Member', userId: 'member' })
+  assert.equal(created.participant.isManager, true)
+  assert.equal(member.participant.isManager, false)
+
+  rooms.setManager(created.code, { userId: 'owner' }, member.participant.id, true)
+  rooms.setManager(created.code, { userId: 'owner' }, created.participant.id, false)
+  rooms.leaveAccountRoom(created.code, 'member')
+
+  const newcomer = rooms.joinRoom(created.code, { nickname: 'Newcomer' })
+  assert.equal(newcomer.participant.isManager, false)
+  assert.equal(rooms.getPublicRoom(created.code).participants.some(({ isManager }) => isManager), false)
+  assert.throws(
+    () => rooms.setManager(created.code, newcomer.participantToken, newcomer.participant.id, true),
+    /관리 권한/,
+  )
+
+  rooms.setManager(created.code, { userId: 'owner' }, newcomer.participant.id, true)
+  assert.equal(rooms.getParticipantStatus(created.code, newcomer.participantToken).isManager, true)
   db.close()
 })
