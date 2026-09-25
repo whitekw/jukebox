@@ -252,6 +252,14 @@ function createDiscordAuth(db, options = {}) {
     return publicUser(row)
   }
 
+  function getSessionExpiresAt(sessionToken) {
+    if (typeof sessionToken !== 'string' || !sessionToken) return null
+    const row = db.prepare(
+      'SELECT expires_at FROM auth_sessions WHERE token_hash = ? AND expires_at > ?',
+    ).get(hashToken(sessionToken), now())
+    return row ? Number(row.expires_at) : null
+  }
+
   function deleteSession(sessionToken) {
     if (typeof sessionToken !== 'string' || !sessionToken) return
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(
@@ -270,6 +278,7 @@ function createDiscordAuth(db, options = {}) {
     createAuthorization,
     completeAuthorization,
     getSessionUser,
+    getSessionExpiresAt,
     deleteSession,
     deleteExpiredSessions,
   }

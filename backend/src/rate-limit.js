@@ -1,4 +1,4 @@
-function createRateLimiter({ windowMs, limit }) {
+function createRateLimiter({ windowMs, limit, keyForRequest = (req) => `${req.ip}:${req.path}` }) {
   const buckets = new Map()
   const cleanup = setInterval(() => {
     const now = Date.now()
@@ -9,7 +9,7 @@ function createRateLimiter({ windowMs, limit }) {
   cleanup.unref()
 
   return function rateLimit(req, res, next) {
-    const key = `${req.ip}:${req.path}`
+    const key = keyForRequest(req)
     const now = Date.now()
     const current = buckets.get(key)
     const bucket = !current || current.resetAt <= now

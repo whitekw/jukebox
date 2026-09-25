@@ -139,7 +139,7 @@ type RoomEvent = {
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
-| POST | `/api/rooms/:code/messages` | 참여자 | 없음 | `ChatMessage` |
+| POST | `/api/rooms/:code/messages` | 참여자 | 분당 30회(계정 또는 참여자 토큰 기준), IP·경로당 120회 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
@@ -147,11 +147,11 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
-| POST | `/api/rooms/:code/songs/:songId/move` | controller | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 
-요청 제한은 현재 프로세스에서 IP와 요청 경로별로 계산합니다. 검색 그룹은 60초당 30회, 변경 그룹은 60초당 120회입니다. 채팅 조회와 전송에는 별도 요청 제한을 적용하지 않습니다.
+요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
 
 ## 5. 시스템 및 설정
 
@@ -365,9 +365,8 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 { "videoId": "dQw4w9WgXcQ" }
 ```
 
-`input` 필드도 백엔드에서는 지원하지만 현재 프런트는 `videoId`를 사용합니다. YouTube 서비스가 영상을 다시 검증한 뒤 다음 규칙을 적용합니다.
+`input` 필드도 백엔드에서는 지원하지만 현재 프런트는 `videoId`를 사용합니다. 방과 참여자 권한을 먼저 확인하고 YouTube 서비스가 영상을 다시 검증한 뒤 다음 규칙을 적용합니다.
 
-- 참여자의 활성 곡 수가 방 한도보다 작아야 합니다.
 - 같은 방의 `current` 또는 `queued` 상태에 같은 `videoId`가 없어야 합니다.
 - 현재 곡이 없으면 새 곡은 즉시 `current`, 있으면 대기열 끝의 `queued`가 됩니다.
 - 응답 상태: `201 Created`
@@ -424,15 +423,15 @@ position = playbackPositionSeconds
 
 필수 권한: controller, 신청자 또는 신청자가 명시적으로 방을 나갔거나 마지막 연결이 끊긴 지 1분이 지난 경우의 다른 참여자. `queued` 상태의 곡만 `removed`로 바꿀 수 있습니다. 현재 재생 곡 삭제는 지원하지 않습니다.
 
-### `POST /api/rooms/:code/songs/:songId/move`
+### `POST /api/rooms/:code/songs/:songId/reorder`
 
 필수 권한: controller
 
 ```json
-{ "direction": "up" }
+{ "targetIndex": 0 }
 ```
 
-`up` 또는 `down`만 허용하며 인접한 `queued` 곡의 `position` 값을 교환합니다.
+`targetIndex`는 0부터 시작하는 대기열의 최종 위치입니다. `queued` 곡의 위치를 다시 배치합니다.
 
 ### `PATCH /api/rooms/:code/settings`
 
@@ -490,7 +489,7 @@ socket.emit(
 }
 ```
 
-공개 룸 상태 구독 자체는 인증이 필요하지 않습니다. 성공하면 서버는 소켓을 `room:{CODE}` 채널에 넣고 즉시 현재 `room:state`를 한 번 보냅니다. 유효한 참여자 토큰을 함께 보낸 소켓만 별도의 `chat-room:{CODE}` 채널에도 들어갑니다.
+공개 룸 상태 구독 자체는 인증이 필요하지 않습니다. 성공하면 서버는 소켓을 `room:{CODE}` 채널에 넣고 즉시 현재 `room:state`를 한 번 보냅니다. 유효한 참여자 토큰 또는 로그인한 방 멤버십이 있는 소켓만 별도의 `chat-room:{CODE}` 채널에도 들어갑니다. 한 소켓은 한 방만 구독하며, 다른 방을 구독하면 이전 방의 채널과 온라인 접속 기록을 해제합니다. 로그인 세션은 구독할 때 다시 확인하며, 만료되면 해당 소켓 연결을 종료합니다.
 
 ### 서버 → 클라이언트: `room:state`
 
@@ -498,7 +497,7 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 
 ### 서버 → 클라이언트: `chat:message`
 
-payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한 참여자 토큰으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 항목 ID를 기준으로 병합합니다.
+payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한 참여자 토큰이나 로그인한 방 멤버십으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 항목 ID를 기준으로 병합합니다.
 
 ## 11. 오류 계약
 
@@ -515,7 +514,7 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 
 | 분류 | 코드 |
 | --- | --- |
-| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_DIRECTION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
+| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_QUEUE_POSITION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN` |
 | 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
 | 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `INVALID_MANAGER_STATE` |
