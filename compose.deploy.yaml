@@ -1,16 +1,20 @@
 services:
   jukebox:
-    image: "ghcr.io/whitekw/jukebox:sha-fdf736f7cfbcb244c98749fb163414e23e9f7e0f"
+    image: "ghcr.io/whitekw/jukebox:sha-cb7207b537e237ff6f20c8332fbf43c05d72044d"
     restart: unless-stopped
     init: true
     environment:
       NODE_ENV: production
       PORT: 3001
       DATABASE_PATH: /app/data/jukebox.sqlite
-      ROOM_TTL_HOURS: "${ROOM_TTL_HOURS:-24}"
+      PARTICIPANT_LEAVE_GRACE_MS: "${PARTICIPANT_LEAVE_GRACE_MS:-5000}"
       YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in Portainer}"
-      YOUTUBE_DEFAULT_REGION: "${YOUTUBE_DEFAULT_REGION:-KR}"
       TRUST_PROXY: "${TRUST_PROXY:-false}"
+      DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
+      DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"
+      DISCORD_REDIRECT_URI: "${DISCORD_REDIRECT_URI:-}"
+      AUTH_SESSION_TTL_DAYS: "${AUTH_SESSION_TTL_DAYS:-30}"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
     ports:
       - "${JUKEBOX_PORT:-3001}:3001"
     volumes:
