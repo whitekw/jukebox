@@ -769,6 +769,11 @@ function createRoomService(db, options = {}) {
     }
   }
 
+  function assertCanAddSong(code, participantToken, userId) {
+    const room = getRoomRecord(code)
+    requireParticipant(room, participantToken, userId)
+  }
+
   function getRoomSession(code, credentials = {}) {
     const room = getRoomRecord(code)
     const { isHost, isOwner, participant } = getSessionIdentity(room, credentials)
@@ -1287,6 +1292,7 @@ function createRoomService(db, options = {}) {
     leaveAccountRoom,
     getPublicRoom,
     getParticipantStatus,
+    assertCanAddSong,
     getRoomSession,
     listOwnedRooms,
     listJoinedRooms,

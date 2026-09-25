@@ -66,6 +66,18 @@ app.use(express.json({ limit: '32kb' }))
 const searchLimiter = createRateLimiter({ windowMs: 60_000, limit: 30 })
 const mutationLimiter = createRateLimiter({ windowMs: 60_000, limit: 120 })
 const authLimiter = createRateLimiter({ windowMs: 60_000, limit: 30 })
+const chatLimiter = createRateLimiter({
+  windowMs: 60_000,
+  limit: 30,
+  keyForRequest: (req) => {
+    const userId = requestAuthUser(req)?.id
+    if (userId) return `chat:user:${userId}`
+    const token = req.get('x-participant-token')
+    return token
+      ? `chat:participant:${hashToken(token)}`
+      : `chat:ip:${req.ip}`
+  },
+})
 
 function appendCookie(res, name, value, options = {}) {
   res.append(
@@ -391,7 +403,7 @@ app.get('/api/rooms/:code/messages', (req, res) => {
   })
 })
 
-app.post('/api/rooms/:code/messages', (req, res) => {
+app.post('/api/rooms/:code/messages', mutationLimiter, chatLimiter, (req, res) => {
   const normalizedCode = normalizeCode(req.params.code)
   const message = rooms.addChatMessage(
     normalizedCode,
@@ -415,10 +427,13 @@ app.post(
   '/api/rooms/:code/songs',
   mutationLimiter,
   asyncRoute(async (req, res) => {
-    const song = await youtube.getVideo(req.body.videoId ?? req.body.input)
+    const participantToken = req.get('x-participant-token')
+    const userId = requestAuthUser(req)?.id
+    rooms.assertCanAddSong(req.params.code, participantToken, userId)
+    const song = await youtube.getVideo(req.body?.videoId ?? req.body?.input)
     const state = rooms.addSong(
       req.params.code,
-      req.get('x-participant-token'),
+      participantToken,
       song,
       requestAuthUser(req)?.id,
     )
@@ -570,10 +585,42 @@ app.post('/api/rooms/:code/participants/:participantId/disconnect', mutationLimi
 
 io.on('connection', (socket) => {
   const sessionToken = parseCookies(socket.handshake.headers.cookie)[authSessionCookie]
-  const socketUser = auth.getSessionUser(
-    sessionToken,
-  )
+  const socketUser = auth.getSessionUser(sessionToken)
   if (socketUser) socket.join(authSessionChannel(sessionToken))
+
+  const sessionExpiresAt = auth.getSessionExpiresAt(sessionToken)
+  let sessionExpiryTimer
+
+  function disconnectExpiredSession() {
+    if (sessionExpiresAt === null) return
+    const remainingMs = sessionExpiresAt - Date.now()
+    if (remainingMs <= 0) {
+      socket.disconnect(true)
+      return
+    }
+    sessionExpiryTimer = setTimeout(
+      disconnectExpiredSession,
+      Math.min(remainingMs, 2_147_483_647),
+    )
+    sessionExpiryTimer.unref?.()
+  }
+
+  function clearRoomSubscription() {
+    const previousCode = socket.data.roomCode
+    if (!previousCode) return
+    const previousPresence = socket.data.roomPresence
+    if (previousPresence) {
+      presence.disconnect(previousCode, previousPresence.participantId, socket.id)
+      socket.leave(participantChannel(previousPresence.participantId))
+    }
+    socket.leave(roomChannel(previousCode))
+    socket.leave(chatRoomChannel(previousCode))
+    socket.leave(hostRoomChannel(previousCode))
+    socket.data.roomCode = null
+    socket.data.roomPresence = null
+  }
+
+  disconnectExpiredSession()
 
   socket.on('time:sync', (acknowledge) => {
     if (typeof acknowledge === 'function') {
@@ -585,14 +632,17 @@ io.on('connection', (socket) => {
     'room:subscribe',
     ({ code, hostToken, participantToken } = {}, acknowledge) => {
       try {
+        clearRoomSubscription()
         const normalizedCode = normalizeCode(code)
         let state = rooms.getPublicRoom(normalizedCode)
+        const currentUser = auth.getSessionUser(sessionToken)
         const identity = rooms.getPresenceIdentity(normalizedCode, {
           hostToken,
           participantToken,
-          userId: socketUser?.id,
+          userId: currentUser?.id,
         })
         socket.join(roomChannel(normalizedCode))
+        socket.data.roomCode = normalizedCode
         if (identity.isHost) {
           socket.join(hostRoomChannel(normalizedCode))
         }
@@ -614,6 +664,7 @@ io.on('connection', (socket) => {
         emitRoom(normalizedCode, state)
         if (typeof acknowledge === 'function') acknowledge({ ok: true })
       } catch (error) {
+        clearRoomSubscription()
         if (typeof acknowledge === 'function') {
           acknowledge({
             ok: false,
@@ -627,15 +678,8 @@ io.on('connection', (socket) => {
   )
 
   socket.on('disconnecting', () => {
-    const roomPresence = socket.data.roomPresence
-    if (roomPresence) {
-      presence.disconnect(
-        roomPresence.code,
-        roomPresence.participantId,
-        socket.id,
-      )
-      socket.data.roomPresence = null
-    }
+    clearTimeout(sessionExpiryTimer)
+    clearRoomSubscription()
   })
 })
 
