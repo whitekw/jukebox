@@ -4,6 +4,7 @@ import { roomApi } from '../api'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import type { ChatMessage, RoomState } from '../types'
 import { mergeChatMessages } from '../chat/mergeChatMessages'
+import { shouldNotifyDesktopChat } from '../desktopBridge'
 
 export function useRoomState(
   code: string,
@@ -13,6 +14,7 @@ export function useRoomState(
   onMembershipLeft?: () => void,
   authUserId = '',
   onDisconnected?: () => void,
+  currentParticipantId = '',
 ) {
   const { t } = useI18n()
   const [room, setRoom] = useState<RoomState | null>(null)
@@ -120,7 +122,15 @@ export function useRoomState(
       }
     })
     socket.on('chat:message', (message: ChatMessage) => {
-      if (active && participantToken) appendChatMessage(message)
+      if (!active || !participantToken) return
+      appendChatMessage(message)
+      if (shouldNotifyDesktopChat(message, currentParticipantId)) {
+        window.bsideDesktop?.notifyChat({
+          roomCode: code,
+          nickname: message.nickname,
+          content: message.content,
+        })
+      }
     })
     socket.on('room:deleted', (payload: { code?: string }) => {
       if (!active || payload?.code !== code) return
@@ -149,7 +159,7 @@ export function useRoomState(
       window.clearInterval(clockTimer)
       socket.disconnect()
     }
-  }, [appendChatMessage, authUserId, code, hostToken, onHostRevoked, onMembershipLeft, onDisconnected, participantToken])
+  }, [appendChatMessage, authUserId, code, currentParticipantId, hostToken, onHostRevoked, onMembershipLeft, onDisconnected, participantToken])
 
   return {
     room,

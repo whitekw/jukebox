@@ -70,7 +70,7 @@ export function RoomPage() {
     appendChatMessage,
     deleted,
     error: roomError,
-  } = useRoomState(code, hostToken, participantToken, revokeHost, onMembershipLeft, user?.id ?? '', onDisconnected)
+  } = useRoomState(code, hostToken, participantToken, revokeHost, onMembershipLeft, user?.id ?? '', onDisconnected, participant?.id)
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [songControlTick, setSongControlTick] = useState(0)
@@ -416,6 +416,7 @@ export function RoomPage() {
         </div>
         {participant && (
           <ChatPanel
+            roomCode={code}
             messages={chatMessages}
             currentParticipantId={participant.id}
             onSend={sendChatMessage}

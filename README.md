@@ -98,6 +98,8 @@ npm start
 
 Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 실제 인터넷 공개 시에는 Caddy 또는 Nginx에서 HTTPS를 종료하고 Express로 프록시하세요. WebSocket 업그레이드도 허용해야 합니다.
 
+Windows용 Electron 앱의 실행과 설치 파일 빌드는 [`desktop/README.md`](./desktop/README.md)를 참고하세요.
+
 ## Docker로 테스트 서버 배포
 
 먼저 `backend/.env.example`을 `backend/.env`로 복사하고 실제 `YOUTUBE_API_KEY`를 설정합니다. SQLite 경로와 포트는 Compose가 컨테이너용 값으로 덮어씁니다.
