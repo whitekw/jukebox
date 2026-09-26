@@ -7,6 +7,7 @@ import { AccountMenu } from '../auth/components/AccountMenu'
 import { LoginRequiredDialog } from '../auth/components/LoginRequiredDialog'
 import { MusicIcon } from '../../shared/ui/Icons'
 import { RoomCardMenu } from './RoomCardMenu'
+import { DesktopInstallLink } from './DesktopInstallLink'
 import { useAuth } from '../auth/context'
 import { useI18n } from '../../shared/i18n/i18n-context'
 import {
@@ -56,7 +57,12 @@ export function HomePage() {
   const hasRooms = ownedRooms.length > 0 || joinedRooms.length > 0
 
   return (
-    <EntryLayout className={cn(!hasRooms && 'flex min-h-dvh flex-col')} headerActions={<AccountMenu />}>
+    <EntryLayout className={cn(!hasRooms && 'flex min-h-dvh flex-col')} headerActions={
+      <div className="flex items-center gap-2.5">
+        <DesktopInstallLink />
+        <AccountMenu />
+      </div>
+    }>
       <section className={cn(
         'mx-auto grid w-full max-w-[920px] items-center gap-8 md:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)] md:gap-16',
         hasRooms ? 'mt-10 mb-10 md:mt-20 md:mb-14' : 'flex-1 content-center py-10 md:pt-12 md:pb-24',

@@ -24,6 +24,7 @@ import { useChatWindow } from './useChatWindow'
 type SystemChatMessage = Extract<ChatMessage, { type: 'system' }>
 
 type ChatPanelProps = {
+  roomCode: string
   messages: ChatMessage[]
   currentParticipantId: string
   onSend: (content: string) => Promise<void>
@@ -63,6 +64,7 @@ function formatSystemMessage(message: SystemChatMessage, t: Translate) {
 }
 
 export function ChatPanel({
+  roomCode,
   messages,
   currentParticipantId,
   onSend,
@@ -98,6 +100,12 @@ export function ChatPanel({
     const messageList = messageListRef.current
     if (messageList) messageList.scrollTop = messageList.scrollHeight
   }, [latestSequence, open])
+
+  useEffect(() => window.bsideDesktop?.onOpenChat((code) => {
+    if (code !== roomCode) return
+    setOpen(true)
+    setHasOpened(true)
+  }), [roomCode])
 
   function toggleChat() {
     setOpen((current) => {

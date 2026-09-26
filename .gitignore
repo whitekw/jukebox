@@ -5,6 +5,7 @@
 frontend/dist/
 frontend/dist-ssr/
 backend/dist/
+desktop/release/
 coverage/
 .nyc_output/
 

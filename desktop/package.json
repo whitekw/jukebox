@@ -1,0 +1,44 @@
+{
+  "name": "b-side-desktop",
+  "productName": "B-SIDE",
+  "version": "0.1.0",
+  "private": true,
+  "description": "B-SIDE desktop app",
+  "author": "whitekw",
+  "license": "UNLICENSED",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "test:smoke": "node test/smoke.cjs",
+    "dist:win": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.whitekw.bside",
+    "productName": "B-SIDE",
+    "artifactName": "B-SIDE-${version}-Setup-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "appUrl.cjs",
+      "assets/icon.png"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
