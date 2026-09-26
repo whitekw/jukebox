@@ -82,7 +82,9 @@ test('upgrades a guest participant when they explicitly join with an account', (
     nickname: 'Member', userId: 'member', participantToken: guest.participantToken,
   })
   assert.equal(joined.participant.id, guest.participant.id)
+  assert.equal(joined.participant.nickname, 'Member')
   assert.equal(rooms.getPublicRoom(created.code).participants.length, 1)
+  assert.equal(rooms.getPublicRoom(created.code).participants[0].nickname, 'Member')
   assert.equal(rooms.getParticipantStatus(created.code, guest.participantToken, 'member').isMember, true)
   assert.throws(() => rooms.getParticipantStatus(created.code, guest.participantToken), /다시 참여/)
   db.close()

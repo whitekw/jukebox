@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError } from '../../../shared/http'
 import { roomApi } from '../api'
+import { restoreAccountRoomSession } from '../roomSessionRestore'
 import type { AuthUser } from '../../auth/types'
 import type { Participant } from '../types'
 import {
@@ -37,7 +37,7 @@ export function useRoomSession(code: string, user: AuthUser | null) {
   }, [code])
 
   useEffect(() => {
-    if (!participantToken) {
+    if (!participantToken || user) {
       return
     }
     let active = true
@@ -64,37 +64,49 @@ export function useRoomSession(code: string, user: AuthUser | null) {
     return () => {
       active = false
     }
-  }, [code, participantToken, resumeAttempt, user?.id])
+  }, [code, participantToken, resumeAttempt, user])
 
   useEffect(() => {
-    if (participantToken || !user) {
-      if (!participantToken) setParticipantLoading(false)
-      return
-    }
+    if (!user) return
+    const accountUser = user
     const identityKey = `${code}:${user.id}`
     let active = true
     setParticipantLoading(true)
     setParticipantError(null)
-    void roomApi.resumeRoom(code)
-      .then((resumed) => {
-        if (!active) return
+    setParticipant(null)
+
+    async function restoreAccountParticipant() {
+      try {
+        const resumed = await restoreAccountRoomSession(
+          code,
+          accountUser.displayName,
+          localStorage.getItem(participantTokenKey(code)),
+          roomApi,
+          () => active,
+        )
+        if (!active || !resumed) return
         localStorage.setItem(participantTokenKey(code), resumed.participantToken)
         setParticipantToken(resumed.participantToken)
         setParticipant(resumed.participant)
-      })
-      .catch((error: unknown) => {
+      } catch (error) {
         if (!active) return
-        if (error instanceof ApiError && error.code === 'MEMBERSHIP_NOT_FOUND') return
-        setParticipantError(error)
-      })
-      .finally(() => {
+        if (isInvalidRoomCredential(error, 'participant')) {
+          localStorage.removeItem(participantTokenKey(code))
+          setParticipantToken('')
+        } else {
+          setParticipantError(error)
+        }
+      } finally {
         if (active) {
           setParticipantLoading(false)
           setResumeCheckedFor(identityKey)
         }
-      })
+      }
+    }
+
+    void restoreAccountParticipant()
     return () => { active = false }
-  }, [code, participantToken, resumeAttempt, user])
+  }, [code, resumeAttempt, user])
 
   const retryResume = useCallback(() => {
     setParticipantLoading(true)
@@ -170,7 +182,7 @@ export function useRoomSession(code: string, user: AuthUser | null) {
     isHost: Boolean(hostToken && hostVerified),
     participantToken,
     participant,
-    participantLoading: participantLoading || Boolean(user && !participantToken && resumeCheckedFor !== `${code}:${user.id}`),
+    participantLoading: participantLoading || Boolean(user && resumeCheckedFor !== `${code}:${user.id}`),
     participantError,
     retryResume,
     isOwner,
