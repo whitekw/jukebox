@@ -504,6 +504,63 @@ test('automatically advances completed all-device playback from the server timel
   db.close()
 })
 
+test('holds an empty all-device room at its current song and position until playback restarts', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const created = rooms.createRoom({ playbackMode: 'all_devices' })
+  const listener = rooms.joinRoom(created.code, { nickname: 'Listener' })
+  rooms.addSong(created.code, listener.participantToken, song('aaaaaaaaaaa', 'One', 20))
+  rooms.addSong(created.code, listener.participantToken, song('bbbbbbbbbbb', 'Two', 30))
+  rooms.startPlayback(created.code, { participantToken: listener.participantToken }, 'aaaaaaaaaaa', 0)
+
+  currentTime += 8_000
+  const held = rooms.advanceCompletedAllDeviceRooms(() => false)
+  assert.equal(held.length, 1)
+  assert.equal(held[0].currentSong.title, 'One')
+  assert.equal(held[0].playbackPositionSeconds, 8)
+  assert.equal(held[0].playbackPending, true)
+
+  currentTime += 60_000
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(() => false), [])
+  assert.equal(rooms.getPublicRoom(created.code).currentSong.title, 'One')
+  assert.equal(rooms.getPublicRoom(created.code).queue[0].title, 'Two')
+
+  const resumed = rooms.startPlayback(
+    created.code,
+    { participantToken: listener.participantToken },
+    'aaaaaaaaaaa',
+    0,
+  )
+  assert.equal(resumed.playbackPositionSeconds, 8)
+  currentTime += 12_000
+  assert.equal(rooms.advanceCompletedAllDeviceRooms(() => true)[0].currentSong.title, 'Two')
+  db.close()
+})
+
+test('server restart holds active rooms without resuming a manually paused room', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const active = rooms.createRoom({ playbackMode: 'all_devices' })
+  const activeListener = rooms.joinRoom(active.code, { nickname: 'Active' })
+  rooms.addSong(active.code, activeListener.participantToken, song('aaaaaaaaaaa', 'Active song'))
+  rooms.startPlayback(active.code, { participantToken: activeListener.participantToken }, 'aaaaaaaaaaa', 14)
+
+  const paused = rooms.createRoom({ playbackMode: 'all_devices', ownerUserId: 'paused-owner' })
+  const pausedListener = rooms.joinRoom(paused.code, { nickname: 'Paused' })
+  rooms.addSong(paused.code, pausedListener.participantToken, song('bbbbbbbbbbb', 'Paused song'))
+  rooms.setPlaybackPaused(paused.code, { userId: 'paused-owner' }, true)
+
+  currentTime += 30_000
+  rooms.markAllParticipantsOffline()
+  assert.equal(rooms.getPublicRoom(active.code).playbackPending, true)
+  assert.equal(rooms.getPublicRoom(active.code).playbackPositionSeconds, 14)
+  assert.equal(rooms.getPublicRoom(paused.code).playbackPaused, true)
+  assert.equal(rooms.getPublicRoom(paused.code).playbackPending, true)
+  db.close()
+})
+
 test('does not server-advance host-only or paused playback', () => {
   const db = createDatabase()
   let currentTime = 1_000_000

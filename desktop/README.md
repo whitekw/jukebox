@@ -20,7 +20,7 @@ Electron 실행 파일이 아직 내려받아지지 않았다면 처음 실행 �
 npm run dist:win
 ```
 
-결과물은 `desktop/release/B-SIDE-0.1.0-Setup-x64.exe`입니다. 이 폴더는 Git에 포함되지 않습니다.
+결과물은 `desktop/release/B-SIDE-0.1.3-Setup-x64.exe`입니다. 이 폴더는 Git에 포함되지 않습니다.
 현재 설치 파일은 코드 서명을 하지 않으므로 Windows에서 게시자 확인 경고가 나타날 수 있습니다.
 
 변경 검증은 `npm test`와 `npm run test:smoke`로 실행합니다. 스모크 테스트는 숨긴 Electron 창에서 로컬 테스트 페이지와 데스크톱 브리지를 확인합니다.

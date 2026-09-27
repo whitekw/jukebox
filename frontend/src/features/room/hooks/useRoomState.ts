@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { io } from 'socket.io-client'
 import { roomApi } from '../api'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import type { ChatMessage, RoomState } from '../types'
 import { mergeChatMessages } from '../chat/mergeChatMessages'
 import { shouldNotifyDesktopChat } from '../desktopBridge'
+import { preferCurrentPlaybackRevision } from '../roomStateOrdering'
 
 export function useRoomState(
   code: string,
@@ -17,13 +18,20 @@ export function useRoomState(
   currentParticipantId = '',
 ) {
   const { t } = useI18n()
-  const [room, setRoom] = useState<RoomState | null>(null)
+  const [room, setRoomState] = useState<RoomState | null>(null)
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [error, setError] = useState<unknown>(null)
   const [deleted, setDeleted] = useState(false)
+
+  const setRoom = useCallback<Dispatch<SetStateAction<RoomState | null>>>((action) => {
+    setRoomState((current) => preferCurrentPlaybackRevision(
+      current,
+      typeof action === 'function' ? action(current) : action,
+    ))
+  }, [])
 
   const appendChatMessage = useCallback((message: ChatMessage) => {
     setChatMessages((current) => mergeChatMessages(current, [message]))
@@ -55,7 +63,7 @@ export function useRoomState(
     return () => {
       active = false
     }
-  }, [code])
+  }, [code, setRoom])
 
   useEffect(() => {
     if (!participantToken) return
@@ -159,7 +167,7 @@ export function useRoomState(
       window.clearInterval(clockTimer)
       socket.disconnect()
     }
-  }, [appendChatMessage, authUserId, code, currentParticipantId, hostToken, onHostRevoked, onMembershipLeft, onDisconnected, participantToken])
+  }, [appendChatMessage, authUserId, code, currentParticipantId, hostToken, onHostRevoked, onMembershipLeft, onDisconnected, participantToken, setRoom])
 
   return {
     room,
