@@ -538,6 +538,29 @@ test('holds an empty all-device room at its current song and position until play
   db.close()
 })
 
+test('advances a completed song before holding an empty all-device room', () => {
+  const db = createDatabase()
+  let currentTime = 1_000_000
+  const rooms = createRoomService(db, { now: () => currentTime })
+  const created = rooms.createRoom({ playbackMode: 'all_devices' })
+  const listener = rooms.joinRoom(created.code, { nickname: 'Listener' })
+  rooms.addSong(created.code, listener.participantToken, song('aaaaaaaaaaa', 'One', 20))
+  rooms.addSong(created.code, listener.participantToken, song('bbbbbbbbbbb', 'Two', 30))
+  rooms.startPlayback(created.code, { participantToken: listener.participantToken }, 'aaaaaaaaaaa', 0)
+
+  currentTime += 20_000
+  const advanced = rooms.advanceCompletedAllDeviceRooms(() => false)
+  assert.equal(advanced.length, 1)
+  assert.equal(advanced[0].currentSong.title, 'Two')
+  assert.equal(advanced[0].playbackPositionSeconds, 0)
+  assert.equal(advanced[0].playbackPending, true)
+
+  currentTime += 60_000
+  assert.deepEqual(rooms.advanceCompletedAllDeviceRooms(() => false), [])
+  assert.equal(rooms.getPublicRoom(created.code).currentSong.title, 'Two')
+  db.close()
+})
+
 test('server restart holds active rooms without resuming a manually paused room', () => {
   const db = createDatabase()
   let currentTime = 1_000_000

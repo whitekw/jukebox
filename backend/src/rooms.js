@@ -939,27 +939,27 @@ function createRoomService(db, options = {}) {
           return null
         }
 
+        const currentSong = db
+          .prepare('SELECT duration_seconds FROM songs WHERE id = ?')
+          .get(room.current_song_id)
+        if (!currentSong) return null
+
+        const position = getPlaybackPosition(room, checkedAt)
+        if (position >= Number(currentSong.duration_seconds)) {
+          return advanceRoom(room, candidate.code, checkedAt)
+        }
+
         if (!isRoomActive(candidate.code)) {
           db.prepare(
             `UPDATE rooms
              SET playback_pending = 1, playback_position_seconds = ?,
                  playback_anchor_at = ?, playback_revision = playback_revision + 1
              WHERE id = ?`,
-          ).run(getPlaybackPosition(room, checkedAt), checkedAt, room.id)
+          ).run(position, checkedAt, room.id)
           return getPublicRoom(candidate.code)
         }
 
-        const currentSong = db
-          .prepare('SELECT duration_seconds FROM songs WHERE id = ?')
-          .get(room.current_song_id)
-        if (
-          !currentSong ||
-          getPlaybackPosition(room, checkedAt) < Number(currentSong.duration_seconds)
-        ) {
-          return null
-        }
-
-        return advanceRoom(room, candidate.code, checkedAt)
+        return null
       })
       if (advanced) advancedRooms.push(advanced)
     }
