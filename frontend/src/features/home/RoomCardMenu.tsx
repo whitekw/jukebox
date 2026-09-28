@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { Ellipsis as MoreHorizontalIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { useI18n } from '../../shared/i18n/i18n-context'
-import { MoreHorizontalIcon, TrashIcon } from '../../shared/ui/Icons'
 
 export function RoomCardMenu({ roomCode, disabled, onDelete }: {
   roomCode: string

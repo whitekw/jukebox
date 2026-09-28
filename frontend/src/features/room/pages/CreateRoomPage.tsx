@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { roomApi } from '../api'
 import { hostTokenKey, participantTokenKey } from '../roomCredentials'
@@ -9,6 +10,7 @@ import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import {
   buttonStyles,
   cn,
+  formControlStyles,
 } from '../../../shared/styles'
 import type { PlaybackMode } from '../types'
 
@@ -50,6 +52,8 @@ export function CreateRoomPage() {
   const navigate = useNavigate()
   const [playbackMode, setPlaybackMode] =
     useState<PlaybackMode>('all_devices')
+  const [title, setTitle] = useState('')
+  const [allowGuests, setAllowGuests] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
@@ -59,7 +63,7 @@ export function CreateRoomPage() {
     setCreating(true)
     setError('')
     try {
-      const created = await roomApi.createRoom(playbackMode)
+      const created = await roomApi.createRoom(playbackMode, title, allowGuests)
       if (created.hostToken) {
         localStorage.setItem(hostTokenKey(created.code), created.hostToken)
       }
@@ -87,7 +91,7 @@ export function CreateRoomPage() {
     <EntryLayout headerActions={<AccountMenu />}>
       <div className="mx-auto mt-6 max-w-[600px] pb-8 md:mt-9">
         <Link className="inline-flex min-h-11 items-center gap-2 text-sm text-muted transition-colors hover:text-ink" to="/">
-          <span aria-hidden="true">←</span>{t('common.home')}
+          <ArrowLeft size={16} aria-hidden="true" />{t('common.home')}
         </Link>
         {!user ? (
           <section className="mt-6 rounded-[18px] border border-line bg-[#15121e] p-6 sm:p-8">
@@ -109,6 +113,15 @@ export function CreateRoomPage() {
               <p className="mt-3 text-sm leading-6 text-muted">{t('createRoom.inviteDescription')}</p>
             </header>
             <form className="grid gap-5" onSubmit={createRoom} aria-busy={creating}>
+              <div className="rounded-[18px] border border-line bg-[#15121e] p-5">
+                <label className="mb-2 block text-sm font-semibold" htmlFor="room-title">{t('roomSettings.titleLabel')}</label>
+                <input className={formControlStyles({ size: 'large' })} id="room-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={60} placeholder={t('roomSettings.titlePlaceholder')} disabled={creating} />
+                <p className="mt-2 text-xs text-muted">{t('roomSettings.titleHint')}</p>
+                <label className="mt-5 flex cursor-pointer items-start gap-3 border-t border-line pt-5">
+                  <input className="mt-0.5 size-[18px] shrink-0 accent-purple-light" type="checkbox" checked={allowGuests} onChange={(event) => setAllowGuests(event.target.checked)} disabled={creating} />
+                  <span><strong className="block text-sm">{t('roomSettings.allowGuestsLabel')}</strong><span className="mt-1 block text-xs leading-5 text-muted">{t('roomSettings.allowGuestsHint')}</span></span>
+                </label>
+              </div>
               <fieldset className="grid gap-3" disabled={creating}>
                 <legend className="sr-only">{t('home.playbackModeLabel')}</legend>
                 <ChoiceCard value="all_devices" title={t('createRoom.togetherTitle')} description={t('createRoom.togetherDescription')} context={t('createRoom.togetherContext')} recommended={t('createRoom.recommended')} checked={playbackMode === 'all_devices'} disabled={creating} onChange={() => setPlaybackMode('all_devices')} />
@@ -118,9 +131,9 @@ export function CreateRoomPage() {
               <div>
                 <button className={cn(buttonStyles({ intent: 'primary', size: 'lg', fullWidth: true }), 'gap-4 text-sm')} disabled={creating} type="submit">
                   {creating ? t('home.creating') : playbackMode === 'all_devices' ? t('createRoom.createTogether') : t('createRoom.createSpeaker')}
-                  <span aria-hidden="true">→</span>
+                  <ArrowRight size={18} aria-hidden="true" />
                 </button>
-                <p className="mt-3 text-center text-xs leading-6 text-muted">{t('createRoom.guestNote')}</p>
+                <p className="mt-3 text-center text-xs leading-6 text-muted">{allowGuests ? t('createRoom.guestNote') : t('roomSettings.loginRequiredHint')}</p>
               </div>
             </form>
           </>

@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ArrowRight, Music2 as MusicIcon, UsersRound } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { normalizeRoomCode } from '../room/roomCredentials'
+import type { RoomState } from '../room/types'
 import { useHomeRooms } from './useHomeRooms'
 import { EntryLayout } from '../../shared/ui/EntryLayout'
 import { AccountMenu } from '../auth/components/AccountMenu'
 import { LoginRequiredDialog } from '../auth/components/LoginRequiredDialog'
-import { MusicIcon } from '../../shared/ui/Icons'
 import { RoomCardMenu } from './RoomCardMenu'
 import { DesktopInstallLink } from './DesktopInstallLink'
 import { useAuth } from '../auth/context'
@@ -76,11 +77,11 @@ export function HomePage() {
           </p>
           {!user ? (
             <button className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 text-sm')} type="button" disabled={authLoading} onClick={() => setLoginPromptOpen(true)} aria-haspopup="dialog">
-              {t('home.create')} <span aria-hidden="true">→</span>
+              {t('home.create')} <ArrowRight size={18} aria-hidden="true" />
             </button>
           ) : (
             <Link className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 text-sm')} to="/rooms/new">
-              {t('home.create')} <span aria-hidden="true">→</span>
+              {t('home.create')} <ArrowRight size={18} aria-hidden="true" />
             </Link>
           )}
         </div>
@@ -139,25 +140,19 @@ export function HomePage() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <strong className="mb-1 block font-mono text-sm tracking-[0.12em] text-ink">
-                      {room.code}
+                    <strong className="mb-1 block truncate text-sm font-semibold text-ink" title={room.title || room.code}>
+                      {room.title || room.code}
                     </strong>
                     <p className="truncate text-sm text-muted">
                       {room.currentSong?.title ?? t('home.activeRoomWaiting')}
                     </p>
-                    <p className="mt-1 text-xs text-muted">
-                      {t('home.activeRoomStats', {
-                        participants: room.participants.filter((participant) => participant.online).length,
-                        songs: room.queue.length,
-                      })}
-                    </p>
+                    <RoomCardStats room={room} />
                   </div>
-                  <span
-                    className="w-5 shrink-0 text-center text-lg text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-purple-light group-focus-visible:text-purple-light"
+                  <ArrowRight
+                    size={20}
+                    className="w-5 shrink-0 text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-purple-light group-focus-visible:text-purple-light"
                     aria-label={t('home.rejoinRoom')}
-                  >
-                    →
-                  </span>
+                  />
                 </Link>
                 <RoomCardMenu
                   roomCode={room.code}
@@ -207,8 +202,8 @@ export function HomePage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex min-w-0 items-center gap-2">
-                      <strong className="font-mono text-sm tracking-[0.12em] text-ink">
-                        {room.code}
+                      <strong className="truncate text-sm font-semibold text-ink" title={room.title || room.code}>
+                        {room.title || room.code}
                       </strong>
                       <span className="truncate rounded-full border border-line px-2 py-0.5 text-xs text-muted">
                         {t('home.memberBadge')}
@@ -217,12 +212,7 @@ export function HomePage() {
                     <p className="truncate text-sm text-muted">
                       {room.currentSong?.title ?? t('home.activeRoomWaiting')}
                     </p>
-                    <p className="mt-1 text-xs text-muted">
-                      {t('home.activeRoomStats', {
-                        participants: room.participants.filter((participant) => participant.online).length,
-                        songs: room.queue.length,
-                      })}
-                    </p>
+                    <RoomCardStats room={room} />
                   </div>
                 </Link>
                 <button
@@ -248,5 +238,21 @@ export function HomePage() {
       </footer>
       <LoginRequiredDialog open={loginPromptOpen && !user} onClose={() => setLoginPromptOpen(false)} />
     </EntryLayout>
+  )
+}
+
+function RoomCardStats({ room }: { room: RoomState }) {
+  const { t } = useI18n()
+  const participants = room.participants.filter((participant) => participant.online).length
+  const songs = room.queue.length
+
+  return (
+    <div className="mt-1 text-xs text-muted">
+      <span className="sr-only">{t('home.activeRoomStats', { participants, songs })}</span>
+      <span className="flex items-center gap-3" aria-hidden="true">
+        <span className="inline-flex items-center gap-1"><UsersRound size={14} />{participants}</span>
+        <span className="inline-flex items-center gap-1"><MusicIcon size={14} />{songs}</span>
+      </span>
+    </div>
   )
 }

@@ -15,6 +15,8 @@ export type Song = {
 
 export type RoomState = {
   code: string
+  title: string
+  allowGuests: boolean
   hostVolume: number
   playbackMode: PlaybackMode
   playbackPaused: boolean

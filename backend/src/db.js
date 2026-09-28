@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -61,6 +61,8 @@ function createDatabase(databasePath = ':memory:') {
     CREATE TABLE IF NOT EXISTS rooms (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL DEFAULT '',
+      allow_guests INTEGER NOT NULL DEFAULT 1 CHECK(allow_guests IN (0, 1)),
       host_token_hash TEXT NOT NULL,
       owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       host_volume INTEGER NOT NULL DEFAULT 100 CHECK(host_volume BETWEEN 0 AND 100),
@@ -145,8 +147,15 @@ function createDatabase(databasePath = ':memory:') {
       WHERE status IN ('queued', 'current');
     CREATE INDEX IF NOT EXISTS room_feed_entries_by_room_sequence
       ON room_feed_entries(room_id, sequence);
-    PRAGMA user_version = 2;
   `)
+
+  const roomColumns = new Set(db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name))
+  if (!roomColumns.has('title')) db.exec("ALTER TABLE rooms ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+  if (!roomColumns.has('allow_guests')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN allow_guests INTEGER NOT NULL DEFAULT 1 CHECK(allow_guests IN (0, 1))')
+  }
+  db.exec("UPDATE rooms SET title = code WHERE title = ''")
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
 
   db.exec("UPDATE rooms SET host_token_hash = '' WHERE playback_mode = 'all_devices' AND host_token_hash <> ''")
   db.exec('UPDATE participants SET is_manager = 0 WHERE user_id IS NULL AND is_manager = 1')

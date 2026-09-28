@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ArrowUpRight } from 'lucide-react'
 import { EntryLayout } from '../../../shared/ui/EntryLayout'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 
@@ -37,8 +38,8 @@ export function PrivacyPage() {
                   {section.paragraphs.map((paragraph) => <p key={paragraph}>{t(paragraph)}</p>)}
                   {section.title === 'privacy.thirdPartyTitle' && (
                     <p className="flex flex-wrap gap-x-5 gap-y-1">
-                      <a className="text-purple-light underline-offset-4 hover:underline" href="https://discord.com/privacy" target="_blank" rel="noopener noreferrer">Discord Privacy Policy ↗</a>
-                      <a className="text-purple-light underline-offset-4 hover:underline" href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy ↗</a>
+                      <a className="inline-flex items-center gap-1 text-purple-light underline-offset-4 hover:underline" href="https://discord.com/privacy" target="_blank" rel="noopener noreferrer">Discord Privacy Policy <ArrowUpRight size={14} aria-hidden="true" /></a>
+                      <a className="inline-flex items-center gap-1 text-purple-light underline-offset-4 hover:underline" href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy <ArrowUpRight size={14} aria-hidden="true" /></a>
                     </p>
                   )}
                   {section.title === 'privacy.contactTitle' && (

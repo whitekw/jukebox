@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from 'react'
-import { CloseIcon, MessageCircleIcon, SendIcon } from '../../../shared/ui/Icons'
+import { MessageCircleMore as MessageCircleIcon, Send as SendIcon, X as CloseIcon } from 'lucide-react'
 import {
   getErrorMessage,
   useI18n,

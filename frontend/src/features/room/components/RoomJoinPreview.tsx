@@ -1,10 +1,10 @@
 import type { FormEvent } from 'react'
+import { ArrowRight, Music2 as MusicIcon } from 'lucide-react'
 import type { AuthUser } from '../../auth/types'
 import { AccountMenu } from '../../auth/components/AccountMenu'
 import { useAuth } from '../../auth/context'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { Brand } from '../../../shared/ui/Brand'
-import { MusicIcon } from '../../../shared/ui/Icons'
 import {
   buttonStyles,
   cn,
@@ -53,7 +53,7 @@ export function RoomJoinPreview({
           <section className="min-w-0">
             <span className={sectionKickerStyles}>ROOM · {room.code}</span>
             <h1 className="mt-4 text-[clamp(34px,4.5vw,56px)] font-black leading-[1.12] tracking-[-0.055em]">
-              {t('room.previewTitle')}
+              {room.title}
             </h1>
             <p className="mt-4 max-w-[520px] text-sm leading-6 text-muted sm:text-base">
               {t('room.previewDescription')}
@@ -97,11 +97,15 @@ export function RoomJoinPreview({
           <form className="rounded-[22px] border border-purple/25 bg-[#191620] p-6 shadow-[0_24px_80px_rgba(0,0,0,.2)] sm:p-8" onSubmit={onJoin}>
             <span className={sectionKickerStyles}>JOIN THE ROOM</span>
             <h2 className="mt-3 text-[23px] font-bold leading-snug tracking-[-0.035em]">
-              {participantError
+              {!user && !room.allowGuests
+                ? t('roomSettings.loginRequiredTitle')
+                : participantError
                 ? t('room.participationRestoreFailed')
                 : user ? t('room.previewJoinAs', { nickname: user.displayName }) : t('room.askNickname')}
             </h2>
-            {participantError ? (
+            {!user && !room.allowGuests ? (
+              <p className="mt-5 text-sm leading-6 text-muted">{t('roomSettings.loginRequiredHint')}</p>
+            ) : participantError ? (
               <p className="mt-5 text-sm text-danger" role="alert">
                 {getErrorMessage(participantError, t)}
               </p>
@@ -125,7 +129,7 @@ export function RoomJoinPreview({
             {joinError && (
               <p className="mt-4 text-sm text-danger" role="alert">{joinError}</p>
             )}
-            <button
+            {(user || room.allowGuests) && <button
               className={cn(
                 buttonStyles({ intent: 'primary', size: 'lg', spread: true, fullWidth: true }),
                 'mt-5',
@@ -137,15 +141,17 @@ export function RoomJoinPreview({
               {participantError
                 ? t('common.retry')
                 : joining ? t('room.previewJoining') : t('room.previewJoinAction')}
-              <span aria-hidden="true">→</span>
-            </button>
+              <ArrowRight size={18} aria-hidden="true" />
+            </button>}
             {!user && loginEnabled && (
               <p className="mt-4 text-center text-sm">
                 <a
-                  className="text-muted underline decoration-purple/50 underline-offset-4 transition-colors hover:text-purple-light focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light"
+                  className={room.allowGuests
+                    ? 'text-muted underline decoration-purple/50 underline-offset-4 transition-colors hover:text-purple-light focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light'
+                    : cn(buttonStyles({ intent: 'primary', size: 'lg', fullWidth: true }), 'justify-center')}
                   href={loginUrl(`/room/${room.code}`)}
                 >
-                  {t('room.previewLoginInstead')}
+                  {room.allowGuests ? t('room.previewLoginInstead') : t('auth.loginWithDiscord')}
                 </a>
               </p>
             )}

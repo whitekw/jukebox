@@ -108,6 +108,8 @@ erDiagram
 | --- | --- | --- |
 | `id` | TEXT PK | 내부 UUID |
 | `code` | TEXT NOT NULL UNIQUE | 사용자에게 노출하는 6자리 방 코드 |
+| `title` | TEXT NOT NULL | 표시할 방 제목. 미입력 또는 기존 방은 방 코드 |
+| `allow_guests` | INTEGER, 기본 1, `0/1` | 비로그인 사용자의 신규 참여 허용 여부 |
 | `host_token_hash` | TEXT NOT NULL | `host_only`는 원본 토큰의 SHA-256 hex, `all_devices`는 빈 문자열 |
 | `owner_user_id` | TEXT nullable FK → `users.id`, ON DELETE SET NULL | 로그인한 생성 계정. 생성 시 필수 |
 | `host_volume` | INTEGER, 기본 100, `0..100` | 호스트 IFrame 플레이어 볼륨 |
@@ -275,7 +277,7 @@ stateDiagram-v2
 
 ## 10. 스키마 초기화와 삭제
 
-`createDatabase()`는 빈 DB에 현재 스키마를 생성하고 SQLite `user_version`을 `2`로 설정합니다. 버전 1 DB는 `extension_grants`와 `extension_sessions` 테이블 및 만료 인덱스를 추가한 뒤 기존 데이터를 보존합니다. 버전 1보다 오래된 스키마는 초기화 오류와 함께 시작을 중단합니다.
+`createDatabase()`는 빈 DB에 현재 스키마를 생성하고 SQLite `user_version`을 `3`으로 설정합니다. 버전 1 DB는 확장 프로그램 인증 테이블을, 버전 1·2 DB는 방 제목과 비로그인 참여 설정을 추가하며 기존 데이터를 보존합니다. 기존 방 제목은 방 코드가 되고 비로그인 참여는 허용 상태로 시작합니다. 버전 1보다 오래된 스키마는 초기화 오류와 함께 시작을 중단합니다.
 
 `extension_grants`는 Discord 인증 뒤 확장 프로그램으로 전달하는 2분짜리 일회용 코드의 해시, 계정 ID, 확장 프로그램 ID, PKCE 검증값을 저장합니다. `extension_sessions`는 30일짜리 확장 프로그램 전용 Bearer 토큰의 해시와 계정 ID·확장 프로그램 ID·만료 시각을 저장합니다. 원본 토큰과 Discord OAuth 토큰은 DB에 저장하지 않습니다. 확장 프로그램 로그아웃은 해당 세션만 폐기합니다.
 

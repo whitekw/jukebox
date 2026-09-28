@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { UsersIcon } from '../../../shared/ui/Icons'
+import { UsersRound as UsersIcon } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
 import type { RoomParticipant } from '../types'

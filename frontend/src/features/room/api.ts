@@ -32,6 +32,8 @@ function controlHeaders(credentials: ControlCredentials) {
 export const roomApi = {
   createRoom(
     playbackMode: PlaybackMode,
+    title: string,
+    allowGuests: boolean,
   ) {
     return request<{
       code: string
@@ -45,6 +47,8 @@ export const roomApi = {
         method: 'POST',
         body: JSON.stringify({
           playbackMode,
+          title,
+          allowGuests,
         }),
       },
     )
@@ -234,6 +238,8 @@ export const roomApi = {
     credentials: ControlCredentials,
     settings: {
       hostVolume?: number
+      title?: string
+      allowGuests?: boolean
     },
   ) {
     return request<RoomState>(

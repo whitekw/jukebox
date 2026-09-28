@@ -429,6 +429,8 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
   const nickname = user.displayName.slice(0, 20)
   const created = rooms.createRoom({
     playbackMode: req.body?.playbackMode,
+    title: req.body?.title,
+    allowGuests: req.body?.allowGuests,
     ownerUserId: user.id,
     nickname,
     participantUserId: user.id,

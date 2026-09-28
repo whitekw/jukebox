@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import QRCode from 'react-qr-code'
-import { CloseIcon, CopyIcon, LinkIcon } from '../../../shared/ui/Icons'
+import { Copy as CopyIcon, Link as LinkIcon, X as CloseIcon } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 
-export function InviteRoomButton({ code, joinUrl }: { code: string; joinUrl: string }) {
+export function InviteRoomButton({ code, joinUrl, allowGuests }: { code: string; joinUrl: string; allowGuests: boolean }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -71,7 +71,7 @@ export function InviteRoomButton({ code, joinUrl }: { code: string; joinUrl: str
             <CloseIcon size={16} />
           </button>
         </div>
-        <p id={descriptionId} className="mt-2 text-sm leading-6 text-muted">{t('home.guestHint')}</p>
+        <p id={descriptionId} className="mt-2 text-sm leading-6 text-muted">{allowGuests ? t('home.guestHint') : t('roomSettings.loginRequiredHint')}</p>
         <div className="mx-auto mt-6 w-fit rounded-xl bg-white p-3">
           <QRCode value={joinUrl} size={144} title={t('room.inviteQr')} />
         </div>
