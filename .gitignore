@@ -8,6 +8,10 @@ backend/dist/
 desktop/release/
 extension/dist/
 extension/dist-production/
+extension/dist-store/
+extension/dist-unpacked/
+extension/*.pem
+extension/B-SIDE-Extension-*.zip
 coverage/
 .nyc_output/
 
