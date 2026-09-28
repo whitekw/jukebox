@@ -11,6 +11,7 @@
 - 가입 없는 닉네임 기반 참여
 - YouTube 키워드 검색(최대 15개)
 - YouTube, YouTube Music, `youtu.be`, Shorts URL 직접 추가
+- Chrome 확장 프로그램에서 YouTube 링크를 우클릭해 로그인한 계정의 방에 추가
 - 중복 영상과 임베드 불가 영상 차단
 - 공동 관리자의 재생·정지, 건너뛰기, 순서 변경, 삭제
 - 관리자 추가·해제와 접속 해제 후에도 유지되는 관리자 권한
@@ -27,7 +28,7 @@ frontend (React + Vite)
        │ HTTP / Socket.IO
        ▼
 backend (Express)
-       ├─ SQLite: users / auth_sessions / rooms / participants / songs / room_feed_entries
+       ├─ SQLite: users / auth_sessions / extension_sessions / rooms / participants / songs / room_feed_entries
        ├─ Socket.IO: 룸 상태·채팅 브로드캐스트
        ├─ Discord OAuth2: 계정 로그인
        └─ YouTube Data API: 검색 및 영상 검증
@@ -96,9 +97,9 @@ npm ci
 npm start
 ```
 
-Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 실제 인터넷 공개 시에는 Caddy 또는 Nginx에서 HTTPS를 종료하고 Express로 프록시하세요. WebSocket 업그레이드도 허용해야 합니다.
+Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 실제 인터넷 공개 시에는 Caddy 또는 Nginx에서 HTTPS를 종료하고 Express로 프록시하는 구성을 권장합니다. 현재 HTTP 운영이라면 `DISCORD_REDIRECT_URI`와 `AUTH_COOKIE_SECURE=false`를 해당 주소에 맞춰 설정하세요. WebSocket 업그레이드도 허용해야 합니다.
 
-Windows용 Electron 앱의 실행과 설치 파일 빌드는 [`desktop/README.md`](./desktop/README.md)를 참고하세요.
+Windows용 Electron 앱의 실행과 설치 파일 빌드는 [`desktop/README.md`](./desktop/README.md)를 참고하세요. Chrome 확장 프로그램의 로컬 설치·Discord 연결은 [`extension/README.md`](./extension/README.md)를 참고하세요.
 
 ## Docker로 테스트 서버 배포
 

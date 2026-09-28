@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>B-SIDE 대기열</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="icon.png" alt="" />
+        <span>B-SIDE</span>
+        <small>대기열 추가</small>
+      </header>
+      <p id="status" role="status">연결 확인 중...</p>
+      <section id="login-section" hidden>
+        <h1>YouTube에서 바로 신청곡을</h1>
+        <p>Discord 계정을 연결하고 영상 링크를 우클릭해 방에 추가하세요.</p>
+        <button id="login-button" class="primary" type="button">Discord로 연결</button>
+      </section>
+      <section id="room-section" hidden>
+        <div class="account-row">
+          <span id="account-name"></span>
+          <button id="logout-button" class="text-button" type="button">로그아웃</button>
+        </div>
+        <label for="room-select">추가할 방</label>
+        <select id="room-select"></select>
+        <p id="room-hint"></p>
+        <a id="open-site" href="#" target="_blank" rel="noopener noreferrer">B-SIDE 열기 ↗</a>
+      </section>
+    </main>
+  </body>
+</html>

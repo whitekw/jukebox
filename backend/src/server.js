@@ -12,6 +12,7 @@ const {
 } = require('./auth')
 const { createDatabase } = require('./db')
 const { AppError } = require('./errors')
+const { createExtensionAuth } = require('./extension-auth')
 const { getLocaleConfig } = require('./locale')
 const { createRoomPresence } = require('./presence')
 const { createRateLimiter } = require('./rate-limit')
@@ -43,6 +44,7 @@ const authCookieSecure = process.env.AUTH_COOKIE_SECURE === undefined
 const authSessionCookie = 'jukebox_session'
 const oauthStateCookie = 'jukebox_oauth_state'
 const oauthReturnCookie = 'jukebox_oauth_return_to'
+const oauthExtensionFlowCookie = 'jukebox_extension_flow'
 const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
@@ -54,6 +56,9 @@ const auth = createDiscordAuth(db, {
   clientSecret: process.env.DISCORD_CLIENT_SECRET,
   redirectUri: process.env.DISCORD_REDIRECT_URI,
   sessionTtlMs: authSessionTtlMs,
+})
+const extensionAuth = createExtensionAuth(db, {
+  extensionIds: process.env.BROWSER_EXTENSION_IDS,
 })
 const app = express()
 const server = http.createServer(app)
@@ -96,12 +101,30 @@ function clearCookie(res, name, path = '/') {
 function clearOAuthCookies(res) {
   clearCookie(res, oauthStateCookie, '/api/auth/discord/callback')
   clearCookie(res, oauthReturnCookie, '/api/auth/discord/callback')
+  clearCookie(res, oauthExtensionFlowCookie, '/api/auth/discord/callback')
 }
 
 function addAuthError(returnTo, error) {
   const url = new URL(safeReturnTo(returnTo), 'http://localhost')
   url.searchParams.set('authError', error)
   return `${url.pathname}${url.search}${url.hash}`
+}
+
+function extensionRedirect(flow, params) {
+  const url = new URL(flow.redirectUri)
+  url.searchParams.set('state', flow.state)
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value)
+  return url.toString()
+}
+
+function readExtensionFlow(value) {
+  if (!value) return null
+  try {
+    const flow = JSON.parse(value)
+    return extensionAuth.validateLogin(flow.redirectUri, flow.state, flow.codeChallenge)
+  } catch {
+    return null
+  }
 }
 
 function roomChannel(code) {
@@ -227,6 +250,26 @@ app.get('/api/auth/discord', authLimiter, (req, res) => {
     maxAge: oauthStateMaxAgeSeconds,
     path: '/api/auth/discord/callback',
   })
+  clearCookie(res, oauthExtensionFlowCookie, '/api/auth/discord/callback')
+  res.redirect(302, authorization.url)
+})
+
+app.get('/api/extension/auth/start', authLimiter, (req, res) => {
+  const flow = extensionAuth.validateLogin(
+    req.query.redirect_uri,
+    req.query.state,
+    req.query.code_challenge,
+  )
+  const authorization = auth.createAuthorization()
+  appendCookie(res, oauthStateCookie, authorization.state, {
+    maxAge: oauthStateMaxAgeSeconds,
+    path: '/api/auth/discord/callback',
+  })
+  appendCookie(res, oauthExtensionFlowCookie, JSON.stringify(flow), {
+    maxAge: oauthStateMaxAgeSeconds,
+    path: '/api/auth/discord/callback',
+  })
+  clearCookie(res, oauthReturnCookie, '/api/auth/discord/callback')
   res.redirect(302, authorization.url)
 })
 
@@ -236,17 +279,34 @@ app.get(
   asyncRoute(async (req, res) => {
     const cookies = parseCookies(req.get('cookie'))
     const returnTo = safeReturnTo(cookies[oauthReturnCookie])
+    const extensionFlow = readExtensionFlow(cookies[oauthExtensionFlowCookie])
     clearOAuthCookies(res)
 
+    function fail(error) {
+      return res.redirect(302, extensionFlow
+        ? extensionRedirect(extensionFlow, { error })
+        : addAuthError(returnTo, error))
+    }
+
     if (req.query.error) {
-      return res.redirect(302, addAuthError(returnTo, 'cancelled'))
+      return fail('cancelled')
     }
     if (!tokensMatch(req.query.state, cookies[oauthStateCookie])) {
-      return res.redirect(302, addAuthError(returnTo, 'invalid_state'))
+      return fail('invalid_state')
     }
 
     try {
-      const session = await auth.completeAuthorization(req.query.code)
+      const session = await auth.completeAuthorization(req.query.code, {
+        createSession: !extensionFlow,
+      })
+      if (extensionFlow) {
+        const grant = extensionAuth.createGrant(
+          session.user.id,
+          extensionFlow.extensionId,
+          extensionFlow.codeChallenge,
+        )
+        return res.redirect(302, extensionRedirect(extensionFlow, { grant }))
+      }
       appendCookie(res, authSessionCookie, session.sessionToken, {
         maxAge: Math.floor(authSessionTtlMs / 1_000),
         path: '/',
@@ -256,8 +316,97 @@ app.get(
       if (error?.status >= 500) {
         console.error('Discord authentication failed.', error)
       }
-      return res.redirect(302, addAuthError(returnTo, 'failed'))
+      return fail('failed')
     }
+  }),
+)
+
+app.use('/api/extension', (req, res, next) => {
+  const origin = req.get('origin')
+  const extensionId = extensionAuth.extensionIdForOrigin(origin)
+  const isReadyCheck = req.path === '/auth/ready' && req.method === 'GET'
+  const isExtensionOrigin = /^chrome-extension:\/\/[a-p]{32}$/.test(origin ?? '')
+  if (origin && !extensionId && !(isReadyCheck && isExtensionOrigin)) {
+    return res.status(403).json({
+      error: { code: 'EXTENSION_FORBIDDEN', message: '허용되지 않은 확장 프로그램입니다.' },
+    })
+  }
+  if (extensionId || (isReadyCheck && isExtensionOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  }
+  if (req.method === 'OPTIONS') return res.status(204).end()
+  next()
+})
+
+function requireExtensionUser(req, _res, next) {
+  const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.get('authorization') ?? '')
+  const user = extensionAuth.getSessionUser(match?.[1])
+  if (!user) {
+    return next(new AppError(401, '확장 프로그램에서 다시 로그인해주세요.', 'EXTENSION_AUTH_REQUIRED'))
+  }
+  req.extensionUser = user
+  req.extensionToken = match[1]
+  next()
+}
+
+app.get('/api/extension/auth/ready', (req, res) => {
+  const origin = req.get('origin')
+  res.json({
+    enabled: auth.enabled,
+    extensionAllowed: origin
+      ? Boolean(extensionAuth.extensionIdForOrigin(origin))
+      : extensionAuth.isAllowedId(req.query.extension_id),
+  })
+})
+
+app.post('/api/extension/auth/exchange', authLimiter, (req, res) => {
+  const session = extensionAuth.exchangeGrant(
+    req.body?.grant,
+    req.body?.codeVerifier,
+    req.get('origin'),
+    req.body?.extensionId,
+  )
+  res.json(session)
+})
+
+app.get('/api/extension/me', requireExtensionUser, (req, res) => {
+  res.json({ user: req.extensionUser })
+})
+
+app.post('/api/extension/logout', requireExtensionUser, (req, res) => {
+  extensionAuth.deleteSession(req.extensionToken)
+  res.status(204).end()
+})
+
+app.get('/api/extension/rooms', requireExtensionUser, (req, res) => {
+  const userId = req.extensionUser.id
+  const states = [
+    ...rooms.listOwnedRooms(userId),
+    ...rooms.listJoinedRooms(userId),
+  ]
+  res.json({
+    items: states.map((state) => ({
+      code: state.code,
+      currentSongTitle: state.currentSong?.title ?? null,
+      queueCount: state.queue.length,
+      onlineCount: presence.getParticipantIds(state.code).size,
+    })),
+  })
+})
+
+app.post(
+  '/api/extension/rooms/:code/songs',
+  requireExtensionUser,
+  mutationLimiter,
+  asyncRoute(async (req, res) => {
+    const userId = req.extensionUser.id
+    rooms.assertCanAddSong(req.params.code, null, userId)
+    const song = await youtube.getVideo(req.body?.videoId)
+    const state = rooms.addSong(req.params.code, null, song, userId)
+    res.status(201).json(emitRoom(req.params.code, state))
   }),
 )
 
@@ -715,8 +864,10 @@ app.use((error, _req, res, _next) => {
 })
 
 auth.deleteExpiredSessions()
+extensionAuth.deleteExpiredSessions()
 const cleanupTimer = setInterval(() => {
   auth.deleteExpiredSessions()
+  extensionAuth.deleteExpiredSessions()
 }, 60 * 1000)
 cleanupTimer.unref()
 

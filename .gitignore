@@ -6,6 +6,8 @@ frontend/dist/
 frontend/dist-ssr/
 backend/dist/
 desktop/release/
+extension/dist/
+extension/dist-production/
 coverage/
 .nyc_output/
 

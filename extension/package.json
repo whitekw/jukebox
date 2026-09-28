@@ -1,0 +1,11 @@
+{
+  "name": "bside-browser-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:local": "node build.mjs --local",
+    "test": "npm run build:local && node --test test/*.test.js"
+  }
+}
