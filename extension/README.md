@@ -20,9 +20,9 @@ BROWSER_EXTENSION_IDS=확장_프로그램_ID
 
 ## 운영 빌드
 
-`npm run build`는 `http://bside.whitekw.com`을 사용하는 `extension/dist-production/`을 생성합니다. 로컬 빌드인 `extension/dist/`는 유지됩니다. 운영 서버 환경 변수에도 운영 확장 프로그램의 ID를 `BROWSER_EXTENSION_IDS`에 넣고 재배포해야 로그인할 수 있습니다. 쉼표로 구분하면 개발용 ID와 배포용 ID를 함께 허용할 수 있습니다. Chrome 웹 스토어에 게시하면 스토어의 확장 프로그램 ID를 사용해야 합니다.
+`npm run build`는 `http://bside.whitekw.com`을 사용하는 `extension/dist-production/`을 생성합니다. 로컬 빌드인 `extension/dist/`는 유지됩니다. 운영 빌드의 `manifest.json`에는 공개 키가 포함돼 있으므로 어느 경로에 압축을 풀어도 확장 프로그램 ID는 **`bdobkhgdalimhnpgkhlbghgjafaapfgo`**로 고정됩니다. 운영 서버의 `BROWSER_EXTENSION_IDS`에 이 ID를 넣고 백엔드를 재시작해야 로그인할 수 있습니다. 쉼표로 구분하면 개발용 ID도 함께 허용할 수 있습니다.
 
-Chrome에서 `extension/dist-production/`을 별도로 로드하면 로컬 확장 프로그램과 ID가 달라질 수 있습니다. `chrome://extensions`에 표시된 운영 빌드의 ID를 확인해 Portainer에 등록하세요.
+기존 0.1.0 운영 ZIP은 공개 키가 없어서 설치 경로마다 ID가 달랐습니다. 0.1.1을 설치할 때는 기존 확장 프로그램을 제거하고 새 ZIP을 압축 해제해 로드하세요. 기존 확장 프로그램의 로그인·방 선택 상태는 이전되지 않습니다. 공개 키의 원본 개인 키 `production-signing.pem`은 Git에서 제외하며 안전하게 보관해야 합니다. Chrome 웹 스토어로 게시할 때는 스토어가 부여한 ID와 일치하는 공개 키를 사용해야 합니다.
 
 현재 운영 서버가 HTTP만 제공하므로 이 빌드도 HTTP로 통신합니다. 로그인 토큰과 API 요청이 네트워크에서 암호화되지 않으므로 HTTPS 적용 후 운영 주소를 다시 바꾸는 것이 좋습니다. 운영 서버의 `DISCORD_REDIRECT_URI`와 Discord Developer Portal Redirect URI를 `http://bside.whitekw.com/api/auth/discord/callback`으로 맞추고, `AUTH_COOKIE_SECURE=false`를 설정합니다. Discord 비밀키와 YouTube API 키는 확장 프로그램에 넣지 않습니다.
 
