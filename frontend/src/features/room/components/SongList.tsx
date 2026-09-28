@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from 'react'
-import { MusicIcon, TrashIcon } from '../../../shared/ui/Icons'
+import { Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { formatDuration } from '../../../shared/format'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'

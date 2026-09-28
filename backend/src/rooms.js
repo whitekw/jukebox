@@ -6,6 +6,7 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
 const PROFILE_SOURCES = new Set(['account', 'custom'])
 const CHAT_MESSAGE_MAX_LENGTH = 300
+const ROOM_TITLE_MAX_LENGTH = 60
 const CHAT_HISTORY_LIMIT = 100
 const ABANDONED_SONG_GRACE_MS = 60_000
 const ROOM_EVENT_TYPES = new Set([
@@ -422,6 +423,8 @@ function createRoomService(db, options = {}) {
 
     return {
       code: room.code,
+      title: room.title,
+      allowGuests: Boolean(room.allow_guests),
       hostVolume: room.host_volume,
       playbackMode: room.playback_mode,
       playbackPaused: Boolean(room.playback_paused),
@@ -450,6 +453,17 @@ function createRoomService(db, options = {}) {
       throw new AppError(400, '닉네임은 1~20자로 입력해주세요.', 'INVALID_NICKNAME')
     }
     return normalizedNickname
+  }
+
+  function normalizeRoomTitle(title) {
+    if (typeof title !== 'string') {
+      throw new AppError(400, '방 제목이 올바르지 않습니다.', 'INVALID_ROOM_TITLE')
+    }
+    const normalized = title.trim()
+    if (normalized.length > ROOM_TITLE_MAX_LENGTH) {
+      throw new AppError(400, '방 제목은 60자 이하여야 합니다.', 'INVALID_ROOM_TITLE')
+    }
+    return normalized
   }
 
   function insertParticipant(
@@ -519,6 +533,8 @@ function createRoomService(db, options = {}) {
 
   function createRoom({
     playbackMode = 'host_only',
+    title = '',
+    allowGuests = true,
     ownerUserId = null,
     nickname,
     participantUserId = null,
@@ -541,6 +557,10 @@ function createRoomService(db, options = {}) {
     }
     const normalizedNickname =
       nickname === undefined ? null : normalizeNickname(nickname)
+    const normalizedTitle = normalizeRoomTitle(title)
+    if (typeof allowGuests !== 'boolean') {
+      throw new AppError(400, '비로그인 참여 설정이 올바르지 않습니다.', 'INVALID_ALLOW_GUESTS')
+    }
 
     return transaction(db, () => {
       let code
@@ -553,12 +573,14 @@ function createRoomService(db, options = {}) {
       const createdAt = now()
       db.prepare(
         `INSERT INTO rooms (
-          id, code, host_token_hash, owner_user_id,
+          id, code, title, allow_guests, host_token_hash, owner_user_id,
           playback_mode, playback_anchor_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         code,
+        normalizedTitle || code,
+        allowGuests ? 1 : 0,
         hostToken ? hashToken(hostToken) : '',
         String(ownerUserId),
         playbackMode,
@@ -724,6 +746,9 @@ function createRoomService(db, options = {}) {
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
+      if (!userId && !room.allow_guests) {
+        throw new AppError(403, '이 방은 로그인 후 참여할 수 있습니다.', 'GUEST_JOIN_DISABLED')
+      }
       let joined
       if (userId) {
         let participant = findAccountParticipant.get(room.id, String(userId))
@@ -1179,13 +1204,34 @@ function createRoomService(db, options = {}) {
 
   function updateRoomSettings(code, credentials, settings = {}) {
     const hasVolume = settings.hostVolume !== undefined
-    if (!hasVolume) {
+    const hasTitle = settings.title !== undefined
+    const hasAllowGuests = settings.allowGuests !== undefined
+    if (!hasVolume && !hasTitle && !hasAllowGuests) {
       throw new AppError(400, '변경할 설정이 없습니다.', 'EMPTY_SETTINGS')
     }
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      requireController(room, credentials)
+      if (hasTitle || hasAllowGuests) {
+        if (!hasOwnerAccess(room, credentials?.userId)) {
+          throw new AppError(403, '방 소유자만 이 설정을 변경할 수 있습니다.', 'OWNER_FORBIDDEN')
+        }
+      } else {
+        requireController(room, credentials)
+      }
+
+      if (hasTitle) {
+        const title = normalizeRoomTitle(settings.title) || room.code
+        db.prepare('UPDATE rooms SET title = ? WHERE id = ?').run(title, room.id)
+      }
+      if (hasAllowGuests) {
+        if (typeof settings.allowGuests !== 'boolean') {
+          throw new AppError(400, '비로그인 참여 설정이 올바르지 않습니다.', 'INVALID_ALLOW_GUESTS')
+        }
+        db.prepare('UPDATE rooms SET allow_guests = ? WHERE id = ?').run(
+          settings.allowGuests ? 1 : 0, room.id,
+        )
+      }
 
       if (hasVolume) {
         const volume = Number(settings.hostVolume)

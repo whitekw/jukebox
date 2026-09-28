@@ -27,6 +27,7 @@ import { QueuePanel } from '../components/QueuePanel'
 import { SearchPanel } from '../components/SearchPanel'
 import { InviteRoomButton } from '../components/InviteRoomButton'
 import { RoomJoinPreview } from '../components/RoomJoinPreview'
+import { RoomSettingsButton } from '../components/RoomSettingsButton'
 import { canControlSong, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
@@ -233,9 +234,10 @@ export function RoomPage() {
       <header className="relative z-[60] mx-auto mb-[22px] flex max-w-[1500px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 items-center gap-5">
           <Brand className="gap-2 text-base tracking-[0.14em] max-[380px]:[&>span]:hidden md:gap-3 md:text-lg md:tracking-[0.18em]" />
-          <div className="hidden items-center gap-2 border-l border-line pl-5 font-mono text-xs tracking-[0.08em] text-muted sm:flex">
+          <div className="flex min-w-0 items-center gap-2 border-l border-line pl-3 font-mono text-xs tracking-[0.08em] text-muted sm:pl-5">
             <span className={connectionDotStyles({ connected })} />
-            <span>ROOM · {code}</span>
+            <span className="max-w-[min(36vw,380px)] truncate text-ink" title={room.title}>{room.title}</span>
+            <span className="hidden shrink-0 sm:inline">· {code}</span>
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -272,7 +274,12 @@ export function RoomPage() {
                 : undefined}
             />
           )}
-          <InviteRoomButton code={code} joinUrl={joinUrl} />
+          <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests} />
+          {isOwner && (
+            <RoomSettingsButton room={room} onSave={async (title, allowGuests) => {
+              setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests }))
+            }} />
+          )}
           <AccountMenu
             compact
             logoutConfirmMessage={isHost && room.playbackMode === 'host_only'

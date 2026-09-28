@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { Search as SearchIcon } from 'lucide-react'
 import { roomApi } from '../api'
-import { SearchIcon } from '../../../shared/ui/Icons'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import {
   buttonStyles,

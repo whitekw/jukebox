@@ -35,6 +35,8 @@ jukebox:participant:{ROOM_CODE}
 ```ts
 type RoomState = {
   code: string
+  title: string
+  allowGuests: boolean
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -142,7 +144,7 @@ type RoomEvent = {
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
 | POST | `/api/rooms/:code/host` | 방 소유자 | 변경 | 새 호스트 토큰과 `RoomState` |
-| POST | `/api/rooms/:code/join` | 공개 | 변경 | 익명 참여 또는 로그인 계정 멤버십 생성, 참여 토큰/정보/룸 |
+| POST | `/api/rooms/:code/join` | 공개(비로그인 참여는 방 설정에 따름) | 변경 | 익명 참여 또는 로그인 계정 멤버십 생성, 참여 토큰/정보/룸 |
 | POST | `/api/rooms/:code/resume` | 로그인 멤버 | 변경 | 다른 기기에서 멤버십을 재개할 참여 토큰/정보/룸 |
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
@@ -156,7 +158,7 @@ type RoomEvent = {
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
-| PATCH | `/api/rooms/:code/settings` | controller | 변경 | `RoomState` |
+| PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여: 방 소유자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
@@ -215,11 +217,16 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 ```json
 {
-  "playbackMode": "all_devices"
+  "playbackMode": "all_devices",
+  "title": "Friday mix",
+  "allowGuests": true
 }
 ```
 
 - `playbackMode`는 `host_only` 또는 `all_devices`이며 생략 시 `host_only`입니다.
+- `title`은 선택 사항이며 공백을 제거한 뒤 최대 60자입니다. 생략하거나 비우면 생성된 방 코드가 제목입니다.
+- `allowGuests`는 비로그인 참여 허용 여부이며 생략 시 `true`입니다.
+- 기존 방은 DB 업그레이드 시 제목을 방 코드로, 비로그인 참여 허용을 `true`로 설정합니다.
 - Discord 로그인이 필요하며, 비로그인 요청은 `401 AUTH_REQUIRED`로 거부합니다.
 - 방은 로그인 계정에 소유권이 저장되고 소유자가 직접 삭제하기 전까지 유지됩니다.
 - 최초 참여자는 계정 이름과 프로필 사진으로 방과 한 트랜잭션에서 함께 생성됩니다.
@@ -264,6 +271,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 - 앞뒤 공백을 제거한 길이가 `1..20`이어야 합니다. 로그인 사용자는 Discord 표시 이름을 닉네임으로 사용합니다.
 - 닉네임 중복은 허용됩니다.
+- `allowGuests`가 `false`인 방은 비로그인 새 참여 요청에 `403 GUEST_JOIN_DISABLED`를 반환합니다. 이미 참여한 익명 사용자의 연결은 유지됩니다.
 - 방 생성 시 생성자가 매니저가 되며, 이후 참여자는 자동으로 매니저가 되지 않습니다.
 - 응답 상태: `201 Created`
 
@@ -446,7 +454,7 @@ position = playbackPositionSeconds
 
 ### `PATCH /api/rooms/:code/settings`
 
-필수 권한: controller
+`hostVolume`은 controller 권한, `title`과 `allowGuests`는 방 소유자의 로그인 세션이 필요합니다.
 
 ```json
 {
@@ -455,6 +463,8 @@ position = playbackPositionSeconds
 ```
 
 - `hostVolume`: 정수 `0..100`
+- `title`: 공백을 제거한 최대 60자 문자열. 빈 문자열로 변경하면 방 코드를 사용합니다.
+- `allowGuests`: boolean. `false`로 변경해도 이미 참여한 익명 사용자는 자동으로 연결 해제되지 않습니다.
 
 ### `PATCH /api/rooms/:code/managers/:participantId`
 

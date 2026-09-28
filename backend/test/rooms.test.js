@@ -36,6 +36,41 @@ function insertUser(db, id) {
   ).run(id, `discord-${id}`, id, id)
 }
 
+test('room titles and guest access can be changed only by the owner', () => {
+  const db = createDatabase()
+  insertUser(db, 'owner')
+  insertUser(db, 'member')
+  const rooms = createRoomService(db)
+  const created = rooms.createRoom({ ownerUserId: 'owner', title: '  Friday mix  ', allowGuests: false })
+  assert.equal(rooms.getPublicRoom(created.code).title, 'Friday mix')
+  assert.equal(rooms.getPublicRoom(created.code).allowGuests, false)
+  assert.throws(
+    () => rooms.joinRoom(created.code, { nickname: 'Guest' }),
+    (error) => error.code === 'GUEST_JOIN_DISABLED',
+  )
+  const member = rooms.joinRoom(created.code, { nickname: 'Member', userId: 'member' })
+  assert.throws(
+    () => rooms.updateRoomSettings(created.code, { participantToken: member.participantToken }, { title: 'Stolen' }),
+    (error) => error.code === 'OWNER_FORBIDDEN',
+  )
+  assert.throws(
+    () => rooms.updateRoomSettings(created.code, { hostToken: created.hostToken }, { allowGuests: true }),
+    (error) => error.code === 'OWNER_FORBIDDEN',
+  )
+  const updated = rooms.updateRoomSettings(created.code, { userId: 'owner' }, { title: ' ', allowGuests: true })
+  assert.equal(updated.title, created.code)
+  assert.equal(updated.allowGuests, true)
+  assert.equal(rooms.joinRoom(created.code, { nickname: 'Guest' }).participant.isMember, false)
+  const defaults = rooms.createRoom({ ownerUserId: 'owner' })
+  assert.equal(rooms.getPublicRoom(defaults.code).title, defaults.code)
+  assert.equal(rooms.getPublicRoom(defaults.code).allowGuests, true)
+  assert.throws(
+    () => rooms.createRoom({ title: 'x'.repeat(61) }),
+    (error) => error.code === 'INVALID_ROOM_TITLE',
+  )
+  db.close()
+})
+
 test('keeps account membership across devices and preserves songs after leaving', () => {
   const db = createDatabase()
   insertUser(db, 'owner')

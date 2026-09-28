@@ -1,12 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { CircleUserRound as UserCircleIcon, LogOut as LogoutIcon } from 'lucide-react'
+import { SiDiscord as DiscordIcon } from 'react-icons/si'
 import { useAuth } from '../context'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
-import {
-  DiscordIcon,
-  LogoutIcon,
-  UserCircleIcon,
-} from '../../../shared/ui/Icons'
 
 export function AccountMenu({
   compact = false,

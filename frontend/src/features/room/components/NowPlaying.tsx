@@ -1,11 +1,6 @@
 import type { ReactNode } from 'react'
+import { Music2 as MusicIcon, Pause as PauseIcon, Play as PlayIcon, SkipForward as SkipIcon } from 'lucide-react'
 import type { Song } from '../types'
-import {
-  MusicIcon,
-  PauseIcon,
-  PlayIcon,
-  SkipIcon,
-} from '../../../shared/ui/Icons'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn, panelStyles, vinylStyles } from '../../../shared/styles'
 
