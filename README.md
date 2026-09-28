@@ -97,7 +97,7 @@ npm ci
 npm start
 ```
 
-Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 실제 인터넷 공개 시에는 Caddy 또는 Nginx에서 HTTPS를 종료하고 Express로 프록시하는 구성을 권장합니다. 현재 HTTP 운영이라면 `DISCORD_REDIRECT_URI`와 `AUTH_COOKIE_SECURE=false`를 해당 주소에 맞춰 설정하세요. WebSocket 업그레이드도 허용해야 합니다.
+Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 운영 환경에서는 Nginx Proxy Manager에서 HTTPS를 종료하고 Express로 프록시합니다. Discord Developer Portal과 `DISCORD_REDIRECT_URI`에 동일한 HTTPS callback을 등록하고 `AUTH_COOKIE_SECURE=true`를 사용하세요. WebSocket 업그레이드도 허용해야 합니다.
 
 Windows용 Electron 앱의 실행과 설치 파일 빌드는 [`desktop/README.md`](./desktop/README.md)를 참고하세요. Chrome 확장 프로그램의 로컬 설치·Discord 연결은 [`extension/README.md`](./extension/README.md)를 참고하세요.
 
