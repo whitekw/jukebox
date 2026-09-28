@@ -1,6 +1,6 @@
 services:
   jukebox:
-    image: "ghcr.io/whitekw/jukebox:sha-6a893c7465142389d719bde59b408e8d7e43c251"
+    image: "ghcr.io/whitekw/jukebox:sha-35e0a56197904d5ab7f9273966c8a69707609a2a"
     restart: unless-stopped
     init: true
     environment:
@@ -13,8 +13,9 @@ services:
       DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
       DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"
       DISCORD_REDIRECT_URI: "${DISCORD_REDIRECT_URI:-}"
+      BROWSER_EXTENSION_IDS: "${BROWSER_EXTENSION_IDS:-}"
       AUTH_SESSION_TTL_DAYS: "${AUTH_SESSION_TTL_DAYS:-30}"
-      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
     ports:
       - "${JUKEBOX_PORT:-3001}:3001"
     volumes:
