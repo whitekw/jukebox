@@ -5,7 +5,7 @@
 - Node.js 24 이상
 - npm 11.6.2 권장(`packageManager` 및 Dockerfile 기준)
 - YouTube Data API v3 키
-- 프로덕션 공개 시 HTTPS와 WebSocket upgrade를 지원하는 리버스 프록시
+- 프로덕션 공개 시 HTTPS를 권장하며, 프록시 사용 시 WebSocket upgrade 지원 필요
 
 ## 2. 환경 변수
 
@@ -22,13 +22,16 @@
 | `DISCORD_CLIENT_ID` | 없음 | 방 생성에 필수 | Discord 애플리케이션 Client ID |
 | `DISCORD_CLIENT_SECRET` | 없음 | 방 생성에 필수 | 서버에서만 사용하는 Discord Client Secret |
 | `DISCORD_REDIRECT_URI` | 없음 | 방 생성에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
+| `BROWSER_EXTENSION_IDS` | 없음 | Chrome 확장 프로그램 사용 시 필수 | 허용할 확장 프로그램 ID, 여러 개면 쉼표로 구분 |
 | `AUTH_SESSION_TTL_DAYS` | `30` | 선택 | 로그인 세션 고정 수명(일) |
-| `AUTH_COOKIE_SECURE` | production에서 `true` | 공개 HTTPS 운영 시 필수 | 로그인 쿠키의 `Secure` 속성 |
+| `AUTH_COOKIE_SECURE` | 백엔드 production 기본값 `true`, 현재 Compose 기본값 `false` | HTTP 운영 시 `false` | 로그인 쿠키의 `Secure` 속성 |
 
 YouTube API 키는 프런트 코드나 `VITE_*` 환경 변수에 넣지 않습니다.
 Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인과 새 방 생성이 가능합니다. 기존 방 참여는 로그인 없이도 가능합니다.
 
-Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, 운영 시 `https://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다.
+Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, 현재 HTTP 운영 환경에서는 `http://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다. HTTP 운영에서는 `AUTH_COOKIE_SECURE=false`가 필요하며, HTTPS 전환 시 callback 주소와 쿠키 설정을 함께 변경합니다.
+
+Chrome 확장 프로그램은 [`extension/README.md`](../extension/README.md)의 설치 절차를 따릅니다. OAuth의 Discord callback은 기존 `DISCORD_REDIRECT_URI`를 그대로 사용하며, 완료 후 허용된 `https://{확장 ID}.chromiumapp.org/bside`로 일회용 코드만 보냅니다. 현재 운영 빌드는 `http://bside.whitekw.com`에 접속하므로 확장 프로그램의 로그인 토큰도 HTTP로 전송됩니다. 공개 HTTPS 적용을 권장합니다.
 
 ## 3. 로컬 개발
 
@@ -116,7 +119,7 @@ docker compose down
 
 ### 기존 DB 초기화
 
-현재 앱은 새 SQLite 스키마 버전 1만 지원합니다. 이전 버전의 DB가 연결돼 있으면 서버가 시작 시 초기화 안내 오류를 출력하고 중단합니다. **이 버전을 배포하기 전에 기존 방·참여자·로그인 세션 데이터를 폐기해야 합니다.** 데이터가 필요하다면 먼저 백업하세요.
+현재 SQLite 스키마는 버전 2입니다. 버전 1 DB는 확장 프로그램 인증 테이블을 추가하며 자동 업그레이드하고 기존 방·참여자·로그인 세션은 보존합니다. 버전 1보다 오래된 DB는 초기화 안내 오류와 함께 시작을 중단합니다. 업그레이드 전에는 SQLite 볼륨을 백업하세요.
 
 - 로컬 실행: 백엔드를 중지한 뒤 `DATABASE_PATH`가 가리키는 DB 파일과 같은 이름의 `-wal`, `-shm` 파일을 제거하고 다시 시작합니다. 기본 경로는 `backend/data/jukebox.sqlite`입니다.
 - `compose.yaml`: 서비스를 중지한 뒤 해당 프로젝트의 `jukebox-data` 볼륨을 제거하고 다시 생성합니다. 다른 프로젝트가 같은 이름의 볼륨을 사용하는지 확인하세요.

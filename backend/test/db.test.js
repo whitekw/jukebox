@@ -6,12 +6,12 @@ const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 const { createDatabase } = require('../src/db')
 
-test('creates the current schema and reopens it without migration', () => {
+test('creates the current schema and reopens it without data loss', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-db-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
   try {
     let db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2)
     const roomColumns = db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name)
     assert.ok(roomColumns.includes('owner_user_id'))
     assert.ok(!roomColumns.includes('retention_mode'))
@@ -27,12 +27,34 @@ test('creates the current schema and reopens it without migration', () => {
     ).run()
     db.close()
     db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2)
     assert.equal(
       db.prepare("SELECT host_token_hash FROM rooms WHERE code = 'ABC234'").get().host_token_hash,
       '',
     )
     assert.equal(db.prepare("SELECT is_manager FROM participants WHERE id = 'guest-1'").get().is_manager, 0)
+    db.close()
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('upgrades version 1 databases without deleting rooms', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-upgrade-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  try {
+    let db = createDatabase(databasePath)
+    db.prepare(
+      `INSERT INTO rooms (id, code, host_token_hash, created_at)
+       VALUES ('room-1', 'ABC234', 'host-hash', 1)`,
+    ).run()
+    db.exec('DROP TABLE extension_grants; DROP TABLE extension_sessions; PRAGMA user_version = 1;')
+    db.close()
+
+    db = createDatabase(databasePath)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2)
+    assert.equal(db.prepare("SELECT code FROM rooms WHERE id = 'room-1'").get().code, 'ABC234')
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'extension_sessions'").get())
     db.close()
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })

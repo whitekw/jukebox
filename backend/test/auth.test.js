@@ -135,6 +135,26 @@ test('updates an existing Discord account instead of duplicating it', async () =
   }
 })
 
+test('can authenticate an extension without creating a website cookie session', async () => {
+  const db = createDatabase()
+  try {
+    const auth = createDiscordAuth(db, {
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri: 'https://example.com/api/auth/discord/callback',
+      fetchImpl: async (url) => String(url).endsWith('/oauth2/token')
+        ? jsonResponse({ access_token: 'discord-access-token' })
+        : jsonResponse({ id: '123456789', username: 'discord-user' }),
+    })
+    const result = await auth.completeAuthorization('authorization-code', { createSession: false })
+    assert.equal(result.sessionToken, null)
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM auth_sessions').get().count, 0)
+    assert.equal(result.user.discordId, '123456789')
+  } finally {
+    db.close()
+  }
+})
+
 test('handles auth cookies and return paths safely', () => {
   assert.deepEqual(parseCookies('one=1; encoded=hello%20world'), {
     one: '1',

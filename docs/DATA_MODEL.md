@@ -275,7 +275,9 @@ stateDiagram-v2
 
 ## 10. 스키마 초기화와 삭제
 
-`createDatabase()`는 빈 DB에 현재 스키마를 생성하고 SQLite `user_version`을 `1`로 설정합니다. 이후 같은 버전의 DB를 다시 열 수 있습니다. 이전 스키마는 마이그레이션하지 않으며, 서버는 명확한 초기화 오류와 함께 시작을 중단합니다. 기존 DB를 사용 중이라면 중지 후 DB 파일 또는 Docker 볼륨을 초기화해야 합니다.
+`createDatabase()`는 빈 DB에 현재 스키마를 생성하고 SQLite `user_version`을 `2`로 설정합니다. 버전 1 DB는 `extension_grants`와 `extension_sessions` 테이블 및 만료 인덱스를 추가한 뒤 기존 데이터를 보존합니다. 버전 1보다 오래된 스키마는 초기화 오류와 함께 시작을 중단합니다.
+
+`extension_grants`는 Discord 인증 뒤 확장 프로그램으로 전달하는 2분짜리 일회용 코드의 해시, 계정 ID, 확장 프로그램 ID, PKCE 검증값을 저장합니다. `extension_sessions`는 30일짜리 확장 프로그램 전용 Bearer 토큰의 해시와 계정 ID·확장 프로그램 ID·만료 시각을 저장합니다. 원본 토큰과 Discord OAuth 토큰은 DB에 저장하지 않습니다. 확장 프로그램 로그아웃은 해당 세션만 폐기합니다.
 
 방은 로그인 계정에 귀속되며 자동 삭제하지 않습니다. 방 삭제 시 foreign key cascade로 참여자, 곡, 채팅 피드를 함께 삭제합니다. 참여자 온라인 상태는 Socket.IO 연결을 기준으로 메모리에서 관리하고, 마지막 소켓 종료 후 `PARTICIPANT_LEAVE_GRACE_MS`가 지나면 오프라인으로 표시합니다. 로그인 세션은 기본 30일 뒤 만료되며 만료 시 자동 연장하지 않습니다.
 

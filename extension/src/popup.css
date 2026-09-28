@@ -1,0 +1,25 @@
+:root { color-scheme: dark; font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+* { box-sizing: border-box; }
+body { width: 340px; margin: 0; background: #0d0a14; color: #f3efff; }
+main { padding: 22px; }
+header { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 800; letter-spacing: .14em; }
+header img { width: 25px; height: 25px; }
+header small { margin-left: auto; color: #ac9fc0; font-size: 11px; font-weight: 600; letter-spacing: 0; }
+section { padding-top: 24px; }
+h1 { margin: 0 0 8px; font-size: 18px; }
+p { margin: 0; color: #a99dbb; font-size: 13px; line-height: 1.6; }
+#status { margin-top: 18px; }
+#status:empty, #status[hidden], section[hidden] { display: none; }
+#status.error { color: #ff9bab; }
+button, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: wait; opacity: .65; }
+.primary { width: 100%; margin-top: 24px; border: 0; border-radius: 12px; padding: 13px 16px; background: #bea7ff; color: #151020; font-size: 14px; font-weight: 800; }
+.primary:hover { background: #d0c0ff; }
+.account-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 21px; color: #d9cfed; font-size: 13px; }
+.text-button { border: 0; background: transparent; color: #a99dbb; font-size: 12px; }
+.text-button:hover, a:hover { color: #d0c0ff; }
+label { display: block; margin-bottom: 8px; color: #bbb0cd; font-size: 12px; }
+select { width: 100%; padding: 11px 12px; border: 1px solid #43384f; border-radius: 10px; background: #191420; color: #f3efff; font-size: 14px; }
+#room-hint { margin-top: 11px; }
+a { display: inline-block; margin-top: 18px; color: #bea7ff; font-size: 12px; text-decoration: none; }

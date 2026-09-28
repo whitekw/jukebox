@@ -8,6 +8,7 @@
 - 시간 값은 Unix epoch millisecond입니다.
 - 변경 API는 성공 시 최신 전체 `RoomState`를 반환하는 것이 기본입니다.
 - 프런트와 백엔드는 같은 출처로 배포하는 구조이며 별도 CORS 설정은 없습니다.
+- 예외적으로 `/api/extension`은 `BROWSER_EXTENSION_IDS`에 등록된 Chrome 확장 프로그램 출처만 CORS를 허용합니다. 확장 프로그램 API는 쿠키 대신 전용 Bearer 토큰을 사용합니다.
 
 ## 2. 인증 헤더
 
@@ -128,6 +129,13 @@ type RoomEvent = {
 | GET | `/api/auth/discord` | 공개 | 인증 | Discord OAuth2 시작 |
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
 | POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 및 해당 세션의 실시간 연결 종료 |
+| GET | `/api/extension/auth/start` | 등록된 확장 프로그램 리디렉션 주소 | 인증 | Discord OAuth2 시작 |
+| GET | `/api/extension/auth/ready` | 등록된 확장 프로그램 출처 | 없음 | Discord 로그인 설정 여부 |
+| POST | `/api/extension/auth/exchange` | 일회용 grant + PKCE 검증값 | 인증 | 확장 프로그램 전용 Bearer 토큰 |
+| GET | `/api/extension/me` | 확장 프로그램 Bearer | 없음 | 연결된 B-SIDE 계정 |
+| POST | `/api/extension/logout` | 확장 프로그램 Bearer | 없음 | 확장 프로그램 세션 폐기 |
+| GET | `/api/extension/rooms` | 확장 프로그램 Bearer | 없음 | 계정이 참여한 방과 소유 방 목록 |
+| POST | `/api/extension/rooms/:code/songs` | 확장 프로그램 Bearer + 해당 방 멤버십 | 변경 | 영상 ID를 검증한 뒤 `RoomState` |
 | POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
 | GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 방 목록 |
 | GET | `/api/rooms/joined` | 로그인 | 없음 | 계정으로 참여한 방 목록(소유 방 제외) |
@@ -153,6 +161,8 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
 요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
+
+확장 프로그램 로그인 시작 요청에는 `redirect_uri=https://{등록된 확장 ID}.chromiumapp.org/bside`, 임의의 `state`, SHA-256 PKCE `code_challenge`를 전달합니다. Discord 인증 후 서버는 해당 주소로 `grant`와 `state`를 반환합니다. `POST /api/extension/auth/exchange`의 JSON 본문은 `{ "grant": "...", "codeVerifier": "..." }`입니다. 이후 확장 프로그램 API에는 `Authorization: Bearer {token}`을 보냅니다. 영상 추가 본문은 `{ "videoId": "YouTube 영상 ID" }`입니다. 확장 프로그램 토큰만으로 일반 웹사이트 API의 쿠키 로그인·호스트 제어 권한을 얻을 수 없습니다.
 
 ## 5. 시스템 및 설정
 

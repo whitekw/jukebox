@@ -133,7 +133,7 @@ function createDiscordAuth(db, options = {}) {
     return response.json()
   }
 
-  async function completeAuthorization(code) {
+  async function completeAuthorization(code, { createSession = true } = {}) {
     ensureConfigured()
     if (typeof code !== 'string' || !code) {
       throw new AppError(400, 'Discord 인증 코드가 없습니다.', 'INVALID_AUTH_CODE')
@@ -175,7 +175,7 @@ function createDiscordAuth(db, options = {}) {
     }
 
     const signedInAt = now()
-    const sessionToken = createToken()
+    const sessionToken = createSession ? createToken() : null
     const user = transaction(db, () => {
       let row = db
         .prepare('SELECT * FROM users WHERE discord_id = ?')
@@ -216,23 +216,25 @@ function createDiscordAuth(db, options = {}) {
 
       row = db.prepare('SELECT * FROM users WHERE id = ?').get(row.id)
 
-      db.prepare(
-        `INSERT INTO auth_sessions (
-           id, user_id, token_hash, created_at, expires_at
-         ) VALUES (?, ?, ?, ?, ?)`,
-      ).run(
-        crypto.randomUUID(),
-        row.id,
-        hashToken(sessionToken),
-        signedInAt,
-        signedInAt + sessionTtlMs,
-      )
+      if (sessionToken) {
+        db.prepare(
+          `INSERT INTO auth_sessions (
+             id, user_id, token_hash, created_at, expires_at
+           ) VALUES (?, ?, ?, ?, ?)`,
+        ).run(
+          crypto.randomUUID(),
+          row.id,
+          hashToken(sessionToken),
+          signedInAt,
+          signedInAt + sessionTtlMs,
+        )
+      }
       return row
     })
 
     return {
       sessionToken,
-      expiresAt: signedInAt + sessionTtlMs,
+      expiresAt: sessionToken ? signedInAt + sessionTtlMs : null,
       user: publicUser(user),
     }
   }
@@ -287,6 +289,7 @@ function createDiscordAuth(db, options = {}) {
 module.exports = {
   createDiscordAuth,
   hashToken,
+  publicUser,
   parseCookies,
   safeReturnTo,
   serializeCookie,

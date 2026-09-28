@@ -54,6 +54,7 @@ flowchart LR
 | 언어 선택 | 브라우저 `localStorage` | 서버는 최초 추천 로케일만 제공 |
 | Discord 사용자 | `users` 테이블 | 프런트 `AuthProvider`의 공개 프로필 |
 | 로그인 세션 | `auth_sessions`의 토큰 해시 | 브라우저 HttpOnly `jukebox_session` 원본 쿠키 |
+| 확장 프로그램 세션 | `extension_sessions`의 토큰 해시 | Chrome 확장 프로그램 저장소의 계정 전용 Bearer 토큰 |
 | 계정 소유 방 | `rooms.owner_user_id` | 로그인 쿠키로 기기 간 복구 |
 
 ## 4. 백엔드 레이어
@@ -86,6 +87,7 @@ flowchart TB
 - 변경 API가 성공하면 `room:{정규화된 코드}` 채널로 `room:state`를 보내고, 새 채팅과 활동 로그는 인증된 참여자 전용 `chat-room:{코드}` 채널로 보냅니다.
 - `frontend/dist`를 정적 제공하며 SPA 경로는 `index.html`로 폴백합니다.
 - Discord Authorization Code 흐름의 state를 HttpOnly 쿠키로 검증하고 로그인 세션을 발급·삭제합니다.
+- Chrome 확장 프로그램은 같은 Discord callback을 이용하되 웹 쿠키 대신 PKCE로 묶인 일회용 grant를 교환해 별도 계정 토큰을 받습니다. 해당 토큰은 `/api/extension`에만 사용하고 곡 추가 때 계정의 방 멤버십을 다시 확인합니다.
 - 시작 시 한 번, 이후 1분마다 만료된 로그인 세션을 삭제합니다. 방은 소유자가 직접 삭제합니다.
 - `SIGINT`와 `SIGTERM`에서 HTTP 서버와 DB를 닫습니다.
 
@@ -274,7 +276,7 @@ YouTube IFrame 내부의 재생·일시정지는 로컬 상태입니다. 한 기
 - 검색은 IP/경로당 분당 30회, 일반 변경 API는 분당 120회로 제한됩니다. 채팅 전송에는 계정 또는 참여자 토큰 기준 분당 30회 제한도 적용하며, 조회에는 별도 제한이 없습니다.
 - YouTube API 키는 백엔드 환경 변수에만 존재합니다.
 - 프로덕션 이미지는 비루트 `node` 사용자로 실행되며 배포 Compose는 읽기 전용 루트 파일시스템, capability 제거, `no-new-privileges`를 적용합니다.
-- 서비스 자체는 TLS를 종료하지 않으므로 인터넷 공개 시 HTTPS 리버스 프록시가 필요합니다.
+- 서비스 자체는 TLS를 종료하지 않으므로 인터넷 공개 시 HTTPS 리버스 프록시 사용을 권장합니다. 현재 HTTP 운영에서는 확장 프로그램 로그인 토큰도 암호화되지 않은 채 전송됩니다.
 
 주의할 점은 브라우저의 `localStorage` 토큰이 같은 출처에서 실행되는 스크립트에 노출된다는 것입니다. 따라서 외부 스크립트 추가, HTML 주입, CSP 변경은 인증 경계 변경으로 취급해야 합니다.
 
