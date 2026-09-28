@@ -64,7 +64,9 @@ loginButton.addEventListener('click', async () => {
 logoutButton.addEventListener('click', async () => {
   logoutButton.disabled = true
   try {
-    render(await send('LOGOUT'))
+    const state = await send('LOGOUT')
+    render(state)
+    if (state.logoutWarning) showStatus(state.logoutWarning, true)
   } catch (error) {
     showStatus(error.message, true)
   } finally {

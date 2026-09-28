@@ -7,6 +7,7 @@ const requests = []
 let nextNotice
 let shownNotice
 let readyAllowed = true
+let logoutFails = false
 
 globalThis.chrome = {
   contextMenus: {
@@ -71,6 +72,7 @@ globalThis.fetch = async (url, init = {}) => {
     return Response.json({ currentSong: { videoId: 'abcdefghijk' } })
   }
   if (path === '/api/extension/logout') {
+    if (logoutFails) return Response.json({ error: { message: '서버 오류' } }, { status: 503 })
     return new Response(null, { status: 204 })
   }
   throw new Error(`Unexpected request: ${path}`)
@@ -130,6 +132,23 @@ test('requires login again after extension logout', async () => {
   handlers.clicked({ menuItemId: 'add-to-bside', linkUrl: 'https://youtu.be/abcdefghijk' })
   assert.match((await notified).message, /Discord로 로그인/)
   assert.equal(shownNotice.iconUrl.startsWith('chrome-extension://'), true)
+})
+
+test('returns the logged-out state when server logout fails', async () => {
+  assert.equal((await send('LOGIN')).ok, true)
+  logoutFails = true
+  try {
+    const response = await send('LOGOUT')
+    assert.equal(response.ok, true)
+    assert.equal(response.state.loggedIn, false)
+    assert.deepEqual(response.state.rooms, [])
+    assert.equal(response.state.selectedRoom, '')
+    assert.match(response.state.logoutWarning, /서버 세션을 해제하지 못했습니다/)
+    assert.equal(storage.has('session'), false)
+    assert.equal(storage.has('selectedRoom'), false)
+  } finally {
+    logoutFails = false
+  }
 })
 
 test('explains how to allow an unregistered extension before opening Discord', async () => {

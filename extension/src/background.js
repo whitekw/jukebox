@@ -167,14 +167,17 @@ async function getState() {
 
 async function logout() {
   const session = await getSession()
+  let logoutWarning
   if (session) {
     try {
       await apiRequest('/api/extension/logout', { token: session.token, method: 'POST' })
+    } catch {
+      logoutWarning = '이 기기에서는 로그아웃했지만 서버 세션을 해제하지 못했습니다. 연결 상태를 확인해주세요.'
     } finally {
       await clearSession()
     }
   }
-  return { loggedIn: false, rooms: [], selectedRoom: '' }
+  return { loggedIn: false, rooms: [], selectedRoom: '', ...(logoutWarning ? { logoutWarning } : {}) }
 }
 
 async function selectRoom(code) {
