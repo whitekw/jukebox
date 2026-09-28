@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node build.mjs",
     "build:local": "node build.mjs --local",
-    "test": "npm run build && npm run build:local && node --test test/*.test.js"
+    "build:unpacked": "node build.mjs --unpacked",
+    "test": "npm run build && npm run build:local && npm run build:unpacked && node --test test/*.test.js"
   }
 }

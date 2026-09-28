@@ -4,14 +4,16 @@ import path from 'node:path'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const local = process.argv.includes('--local')
-const origin = local ? 'http://localhost:5173' : 'http://bside.whitekw.com'
-const output = path.join(root, local ? 'dist' : 'dist-production')
-const publicKey = local ? null : (await readFile(path.join(root, 'production-public-key.txt'), 'utf8')).trim()
+const unpacked = process.argv.includes('--unpacked')
+if (local && unpacked) throw new Error('Choose either --local or --unpacked.')
+const origin = local ? 'http://localhost:5173' : 'https://bside.whitekw.com'
+const output = path.join(root, local ? 'dist' : unpacked ? 'dist-unpacked' : 'dist-store')
+const publicKey = unpacked ? (await readFile(path.join(root, 'production-public-key.txt'), 'utf8')).trim() : null
 
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 await cp(path.join(root, 'src'), output, { recursive: true })
-await cp(path.join(root, '..', 'desktop', 'assets', 'icon.png'), path.join(output, 'icon.png'))
+await cp(path.join(root, 'store-assets', 'icon-128.png'), path.join(output, 'icon.png'))
 await writeFile(path.join(output, 'config.js'), `export const API_ORIGIN = ${JSON.stringify(origin)}\n`)
 await writeFile(path.join(output, 'manifest.json'), JSON.stringify({
   manifest_version: 3,

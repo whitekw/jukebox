@@ -20,11 +20,17 @@ BROWSER_EXTENSION_IDS=확장_프로그램_ID
 
 ## 운영 빌드
 
-`npm run build`는 `http://bside.whitekw.com`을 사용하는 `extension/dist-production/`을 생성합니다. 로컬 빌드인 `extension/dist/`는 유지됩니다. 운영 빌드의 `manifest.json`에는 공개 키가 포함돼 있으므로 어느 경로에 압축을 풀어도 확장 프로그램 ID는 **`bdobkhgdalimhnpgkhlbghgjafaapfgo`**로 고정됩니다. 운영 서버의 `BROWSER_EXTENSION_IDS`에 이 ID를 넣고 백엔드를 재시작해야 로그인할 수 있습니다. 쉼표로 구분하면 개발용 ID도 함께 허용할 수 있습니다.
+`npm run build`는 `https://bside.whitekw.com`을 사용하는 웹 스토어 업로드용 `extension/dist-store/`를 생성합니다. 이 빌드의 `manifest.json`에는 `key`가 없습니다. `dist-store/` **안의 파일들**을 ZIP 루트에 압축해 Chrome 웹 스토어에 업로드하세요. 기존 `dist-production/`과 이전 ZIP은 공개 키가 들어 있을 수 있으므로 업로드하지 마세요. 스토어에서 부여한 확장 프로그램 ID를 운영 서버의 `BROWSER_EXTENSION_IDS`에 추가하고 백엔드를 재시작해야 로그인할 수 있습니다.
 
-기존 0.1.0 운영 ZIP은 공개 키가 없어서 설치 경로마다 ID가 달랐습니다. 0.1.1을 설치할 때는 기존 확장 프로그램을 제거하고 새 ZIP을 압축 해제해 로드하세요. 기존 확장 프로그램의 로그인·방 선택 상태는 이전되지 않습니다. 공개 키의 원본 개인 키 `production-signing.pem`은 Git에서 제외하며 안전하게 보관해야 합니다. Chrome 웹 스토어로 게시할 때는 스토어가 부여한 ID와 일치하는 공개 키를 사용해야 합니다.
+Windows에서는 `extension/`에서 다음처럼 압축합니다. 스토어에 이미 같은 버전을 업로드했다면 먼저 `build.mjs`와 `package.json`의 버전을 올려야 합니다.
 
-현재 운영 서버가 HTTP만 제공하므로 이 빌드도 HTTP로 통신합니다. 로그인 토큰과 API 요청이 네트워크에서 암호화되지 않으므로 HTTPS 적용 후 운영 주소를 다시 바꾸는 것이 좋습니다. 운영 서버의 `DISCORD_REDIRECT_URI`와 Discord Developer Portal Redirect URI를 `http://bside.whitekw.com/api/auth/discord/callback`으로 맞추고, `AUTH_COOKIE_SECURE=false`를 설정합니다. Discord 비밀키와 YouTube API 키는 확장 프로그램에 넣지 않습니다.
+```powershell
+Compress-Archive -Path .\dist-store\* -DestinationPath .\B-SIDE-Extension-Store-0.1.1.zip
+```
+
+GitHub 릴리즈 등에서 기존 고정 ID의 압축해제 설치본을 배포하려면 `npm run build:unpacked`를 실행하세요. 이 빌드는 `extension/dist-unpacked/`에 공개 키를 넣어 기존 ID **`bdobkhgdalimhnpgkhlbghgjafaapfgo`**를 유지합니다. 스토어 업로드용 ZIP과 섞지 마세요. 스토어가 부여한 ID가 이 ID와 다르면 `BROWSER_EXTENSION_IDS`에 두 ID를 쉼표로 구분해 등록할 수 있습니다. 개인 키 `production-signing.pem`은 Git에서 제외하고 안전하게 보관하세요.
+
+운영 서버의 `DISCORD_REDIRECT_URI`와 Discord Developer Portal Redirect URI를 `https://bside.whitekw.com/api/auth/discord/callback`으로 맞추고, `AUTH_COOKIE_SECURE=true`를 설정합니다. 운영 주소가 HTTPS로 바뀌면 확장 프로그램도 다시 빌드해 설치하거나 스토어에 업데이트해야 합니다. Discord 비밀키와 YouTube API 키는 확장 프로그램에 넣지 않습니다.
 
 확장 프로그램의 코드가 바뀌면 새 패키지를 빌드·배포해야 합니다. 서버 API 구현만 바뀌면 기존 확장 프로그램은 재설치할 필요가 없습니다.
 
