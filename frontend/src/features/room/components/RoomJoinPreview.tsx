@@ -40,6 +40,7 @@ export function RoomJoinPreview({
   const { enabled: loginEnabled, loginUrl } = useAuth()
   const onlineCount = room.participants.filter((participant) => participant.online).length
   const song = room.currentSong
+  const guestJoinBlocked = !user && !room.allowGuests && !participantError
 
   return (
     <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_30%_50%,rgba(96,72,163,.13),transparent_40%)] px-4">
@@ -97,18 +98,18 @@ export function RoomJoinPreview({
           <form className="rounded-[22px] border border-purple/25 bg-[#191620] p-6 shadow-[0_24px_80px_rgba(0,0,0,.2)] sm:p-8" onSubmit={onJoin}>
             <span className={sectionKickerStyles}>JOIN THE ROOM</span>
             <h2 className="mt-3 text-[23px] font-bold leading-snug tracking-[-0.035em]">
-              {!user && !room.allowGuests
-                ? t('roomSettings.loginRequiredTitle')
-                : participantError
+              {participantError
                 ? t('room.participationRestoreFailed')
+                : guestJoinBlocked
+                ? t('roomSettings.loginRequiredTitle')
                 : user ? t('room.previewJoinAs', { nickname: user.displayName }) : t('room.askNickname')}
             </h2>
-            {!user && !room.allowGuests ? (
-              <p className="mt-5 text-sm leading-6 text-muted">{t('roomSettings.loginRequiredHint')}</p>
-            ) : participantError ? (
+            {participantError ? (
               <p className="mt-5 text-sm text-danger" role="alert">
                 {getErrorMessage(participantError, t)}
               </p>
+            ) : guestJoinBlocked ? (
+              <p className="mt-5 text-sm leading-6 text-muted">{t('roomSettings.loginRequiredHint')}</p>
             ) : !user ? (
               <div className="mt-7">
                 <label className="mb-2 block text-xs font-bold text-muted" htmlFor="nickname">
@@ -129,7 +130,7 @@ export function RoomJoinPreview({
             {joinError && (
               <p className="mt-4 text-sm text-danger" role="alert">{joinError}</p>
             )}
-            {(user || room.allowGuests) && <button
+            {!guestJoinBlocked && <button
               className={cn(
                 buttonStyles({ intent: 'primary', size: 'lg', spread: true, fullWidth: true }),
                 'mt-5',
@@ -146,12 +147,12 @@ export function RoomJoinPreview({
             {!user && loginEnabled && (
               <p className="mt-4 text-center text-sm">
                 <a
-                  className={room.allowGuests
+                  className={!guestJoinBlocked
                     ? 'text-muted underline decoration-purple/50 underline-offset-4 transition-colors hover:text-purple-light focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light'
                     : cn(buttonStyles({ intent: 'primary', size: 'lg', fullWidth: true }), 'justify-center')}
                   href={loginUrl(`/room/${room.code}`)}
                 >
-                  {room.allowGuests ? t('room.previewLoginInstead') : t('auth.loginWithDiscord')}
+                  {!guestJoinBlocked ? t('room.previewLoginInstead') : t('auth.loginWithDiscord')}
                 </a>
               </p>
             )}
