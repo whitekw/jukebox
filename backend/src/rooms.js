@@ -923,7 +923,7 @@ function createRoomService(db, options = {}) {
     })
   }
 
-  function advanceCompletedAllDeviceRooms() {
+  function advanceCompletedAllDeviceRooms(isRoomActive = () => true) {
     const checkedAt = now()
     const advancedRooms = []
 
@@ -933,6 +933,7 @@ function createRoomService(db, options = {}) {
         if (
           room.playback_mode !== 'all_devices' ||
           room.playback_paused ||
+          room.playback_pending ||
           !room.current_song_id
         ) {
           return null
@@ -941,14 +942,24 @@ function createRoomService(db, options = {}) {
         const currentSong = db
           .prepare('SELECT duration_seconds FROM songs WHERE id = ?')
           .get(room.current_song_id)
-        if (
-          !currentSong ||
-          getPlaybackPosition(room, checkedAt) < Number(currentSong.duration_seconds)
-        ) {
-          return null
+        if (!currentSong) return null
+
+        const position = getPlaybackPosition(room, checkedAt)
+        if (position >= Number(currentSong.duration_seconds)) {
+          return advanceRoom(room, candidate.code, checkedAt)
         }
 
-        return advanceRoom(room, candidate.code, checkedAt)
+        if (!isRoomActive(candidate.code)) {
+          db.prepare(
+            `UPDATE rooms
+             SET playback_pending = 1, playback_position_seconds = ?,
+                 playback_anchor_at = ?, playback_revision = playback_revision + 1
+             WHERE id = ?`,
+          ).run(position, checkedAt, room.id)
+          return getPublicRoom(candidate.code)
+        }
+
+        return null
       })
       if (advanced) advancedRooms.push(advanced)
     }
@@ -1151,7 +1162,10 @@ function createRoomService(db, options = {}) {
       }
 
       const changedAt = now()
-      const boundedPosition = Math.min(position, Number(currentSong.duration_seconds))
+      const boundedPosition = Math.min(
+        Math.max(position, Number(room.playback_position_seconds)),
+        Number(currentSong.duration_seconds),
+      )
       db.prepare(
         `UPDATE rooms
          SET playback_pending = 0, playback_paused = 0, playback_blocked = 0,
@@ -1266,9 +1280,20 @@ function createRoomService(db, options = {}) {
   }
 
   function markAllParticipantsOffline() {
-    db.prepare(
-      'UPDATE participants SET offline_since = ? WHERE left_at IS NULL',
-    ).run(now())
+    transaction(db, () => {
+      db.prepare(
+        'UPDATE participants SET offline_since = ? WHERE left_at IS NULL',
+      ).run(now())
+      // After a restart no browser is playing. Keep the last stored position
+      // until a participant actually starts the video again.
+      db.prepare(
+        `UPDATE rooms
+         SET playback_pending = 1, playback_anchor_at = ?,
+             playback_revision = playback_revision + 1
+         WHERE playback_mode = 'all_devices' AND current_song_id IS NOT NULL
+           AND playback_paused = 0 AND playback_pending = 0`,
+      ).run(now())
+    })
   }
 
   function markParticipantOnline(code, participantId) {

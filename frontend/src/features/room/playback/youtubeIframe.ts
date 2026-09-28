@@ -74,3 +74,13 @@ export function getLoadedVideoId(player: YTPlayer) {
     return ''
   }
 }
+
+export function shouldReloadMismatchedVideo(
+  expectedVideoId: string,
+  loadedVideoId: string,
+  buffering: boolean,
+  millisecondsSinceLoad: number,
+) {
+  if (!loadedVideoId || loadedVideoId === expectedVideoId) return false
+  return millisecondsSinceLoad >= (buffering ? 8_000 : 2_000)
+}

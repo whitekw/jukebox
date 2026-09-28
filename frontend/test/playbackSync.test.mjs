@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { expectedPlaybackPosition } from '../src/features/room/playback/playbackSync.ts'
+import {
+  expectedPlaybackPosition,
+  shouldReportPendingPlaybackStart,
+} from '../src/features/room/playback/playbackSync.ts'
 
 const synchronization = {
   positionSeconds: 12,
@@ -24,4 +27,14 @@ test('stays at the anchor position while paused or pending', () => {
 
 test('does not seek backwards when the local clock precedes the anchor', () => {
   assert.equal(expectedPlaybackPosition(synchronization, false, 9_000), 12)
+})
+
+test('an already-playing player acknowledges each new pending revision once', () => {
+  const pending = { ...synchronization, pending: true, revision: 2 }
+  assert.equal(shouldReportPendingPlaybackStart(pending, 1, true, false), true)
+  assert.equal(shouldReportPendingPlaybackStart(pending, 2, true, false), false)
+  assert.equal(shouldReportPendingPlaybackStart({ ...pending, revision: 3 }, 2, true, false), true)
+  assert.equal(shouldReportPendingPlaybackStart(pending, 1, false, false), false)
+  assert.equal(shouldReportPendingPlaybackStart(pending, 1, true, true), false)
+  assert.equal(shouldReportPendingPlaybackStart(synchronization, 1, true, false), false)
 })

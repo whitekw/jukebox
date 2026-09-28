@@ -145,7 +145,7 @@ export function ParticipantsMenu({
             </span>
           </div>
 
-          <ul className="m-0 flex max-h-[320px] list-none flex-col gap-1 overflow-y-auto p-0">
+          <ul className="m-0 flex max-h-[320px] list-none flex-col gap-1 overflow-y-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {[...onlineParticipants, ...offlineMembers].map((roomParticipant, index) => {
               const isCurrent = roomParticipant.id === currentParticipantId
               const canSetManager = Boolean(onSetManager && roomParticipant.isMember)

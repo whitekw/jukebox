@@ -5,7 +5,7 @@ import {
   readPlayerAudioSettings,
   writePlayerAudioSettings,
 } from '../src/features/room/playback/playerAudioSettings.ts'
-import { getLoadedVideoId } from '../src/features/room/playback/youtubeIframe.ts'
+import { getLoadedVideoId, shouldReloadMismatchedVideo } from '../src/features/room/playback/youtubeIframe.ts'
 
 test('clamps volume and falls back when saved audio settings are invalid', () => {
   const originalWindow = globalThis.window
@@ -32,4 +32,13 @@ test('extracts the currently loaded YouTube video ID', () => {
     'abc123',
   )
   assert.equal(getLoadedVideoId({ getVideoUrl: () => '' }), '')
+})
+
+test('retries a stale video without interrupting an in-progress transition', () => {
+  assert.equal(shouldReloadMismatchedVideo('new', '', false, 10_000), false)
+  assert.equal(shouldReloadMismatchedVideo('new', 'new', false, 10_000), false)
+  assert.equal(shouldReloadMismatchedVideo('new', 'old', false, 1_000), false)
+  assert.equal(shouldReloadMismatchedVideo('new', 'old', false, 2_000), true)
+  assert.equal(shouldReloadMismatchedVideo('new', 'old', true, 3_000), false)
+  assert.equal(shouldReloadMismatchedVideo('new', 'old', true, 8_000), true)
 })

@@ -722,7 +722,9 @@ cleanupTimer.unref()
 
 const playbackTimer = setInterval(() => {
   try {
-    for (const state of rooms.advanceCompletedAllDeviceRooms()) {
+    for (const state of rooms.advanceCompletedAllDeviceRooms(
+      (code) => presence.getParticipantIds(code).size > 0,
+    )) {
       emitRoom(state.code, state)
     }
   } catch (error) {
