@@ -3,6 +3,7 @@ import { useI18n, type Translate } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 import {
   expectedPlaybackPosition,
+  shouldReportPendingPlaybackStart,
   type PlaybackSynchronization,
 } from './playbackSync'
 import {
@@ -30,7 +31,7 @@ type PlaybackSession = {
   videoId: string
   loadedAt: number
   started: boolean
-  startReported: boolean
+  reportedPendingRevision: number | null
   ended: boolean
 }
 
@@ -78,13 +79,14 @@ export function YouTubePlayer({
     videoId,
     loadedAt: performance.now(),
     started: false,
-    startReported: false,
+    reportedPendingRevision: null,
     ended: false,
   })
   const transitionRetryTimerRef = useRef<number | null>(null)
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
   const [playbackError, setPlaybackError] = useState<number | null>(null)
   const synchronizationRevision = synchronization?.revision
+  const synchronizationPending = synchronization?.pending
   synchronizationRef.current = synchronization
 
   function applyPlayerAudioSettings(player: YTPlayer) {
@@ -129,7 +131,7 @@ export function YouTubePlayer({
   function loadSessionVideo(player: YTPlayer, session: PlaybackSession) {
     session.loadedAt = performance.now()
     session.started = false
-    session.startReported = false
+    session.reportedPendingRevision = null
     session.ended = false
     setPlaybackError(null)
     const loadOptions = {
@@ -145,6 +147,31 @@ export function YouTubePlayer({
       requestedPausedStateRef.current = false
       player.loadVideoById(loadOptions)
     }
+  }
+
+  function reportPlayingSession(
+    player: YTPlayer,
+    session: PlaybackSession,
+    isPlaying: boolean,
+  ) {
+    const synchronization = synchronizationRef.current
+    if (
+      session.videoId !== videoIdRef.current ||
+      !onPlaybackStartedRef.current ||
+      !shouldReportPendingPlaybackStart(
+        synchronization,
+        session.reportedPendingRevision,
+        isPlaying,
+        pausedRef.current || locallyPausedRef.current,
+      )
+    ) {
+      return
+    }
+
+    const position = player.getCurrentTime()
+    if (!Number.isFinite(position) || position < 0) return
+    session.reportedPendingRevision = synchronization?.revision ?? null
+    onPlaybackStartedRef.current(session.videoId, position)
   }
 
   function alignPlayer(player: YTPlayer, forceSeek: boolean) {
@@ -191,7 +218,7 @@ export function YouTubePlayer({
       videoId,
       loadedAt: performance.now(),
       started: false,
-      startReported: false,
+      reportedPendingRevision: null,
       ended: false,
     }
     playbackSessionRef.current = session
@@ -289,14 +316,20 @@ export function YouTubePlayer({
     if (!synchronizationRef.current) return
     const player = playerRef.current
     const session = playbackSessionRef.current
-    if (player && session.videoId === videoIdRef.current && session.started) {
-      // 새 곡이 실제로 재생되었다는 확인 응답도 revision을 변경한다.
-      // 이때 현재 위치가 이미 서버 타임라인과 맞는데 강제로 seek하면 곡의
-      // 첫 부분이 잠깐 재생된 뒤 다시 들리는 현상이 생기므로, 실제 drift가
-      // 허용 범위를 넘었을 때만 위치를 보정한다.
-      alignPlayer(player, false)
+    if (player && playerReadyRef.current && session.videoId === videoIdRef.current) {
+      const isPlaying = player.getPlayerState() === YOUTUBE_STATE_PLAYING
+      if (isPlaying) session.started = true
+      const loadedVideoId = getLoadedVideoId(player)
+      if (!loadedVideoId || loadedVideoId === session.videoId) {
+        reportPlayingSession(player, session, isPlaying)
+      }
+      if (session.started) {
+        // 새 곡이 실제로 재생되었다는 확인 응답도 revision을 변경한다.
+        // 현재 위치가 이미 서버 타임라인과 맞으면 강제로 seek하지 않는다.
+        alignPlayer(player, false)
+      }
     }
-  }, [synchronizationRevision])
+  }, [synchronizationRevision, synchronizationPending])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -405,16 +438,6 @@ export function YouTubePlayer({
             if (event.data === YOUTUBE_STATE_PLAYING) {
               if (session.videoId === videoIdRef.current) {
                 session.started = true
-                if (
-                  synchronizationRef.current?.pending &&
-                  !session.startReported
-                ) {
-                  session.startReported = true
-                  onPlaybackStartedRef.current?.(
-                    session.videoId,
-                    Math.max(0, event.target.getCurrentTime()),
-                  )
-                }
               }
               if (transitionRetryTimerRef.current !== null) {
                 window.clearTimeout(transitionRetryTimerRef.current)
@@ -442,6 +465,7 @@ export function YouTubePlayer({
                 requestedPausedStateRef.current = false
                 alignPlayer(event.target, true)
               }
+              reportPlayingSession(event.target, session, true)
             }
             if (
               event.data === YOUTUBE_STATE_PLAYING ||
@@ -531,7 +555,7 @@ export function YouTubePlayer({
                   videoId: videoIdRef.current,
                   loadedAt: performance.now(),
                   started: false,
-                  startReported: false,
+                  reportedPendingRevision: null,
                   ended: false,
                 }
                 playbackSessionRef.current = session
