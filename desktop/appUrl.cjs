@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = 'http://bside.whitekw.com'
+const DEFAULT_SITE_URL = 'https://bside.whitekw.com'
 
 function siteOrigin(value = DEFAULT_SITE_URL) {
   const url = new URL(value)

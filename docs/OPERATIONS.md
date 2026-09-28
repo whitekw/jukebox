@@ -17,21 +17,21 @@
 | `DATABASE_PATH` | `./data/jukebox.sqlite` | 선택 | SQLite 파일 경로 |
 | `PARTICIPANT_LEAVE_GRACE_MS` | `5000` | 선택 | 마지막 연결 종료 후 참여자를 오프라인 처리하기까지의 유예 시간(ms) |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
-| `TRUST_PROXY` | `false` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
+| `TRUST_PROXY` | 백엔드 기본값 `false`, Compose 기본값 `true` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
 | `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
 | `DISCORD_CLIENT_ID` | 없음 | 방 생성에 필수 | Discord 애플리케이션 Client ID |
 | `DISCORD_CLIENT_SECRET` | 없음 | 방 생성에 필수 | 서버에서만 사용하는 Discord Client Secret |
 | `DISCORD_REDIRECT_URI` | 없음 | 방 생성에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
 | `BROWSER_EXTENSION_IDS` | 없음 | Chrome 확장 프로그램 사용 시 필수 | 허용할 확장 프로그램 ID, 여러 개면 쉼표로 구분 |
 | `AUTH_SESSION_TTL_DAYS` | `30` | 선택 | 로그인 세션 고정 수명(일) |
-| `AUTH_COOKIE_SECURE` | 백엔드 production 기본값 `true`, 현재 Compose 기본값 `false` | HTTP 운영 시 `false` | 로그인 쿠키의 `Secure` 속성 |
+| `AUTH_COOKIE_SECURE` | 백엔드 production 및 Compose 기본값 `true` | HTTPS 운영에서 `true` | 로그인 쿠키의 `Secure` 속성 |
 
 YouTube API 키는 프런트 코드나 `VITE_*` 환경 변수에 넣지 않습니다.
 Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설정값이 모두 있어야 로그인과 새 방 생성이 가능합니다. 기존 방 참여는 로그인 없이도 가능합니다.
 
-Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, 현재 HTTP 운영 환경에서는 `http://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다. HTTP 운영에서는 `AUTH_COOKIE_SECURE=false`가 필요하며, HTTPS 전환 시 callback 주소와 쿠키 설정을 함께 변경합니다.
+Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, HTTPS 운영 시 `https://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다. HTTP에서 전환할 때는 HTTPS callback을 먼저 추가한 다음 Portainer의 `DISCORD_REDIRECT_URI`를 변경하고, 로그인 확인 후 기존 HTTP callback을 제거합니다. HTTPS 운영에서는 `AUTH_COOKIE_SECURE=true`를 사용합니다.
 
-Chrome 확장 프로그램은 [`extension/README.md`](../extension/README.md)의 설치 절차를 따릅니다. OAuth의 Discord callback은 기존 `DISCORD_REDIRECT_URI`를 그대로 사용하며, 완료 후 허용된 `https://{확장 ID}.chromiumapp.org/bside`로 일회용 코드만 보냅니다. 현재 운영 빌드는 `http://bside.whitekw.com`에 접속하므로 확장 프로그램의 로그인 토큰도 HTTP로 전송됩니다. 공개 HTTPS 적용을 권장합니다.
+Chrome 확장 프로그램은 [`extension/README.md`](../extension/README.md)의 설치 절차를 따릅니다. OAuth의 Discord callback은 `DISCORD_REDIRECT_URI`를 사용하며, 완료 후 허용된 `https://{확장 ID}.chromiumapp.org/bside`로 일회용 코드만 보냅니다. HTTPS 전환 시 확장 프로그램도 `https://bside.whitekw.com`을 대상으로 다시 빌드해야 합니다.
 
 ## 3. 로컬 개발
 

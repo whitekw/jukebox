@@ -12,7 +12,7 @@ npm ci
 npm start
 ```
 
-Electron 실행 파일이 아직 내려받아지지 않았다면 처음 실행 시 자동으로 받습니다. 개발 서버를 사용하려면 실행 전에 `$env:BSIDE_APP_URL = 'http://localhost:5173'`을 설정하세요. 기본 주소는 `http://bside.whitekw.com`입니다.
+Electron 실행 파일이 아직 내려받아지지 않았다면 처음 실행 시 자동으로 받습니다. 개발 서버를 사용하려면 실행 전에 `$env:BSIDE_APP_URL = 'http://localhost:5173'`을 설정하세요. 기본 주소는 `https://bside.whitekw.com`입니다. 기존 HTTP 주소로 빌드한 설치 앱은 HTTPS 전환 후 새 설치 파일로 업데이트해야 합니다.
 
 설치 파일을 만들려면:
 
