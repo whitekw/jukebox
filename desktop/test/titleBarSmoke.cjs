@@ -4,6 +4,11 @@ async function runTitleBarSmoke(window, customTitleBar) {
   const page = (script) => window.webContents.executeJavaScript(script)
   const state = await page('({ title: document.title, bridge: typeof window.bsideDesktop })')
   if (!customTitleBar) return state
+  // Render the native window so Chromium dispatches viewport changes during
+  // zoom tests. Keep it off screen without taking focus from the user's app.
+  window.webContents.setBackgroundThrottling(false)
+  window.setPosition(-10000, -10000)
+  window.showInactive()
 
   const read = () => page(`({
     fallbackVisible: !document.getElementById('bside-titlebar-fallback').hidden,
@@ -73,6 +78,18 @@ async function runTitleBarSmoke(window, customTitleBar) {
   // Responsive headers resize native controls without covering the content.
   await page("document.querySelector('header').style.height = '96px'")
   await waitFor({ overlayHeight: 95 })
+  for (const factor of [0.5, 0.75, 0.9, 1.25, 1.5, 1]) {
+    window.webContents.setZoomFactor(factor)
+    await waitFor({ overlayHeight: Math.ceil(Math.floor(95 * factor) / factor) })
+    const geometry = await page(`({
+      overlay: navigator.windowControlsOverlay.getTitlebarAreaRect().height,
+      header: document.querySelector('header').clientHeight,
+    })`)
+    assert.ok(geometry.overlay <= geometry.header,
+      `Caption controls protrude at zoom ${factor}: ${JSON.stringify(geometry)}`)
+    assert.ok(geometry.header - geometry.overlay <= Math.ceil(1 / factor),
+      `Caption controls are too short at zoom ${factor}: ${JSON.stringify(geometry)}`)
+  }
   // Client-side route changes retain the same renderer and header observer.
   // Resetting native controls here would leave them stuck at fallback height.
   await page("history.pushState({}, '', '/room/ABC234')")
@@ -82,6 +99,10 @@ async function runTitleBarSmoke(window, customTitleBar) {
   await page("document.querySelector('header').remove()")
   await waitFor({ fallbackVisible: true, fallback: true, overlayHeight: 48 })
   await assertFitsViewport()
+  window.webContents.setZoomFactor(0.9)
+  await waitFor({ overlayHeight: Math.ceil(Math.floor(48 * 0.9) / 0.9) })
+  window.webContents.setZoomFactor(1)
+  await waitFor({ overlayHeight: 48 })
   return state
 }
 

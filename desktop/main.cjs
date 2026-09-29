@@ -96,7 +96,10 @@ if (!app.requestSingleInstanceLock()) {
         || event.senderFrame !== mainWindow.webContents.mainFrame
         || !isAllowedNavigation(event.senderFrame.url, siteUrl)
         || !Number.isInteger(height) || height < 48 || height > 144) return
-      mainWindow.setTitleBarOverlay({ height })
+      // DOM measurements are CSS pixels; native caption controls use DIP.
+      // Page zoom changes their ratio independently of Windows display scaling.
+      const nativeHeight = Math.floor(height * event.sender.getZoomFactor())
+      mainWindow.setTitleBarOverlay({ height: nativeHeight })
     })
     mainWindow.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (customTitleBar && isMainFrame && !inPlace) mainWindow.setTitleBarOverlay({ height: 48 })

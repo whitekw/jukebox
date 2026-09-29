@@ -75,10 +75,17 @@ if (process.argv.includes('--bside-custom-titlebar') && process.isMainFrame) {
     }
     const observer = new MutationObserver(syncHeader)
     observer.observe(document.body, { childList: true, subtree: true })
+    // A fixed CSS header can keep the same clientHeight when zoom changes.
+    const onViewportResize = () => {
+      lastHeight = 0
+      updateHeight()
+    }
+    window.addEventListener('resize', onViewportResize)
     syncHeader()
     window.addEventListener('pagehide', () => {
       observer.disconnect()
       resizeObserver.disconnect()
+      window.removeEventListener('resize', onViewportResize)
     }, { once: true })
   }, { once: true })
 }
