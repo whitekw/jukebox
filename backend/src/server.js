@@ -17,6 +17,7 @@ const { getLocaleConfig } = require('./locale')
 const { createRoomPresence } = require('./presence')
 const { createRateLimiter } = require('./rate-limit')
 const { createRoomService, normalizeCode } = require('./rooms')
+const { createLibraryService } = require('./library')
 const { createYouTubeService } = require('./youtube')
 
 const port = Number(process.env.PORT ?? 3001)
@@ -49,6 +50,7 @@ const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
 const rooms = createRoomService(db)
+const library = createLibraryService(db)
 rooms.markAllParticipantsOffline()
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
 const auth = createDiscordAuth(db, {
@@ -213,6 +215,12 @@ function asyncRoute(handler) {
 function requestAuthUser(req) {
   const cookies = parseCookies(req.get('cookie'))
   return auth.getSessionUser(cookies[authSessionCookie])
+}
+
+function requireAuthUser(req) {
+  const user = requestAuthUser(req)
+  if (!user) throw new AppError(401, '로그인이 필요합니다.', 'AUTH_REQUIRED')
+  return user
 }
 
 function controlCredentials(req) {
@@ -438,6 +446,27 @@ app.post('/api/rooms', mutationLimiter, (req, res) => {
     avatarUrl: user.avatarUrl,
   })
   res.status(201).json(created)
+})
+
+app.get('/api/me/playlists', (req, res) => {
+  const user = requireAuthUser(req)
+  const videoId = typeof req.query.videoId === 'string' ? req.query.videoId : null
+  res.json({ items: library.list(user.id, videoId) })
+})
+
+app.post('/api/me/playlists', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.status(201).json(library.create(user.id, req.body?.name))
+})
+
+app.put('/api/me/playlists/:playlistId/tracks', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.json(library.addTrack(user.id, req.params.playlistId, req.body?.roomSongId))
+})
+
+app.delete('/api/me/playlists/:playlistId/tracks/:videoId', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.json(library.removeTrack(user.id, req.params.playlistId, req.params.videoId))
 })
 
 app.get('/api/rooms/owned', (req, res) => {

@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -115,6 +115,31 @@ function createDatabase(databasePath = ':memory:') {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS library_tracks (
+      video_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      thumbnail_url TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('favorites', 'custom')),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS playlist_tracks (
+      playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+      video_id TEXT NOT NULL REFERENCES library_tracks(video_id),
+      added_at INTEGER NOT NULL,
+      PRIMARY KEY (playlist_id, video_id)
+    );
+
     CREATE TABLE IF NOT EXISTS room_feed_entries (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       id TEXT NOT NULL UNIQUE,
@@ -142,6 +167,12 @@ function createDatabase(databasePath = ':memory:') {
       WHERE user_id IS NOT NULL AND left_at IS NULL;
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
       ON songs(room_id, status, position);
+    CREATE INDEX IF NOT EXISTS playlists_by_owner_updated
+      ON playlists(owner_user_id, updated_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS one_favorites_playlist_per_user
+      ON playlists(owner_user_id) WHERE kind = 'favorites';
+    CREATE INDEX IF NOT EXISTS playlist_tracks_by_playlist_added
+      ON playlist_tracks(playlist_id, added_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS active_video_per_room
       ON songs(room_id, video_id)
       WHERE status IN ('queued', 'current');

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 import { expectedPlaybackPosition, type PlaybackSynchronization } from '../playback/playbackSync'
 import type { PlayerAudioSettings } from '../playback/playerAudioSettings'
 import type { Song } from '../types'
+import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 
 type RoomPlaybackBarProps = {
   song: Song | null
@@ -31,6 +32,7 @@ export function RoomPlaybackBar({
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
   const [now, setNow] = useState(() => Date.now())
+  const [saveSongId, setSaveSongId] = useState<string | null>(null)
   const songId = song?.id
   useEffect(() => {
     if (!songId) return
@@ -75,7 +77,7 @@ export function RoomPlaybackBar({
               <Music2 size={20} />
             </div>
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="m-0 truncate text-sm font-bold text-ink" title={song?.title}>
               {song?.title ?? t('status.waiting')}
             </h1>
@@ -83,6 +85,17 @@ export function RoomPlaybackBar({
               {song?.artist ?? t('nowPlaying.empty')}
             </p>
           </div>
+          {song && (
+            <button
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light"
+              type="button"
+              aria-label={t('library.addToPlaylist')}
+              title={t('library.addToPlaylist')}
+              onClick={() => setSaveSongId(song.id)}
+            >
+              <CirclePlus size={21} aria-hidden="true" />
+            </button>
+          )}
         </div>
         {(onGlobalPlaybackToggle || onAdvance) && song && (
           <div className="flex shrink-0 items-center gap-2">
@@ -136,6 +149,7 @@ export function RoomPlaybackBar({
           </div>
         )}
       </div>
+      {song && saveSongId === song.id && <SaveToPlaylistDialog key={song.id} song={song} onClose={() => setSaveSongId(null)} />}
     </footer>
   )
 }
