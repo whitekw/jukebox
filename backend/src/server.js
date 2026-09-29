@@ -464,6 +464,16 @@ app.post('/api/me/playlists', mutationLimiter, (req, res) => {
   res.status(201).json(library.create(user.id, req.body?.name))
 })
 
+app.patch('/api/me/playlists/:playlistId', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.json(library.rename(user.id, req.params.playlistId, req.body?.name))
+})
+
+app.delete('/api/me/playlists/:playlistId', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.json(library.remove(user.id, req.params.playlistId))
+})
+
 app.put('/api/me/playlists/:playlistId/tracks', mutationLimiter, (req, res) => {
   const user = requireAuthUser(req)
   res.json(library.addTrack(user.id, req.params.playlistId, req.body?.roomSongId))

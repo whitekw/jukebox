@@ -44,3 +44,40 @@ test('saves one video in multiple user playlists without changing room history',
     db.close()
   }
 })
+
+test('renames and deletes only owned custom playlists while preserving other collections', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('user-1', 'discord-1', 'Alice', 1, 1, 1), ('user-2', 'discord-2', 'Bob', 1, 1, 1)`).run()
+    db.prepare(`INSERT INTO rooms (id, code, host_token_hash, created_at)
+      VALUES ('room-1', 'ABC123', '', 1)`).run()
+    db.prepare(`INSERT INTO participants (id, room_id, token_hash, nickname, created_at)
+      VALUES ('participant-1', 'room-1', 'token', 'Requester', 1)`).run()
+    db.prepare(`INSERT INTO songs
+      (id, room_id, video_id, title, artist, duration_seconds, thumbnail_url, added_by, status, position, created_at)
+      VALUES ('song-1', 'room-1', 'abcdefghijk', 'Title', 'Artist', 180, 'https://example.com/cover',
+        'participant-1', 'played', 0, 1)`).run()
+
+    const library = createLibraryService(db)
+    const favorites = library.list('user-1')[0]
+    const custom = library.create('user-1', 'Old name')
+    library.addTrack('user-1', favorites.id, 'song-1')
+    library.addTrack('user-1', custom.id, 'song-1')
+
+    assert.throws(() => library.rename('user-2', custom.id, 'Other'), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.throws(() => library.remove('user-2', custom.id), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.throws(() => library.rename('user-1', favorites.id, 'Other'), { code: 'PLAYLIST_IMMUTABLE' })
+    assert.throws(() => library.remove('user-1', favorites.id), { code: 'PLAYLIST_IMMUTABLE' })
+    assert.throws(() => library.rename('user-1', custom.id, '  '), { code: 'INVALID_PLAYLIST_NAME' })
+    assert.equal(library.rename('user-1', custom.id, '  New name  ').name, 'New name')
+    assert.equal(library.list('user-1').find(({ id }) => id === custom.id).name, 'New name')
+
+    assert.deepEqual(library.remove('user-1', custom.id), { deleted: true })
+    assert.throws(() => library.listTracks('user-1', custom.id), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.equal(library.list('user-1')[0].trackCount, 1)
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM library_tracks').get().count, 1)
+  } finally {
+    db.close()
+  }
+})

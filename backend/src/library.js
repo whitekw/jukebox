@@ -22,10 +22,26 @@ function createLibraryService(db) {
 
   function requireOwnedPlaylist(userId, playlistId) {
     const playlist = db.prepare(
-      'SELECT id FROM playlists WHERE id = ? AND owner_user_id = ?',
+      'SELECT id, kind FROM playlists WHERE id = ? AND owner_user_id = ?',
     ).get(playlistId, userId)
     if (!playlist) throw new AppError(404, '플레이리스트를 찾지 못했습니다.', 'PLAYLIST_NOT_FOUND')
     return playlist
+  }
+
+  function requireCustomPlaylist(userId, playlistId) {
+    const playlist = requireOwnedPlaylist(userId, playlistId)
+    if (playlist.kind !== 'custom') {
+      throw new AppError(403, '기본 플레이리스트는 변경할 수 없습니다.', 'PLAYLIST_IMMUTABLE')
+    }
+    return playlist
+  }
+
+  function validName(name) {
+    const trimmed = typeof name === 'string' ? name.trim() : ''
+    if (!trimmed || trimmed.length > 60) {
+      throw new AppError(400, '플레이리스트 이름은 1~60자로 입력해주세요.', 'INVALID_PLAYLIST_NAME')
+    }
+    return trimmed
   }
 
   function list(userId, videoId = null) {
@@ -69,10 +85,7 @@ function createLibraryService(db) {
   }
 
   function create(userId, name) {
-    const trimmed = typeof name === 'string' ? name.trim() : ''
-    if (!trimmed || trimmed.length > 60) {
-      throw new AppError(400, '플레이리스트 이름은 1~60자로 입력해주세요.', 'INVALID_PLAYLIST_NAME')
-    }
+    const trimmed = validName(name)
     const now = Date.now()
     const id = crypto.randomUUID()
     db.prepare(
@@ -80,6 +93,21 @@ function createLibraryService(db) {
        VALUES (?, ?, ?, 'custom', ?, ?)`,
     ).run(id, userId, trimmed, now, now)
     return { id, name: trimmed, kind: 'custom', updatedAt: now, trackCount: 0, containsTrack: false, thumbnailUrl: null }
+  }
+
+  function rename(userId, playlistId, name) {
+    requireCustomPlaylist(userId, playlistId)
+    const trimmed = validName(name)
+    const updatedAt = Date.now()
+    db.prepare('UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?')
+      .run(trimmed, updatedAt, playlistId)
+    return { id: playlistId, name: trimmed, updatedAt }
+  }
+
+  function remove(userId, playlistId) {
+    requireCustomPlaylist(userId, playlistId)
+    db.prepare('DELETE FROM playlists WHERE id = ?').run(playlistId)
+    return { deleted: true }
   }
 
   function addTrack(userId, playlistId, roomSongId) {
@@ -125,7 +153,7 @@ function createLibraryService(db) {
     })
   }
 
-  return { list, listTracks, create, addTrack, removeTrack }
+  return { list, listTracks, create, rename, remove, addTrack, removeTrack }
 }
 
 module.exports = { createLibraryService }

@@ -32,6 +32,17 @@ export const libraryApi = {
       body: JSON.stringify({ name }),
     })
   },
+  rename(playlistId: string, name: string) {
+    return request<{ id: string; name: string; updatedAt: number }>(`/api/me/playlists/${encodeURIComponent(playlistId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
+  },
+  remove(playlistId: string) {
+    return request<{ deleted: boolean }>(`/api/me/playlists/${encodeURIComponent(playlistId)}`, {
+      method: 'DELETE',
+    })
+  },
   addTrack(playlistId: string, roomSongId: string) {
     return request<{ videoId: string; added: boolean }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/tracks`, {
       method: 'PUT',

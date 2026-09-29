@@ -141,6 +141,8 @@ type RoomEvent = {
 | GET | `/api/me/playlists?videoId={videoId}` | 로그인 | 없음 | 내 플레이리스트 목록과 해당 영상의 포함 여부 |
 | GET | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 없음 | 목록에 저장한 곡 |
 | POST | `/api/me/playlists` | 로그인 | 변경 | 새 플레이리스트 |
+| PATCH | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 이름 변경 |
+| DELETE | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 삭제 |
 | PUT | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 변경 | 방 곡을 목록에 저장 |
 | DELETE | `/api/me/playlists/:playlistId/tracks/:videoId` | 로그인·목록 소유자 | 변경 | 목록에서 곡 제거 |
 | POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
@@ -492,6 +494,8 @@ position = playbackPositionSeconds
 `POST /api/me/playlists`는 `{ "name": "플레이리스트 이름" }`을 받으며 공백을 제거한 1~60자 이름을 요구합니다. `PUT /api/me/playlists/:playlistId/tracks`는 `{ "roomSongId": "방의 곡 ID" }`를 받아 서버에 저장된 곡 메타데이터와 영상 ID를 사용합니다. 같은 곡을 같은 목록에 다시 추가해도 중복되지 않으며, 다른 목록에는 독립적으로 저장됩니다. `DELETE /api/me/playlists/:playlistId/tracks/:videoId`는 해당 목록에서만 곡을 제거합니다. 두 변경 API는 `{ "videoId": "...", "added": true | false }`를 반환합니다. 다른 사용자의 목록은 `PLAYLIST_NOT_FOUND`로 응답합니다.
 
 `GET /api/me/playlists/:playlistId/tracks`는 최신 추가순으로 곡을 반환합니다. 각 항목에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있습니다.
+
+`PATCH /api/me/playlists/:playlistId`는 `{ "name": "새 이름" }`을 받아 공백을 제거한 1~60자 이름으로 바꾸고 `{ "id", "name", "updatedAt" }`을 반환합니다. `DELETE /api/me/playlists/:playlistId`는 목록과 곡 매핑만 삭제하고 `{ "deleted": true }`를 반환합니다. 다른 목록의 곡과 공통 곡 정보는 유지됩니다. 기본 `favorites` 목록은 두 API 모두 `PLAYLIST_IMMUTABLE`로 거부합니다.
 
 ## 11. Socket.IO 계약
 

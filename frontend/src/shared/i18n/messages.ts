@@ -93,6 +93,10 @@ export const ko = {
   'library.noPlaylists': '플레이리스트가 없습니다.',
   'library.emptyPlaylist': '이 플레이리스트에는 아직 곡이 없습니다.',
   'library.removeTrack': '{{title}} 플레이리스트에서 삭제',
+  'library.renamePlaylist': '이름 변경',
+  'library.deletePlaylist': '플레이리스트 삭제',
+  'library.deleteConfirm': '“{{name}}” 플레이리스트를 삭제할까요? 다른 플레이리스트의 곡은 그대로 남습니다.',
+  'library.saveName': '이름 저장',
   'library.trackCount': '{{count}}곡',
   'library.loginRequired': '곡을 저장하려면 로그인해주세요.',
   'collection.sampleFocus': '작업할 때',
@@ -292,6 +296,7 @@ export const ko = {
   'errors.INVALID_CHAT_MESSAGE': '메시지는 1~300자로 입력해주세요.',
   'errors.INVALID_PLAYLIST_NAME': '플레이리스트 이름은 1~60자로 입력해주세요.',
   'errors.PLAYLIST_NOT_FOUND': '플레이리스트를 찾지 못했습니다.',
+  'errors.PLAYLIST_IMMUTABLE': '기본 플레이리스트는 변경할 수 없습니다.',
   'errors.INVALID_LIBRARY_SONG': '저장할 곡을 선택해주세요.',
 } as const
 
@@ -392,6 +397,10 @@ export const ja = {
   'library.noPlaylists': 'プレイリストがありません。',
   'library.emptyPlaylist': 'このプレイリストにはまだ曲がありません。',
   'library.removeTrack': '{{title}}をプレイリストから削除',
+  'library.renamePlaylist': '名前を変更',
+  'library.deletePlaylist': 'プレイリストを削除',
+  'library.deleteConfirm': '「{{name}}」を削除しますか？他のプレイリストの曲はそのまま残ります。',
+  'library.saveName': '名前を保存',
   'library.trackCount': '{{count}}曲',
   'library.loginRequired': '曲を保存するにはログインしてください。',
   'collection.sampleFocus': '作業用',
@@ -591,6 +600,7 @@ export const ja = {
   'errors.INVALID_CHAT_MESSAGE': 'メッセージは1〜300文字で入力してください。',
   'errors.INVALID_PLAYLIST_NAME': 'プレイリスト名は1〜60文字で入力してください。',
   'errors.PLAYLIST_NOT_FOUND': 'プレイリストが見つかりません。',
+  'errors.PLAYLIST_IMMUTABLE': '標準のプレイリストは変更できません。',
   'errors.INVALID_LIBRARY_SONG': '保存する曲を選択してください。',
 } satisfies Record<TranslationKey, string>
 
@@ -689,6 +699,10 @@ export const en = {
   'library.noPlaylists': 'No playlists yet.',
   'library.emptyPlaylist': 'This playlist has no songs yet.',
   'library.removeTrack': 'Remove {{title}} from playlist',
+  'library.renamePlaylist': 'Rename playlist',
+  'library.deletePlaylist': 'Delete playlist',
+  'library.deleteConfirm': 'Delete “{{name}}”? Songs in other playlists will remain.',
+  'library.saveName': 'Save name',
   'library.trackCount': '{{count}} songs',
   'library.loginRequired': 'Log in to save songs.',
   'collection.sampleFocus': 'Focus',
@@ -888,6 +902,7 @@ export const en = {
   'errors.INVALID_CHAT_MESSAGE': 'Enter a message between 1 and 300 characters.',
   'errors.INVALID_PLAYLIST_NAME': 'Enter a playlist name between 1 and 60 characters.',
   'errors.PLAYLIST_NOT_FOUND': 'Playlist not found.',
+  'errors.PLAYLIST_IMMUTABLE': 'The default playlist cannot be changed.',
   'errors.INVALID_LIBRARY_SONG': 'Choose a song to save.',
 } satisfies Record<TranslationKey, string>
 

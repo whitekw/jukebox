@@ -447,6 +447,16 @@ export function RoomPage() {
                 onClose={closePlaylist}
                 onAddSong={participant ? addSong : undefined}
                 onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
+                onPlaylistRenamed={(name, updatedAt) => {
+                  setSelectedPlaylist((current) => current && current.playlist.id === activePlaylist.id
+                    ? { ...current, playlist: { ...current.playlist, name, updatedAt } }
+                    : current)
+                  setLibraryRevision((revision) => revision + 1)
+                }}
+                onPlaylistDeleted={() => {
+                  setSelectedPlaylist(null)
+                  setLibraryRevision((revision) => revision + 1)
+                }}
                 message={message}
                 roomError={error || roomError}
               />
