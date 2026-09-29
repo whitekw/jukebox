@@ -262,14 +262,14 @@ export function ChatPanel({
               />
               <button
                 className={cn(
-                  buttonStyles({ intent: 'primary', size: 'md' }),
-                  'size-11 min-h-11 shrink-0 px-0',
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'size-11 min-h-11 shrink-0 rounded-md border-0 bg-transparent px-0 text-purple-light hover:bg-purple/15',
                 )}
                 type="submit"
                 disabled={sending || draft.trim().length === 0}
                 aria-label={sending ? t('chat.sending') : t('chat.send')}
               >
-                <SendIcon size={20} />
+                <SendIcon size={20} aria-hidden="true" />
               </button>
             </form>
             {sendError !== null && (

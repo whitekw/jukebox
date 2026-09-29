@@ -76,11 +76,11 @@ export function HomePage() {
             {t('home.heroDescription')}
           </p>
           {!user ? (
-            <button className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 text-sm')} type="button" disabled={authLoading} onClick={() => setLoginPromptOpen(true)} aria-haspopup="dialog">
+            <button className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 rounded-md text-sm font-semibold')} type="button" disabled={authLoading} onClick={() => setLoginPromptOpen(true)} aria-haspopup="dialog">
               {t('home.create')} <ArrowRight size={18} aria-hidden="true" />
             </button>
           ) : (
-            <Link className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 text-sm')} to="/rooms/new">
+            <Link className={cn(buttonStyles({ intent: 'primary', size: 'lg' }), 'gap-6 rounded-md text-sm font-semibold')} to="/rooms/new">
               {t('home.create')} <ArrowRight size={18} aria-hidden="true" />
             </Link>
           )}

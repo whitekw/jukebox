@@ -26,7 +26,7 @@ import { NowPlaying } from '../components/NowPlaying'
 import { ChatPanel } from '../chat/ChatPanel'
 import { ParticipantsMenu } from '../components/ParticipantsMenu'
 import { QueuePanel } from '../components/QueuePanel'
-import { SearchPanel } from '../components/SearchPanel'
+import { SongRequestDialog } from '../components/SongRequestDialog'
 import { RoomPlaybackBar } from '../components/RoomPlaybackBar'
 import { CollectionsRail } from '../components/CollectionsRail'
 import { InviteRoomButton } from '../components/InviteRoomButton'
@@ -78,6 +78,7 @@ export function RoomPage() {
   } = useRoomState(code, hostToken, participantToken, revokeHost, onMembershipLeft, user?.id ?? '', onDisconnected, participant?.id)
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
+  const [requestSongOpen, setRequestSongOpen] = useState(false)
   const [songControlTick, setSongControlTick] = useState(0)
   const [localPlaybackPosition, setLocalPlaybackPosition] = useState<{
     songId: string
@@ -348,12 +349,10 @@ export function RoomPage() {
         'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} />
-          <div className={cn(
-            'min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:px-4 lg:pt-4 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
-            participant && 'flex flex-col gap-3 lg:overscroll-contain',
-          )}>
-            <div className="min-h-[300px] lg:min-h-0 lg:shrink-0">
+          <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+            <div inert={requestSongOpen} aria-hidden={requestSongOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
             <NowPlaying
+              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
               song={room.currentSong}
               paused={room.playbackPaused}
               blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
@@ -419,12 +418,19 @@ export function RoomPage() {
             />
             </div>
             {participant && (
-              <SearchPanel className="min-h-[250px] lg:grow lg:shrink-0" onAddSong={addSong} />
+              <SongRequestDialog
+                open={requestSongOpen}
+                onClose={() => setRequestSongOpen(false)}
+                onAddSong={addSong}
+                message={message}
+                error={error || roomError}
+              />
             )}
           </div>
             <QueuePanel
               className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
               songs={room.queue}
+              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
               onReorder={
                 controlCredentials
                   ? (songId, targetIndex) =>
@@ -498,12 +504,12 @@ export function RoomPage() {
         />
       )}
 
-      {(error || roomError) && (
+      {(error || roomError) && !requestSongOpen && (
         <div className={noticeStyles({ tone: 'error' })}>
           {error || roomError}
         </div>
       )}
-      {message && (
+      {message && !requestSongOpen && (
         <div
           className={noticeStyles({ tone: 'success' })}
           role="status"

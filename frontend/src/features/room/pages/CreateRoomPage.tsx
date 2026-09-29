@@ -129,7 +129,7 @@ export function CreateRoomPage() {
               </fieldset>
               {error && <p className="rounded-xl border border-danger/30 bg-danger/[0.08] px-4 py-3 text-sm leading-6 text-[#ffd4db]" role="alert">{error}</p>}
               <div>
-                <button className={cn(buttonStyles({ intent: 'primary', size: 'lg', fullWidth: true }), 'gap-4 text-sm')} disabled={creating} type="submit">
+                <button className={cn(buttonStyles({ intent: 'primary', size: 'lg', fullWidth: true }), 'gap-4 rounded-md text-sm font-semibold')} disabled={creating} type="submit">
                   {creating ? t('home.creating') : playbackMode === 'all_devices' ? t('createRoom.createTogether') : t('createRoom.createSpeaker')}
                   <ArrowRight size={18} aria-hidden="true" />
                 </button>

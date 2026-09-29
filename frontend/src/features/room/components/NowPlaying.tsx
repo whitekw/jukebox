@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Music2 as MusicIcon, Play as PlayIcon } from 'lucide-react'
+import { Music2 as MusicIcon, Play as PlayIcon, Plus } from 'lucide-react'
 import type { Song } from '../types'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn, vinylStyles } from '../../../shared/styles'
@@ -11,6 +11,7 @@ export const NowPlaying = ({
   player,
   onClaimPlaybackHost,
   claimingPlaybackHost = false,
+  onRequestSong,
 }: {
   song: Song | null
   paused: boolean
@@ -18,6 +19,7 @@ export const NowPlaying = ({
   player?: ReactNode
   onClaimPlaybackHost?: () => void
   claimingPlaybackHost?: boolean
+  onRequestSong?: () => void
 }) => {
   const { t } = useI18n()
   const playbackStatus = blocked
@@ -27,10 +29,10 @@ export const NowPlaying = ({
       : t('status.nowPlaying')
 
   return (
-    <div className="flex w-full flex-col overflow-hidden xl:[container-type:inline-size]">
+    <div className="flex w-full flex-col items-center">
       {song ? (
-        <div className="grid gap-5 xl:grid-cols-[min(55cqw,calc(45dvh*16/9))_minmax(0,1fr)] xl:items-center xl:gap-4">
-          <div className="flex min-w-0 items-center justify-center">
+        <div className="flex w-full flex-col items-center gap-5">
+          <div className="flex w-full max-w-[min(960px,calc(max(180px,100dvh-360px)*16/9))] min-w-0 items-center justify-center">
             {player ? (
               <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-[#050507]">
                 {player}
@@ -43,9 +45,9 @@ export const NowPlaying = ({
               />
             )}
           </div>
-          <div className="flex min-w-0 flex-col justify-center gap-3 lg:gap-4">
+          <div className="flex w-full max-w-[800px] min-w-0 flex-col items-center justify-center gap-3 text-center">
             <span className="text-xs font-bold text-purple-light">{playbackStatus}</span>
-            <div className="min-w-0">
+            <div className="w-full min-w-0">
               <h2 className="m-0 line-clamp-3 break-words text-xl font-bold leading-snug text-ink md:text-2xl" title={song.title}>
                 {song.title}
               </h2>
@@ -53,7 +55,7 @@ export const NowPlaying = ({
                 {song.artist}
               </p>
             </div>
-            <div className="flex min-w-0 items-center gap-2 text-sm text-muted">
+            <div className="flex max-w-full min-w-0 items-center gap-2 text-sm text-muted">
               <span className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/30 bg-purple/20 text-xs font-bold text-purple-light">
                 {song.addedByAvatarUrl ? (
                   <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
@@ -81,6 +83,19 @@ export const NowPlaying = ({
                 : t('host.claimPlayback')}
             </button>
             )}
+            {onRequestSong && (
+              <button
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'sm' }),
+                  'gap-2 rounded-md border-purple/25 bg-purple/[0.08] text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15 lg:hidden',
+                )}
+                type="button"
+                aria-haspopup="dialog"
+                onClick={onRequestSong}
+              >
+                <Plus size={16} aria-hidden="true" />{t('search.requestSong')}
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -100,6 +115,19 @@ export const NowPlaying = ({
             <p className="m-0 text-xs leading-5 text-dim md:text-[13px]">
               {t('nowPlaying.emptyDescription')}
             </p>
+            {onRequestSong && (
+              <button
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'mt-6 gap-2 rounded-md border-purple/25 bg-purple/[0.08] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
+                )}
+                type="button"
+                aria-haspopup="dialog"
+                onClick={onRequestSong}
+              >
+                <Plus size={18} aria-hidden="true" />{t('search.requestFirstSong')}
+              </button>
+            )}
           </div>
         </div>
       )}
