@@ -26,7 +26,7 @@ export const NowPlaying = ({
     ? t('status.autoplayBlocked')
     : paused
       ? t('status.paused')
-      : t('status.nowPlaying')
+      : null
 
   return (
     <div className="flex w-full flex-col items-center">
@@ -46,7 +46,7 @@ export const NowPlaying = ({
             )}
           </div>
           <div className="flex w-full max-w-[800px] min-w-0 flex-col items-center justify-center gap-3 text-center">
-            <span className="text-xs font-bold text-purple-light">{playbackStatus}</span>
+            {playbackStatus && <span className="text-xs font-bold text-purple-light">{playbackStatus}</span>}
             <div className="w-full min-w-0">
               <h2 className="m-0 line-clamp-3 break-words text-xl font-bold leading-snug text-ink md:text-2xl" title={song.title}>
                 {song.title}
