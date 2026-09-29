@@ -354,8 +354,6 @@ export function RoomPage() {
             <NowPlaying
               onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
               song={room.currentSong}
-              paused={room.playbackPaused}
-              blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
               player={
                 canPlayLocally && room.currentSong ? (
                   <YouTubePlayer

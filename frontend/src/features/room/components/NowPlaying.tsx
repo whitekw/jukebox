@@ -6,28 +6,18 @@ import { buttonStyles, cn, vinylStyles } from '../../../shared/styles'
 
 export const NowPlaying = ({
   song,
-  paused,
-  blocked,
   player,
   onClaimPlaybackHost,
   claimingPlaybackHost = false,
   onRequestSong,
 }: {
   song: Song | null
-  paused: boolean
-  blocked: boolean
   player?: ReactNode
   onClaimPlaybackHost?: () => void
   claimingPlaybackHost?: boolean
   onRequestSong?: () => void
 }) => {
   const { t } = useI18n()
-  const playbackStatus = blocked
-    ? t('status.autoplayBlocked')
-    : paused
-      ? t('status.paused')
-      : null
-
   return (
     <div className="flex w-full flex-col items-center">
       {song ? (
@@ -46,7 +36,6 @@ export const NowPlaying = ({
             )}
           </div>
           <div className="flex w-full max-w-[800px] min-w-0 flex-col items-center justify-center gap-3 text-center">
-            {playbackStatus && <span className="text-xs font-bold text-purple-light">{playbackStatus}</span>}
             <div className="w-full min-w-0">
               <h2 className="m-0 line-clamp-3 break-words text-xl font-bold leading-snug text-ink md:text-2xl" title={song.title}>
                 {song.title}
