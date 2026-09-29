@@ -77,7 +77,7 @@ export function RoomPlaybackBar({
               <Music2 size={20} />
             </div>
           )}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 max-w-[min(520px,40vw)]">
             <h1 className="m-0 truncate text-sm font-bold text-ink" title={song?.title}>
               {song?.title ?? t('status.waiting')}
             </h1>
