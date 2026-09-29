@@ -23,6 +23,36 @@ async function runTitleBarSmoke(window, customTitleBar) {
   // A page without the new web header still has a draggable title bar. Preload
   // must not inject extra title bars into embedded content.
   await waitFor({ fallbackVisible: true, fallback: true, childHasTitlebar: false, drag: 'drag' })
+  const assertFitsViewport = async () => {
+    const bounds = await page(`({
+      viewport: innerHeight,
+      documentHeight: document.documentElement.scrollHeight,
+      mainHeight: document.querySelector('main').getBoundingClientRect().height,
+      messageCenter: (() => {
+        const rect = document.querySelector('h1').getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      })()
+    })`)
+    assert.equal(bounds.documentHeight, bounds.viewport, 'Fallback must not add a page scrollbar')
+    assert.equal(bounds.mainHeight, bounds.viewport - 48)
+    assert.equal(bounds.messageCenter, 48 + (bounds.viewport - 48) / 2)
+  }
+  // Loading/not-found screens use minimum height; the older room layout uses
+  // fixed height. Both must fit below the fallback without suppressing overflow.
+  for (const className of ['min-h-screen', 'min-h-dvh', 'h-dvh']) {
+    await page(`document.querySelector('main').className = ${JSON.stringify(className)}`)
+    await assertFitsViewport()
+  }
+  await page("document.querySelector('main').className = 'min-h-screen'")
+  await page(`{
+    const content = document.createElement('div');
+    content.id = 'long-content';
+    content.style.height = '1200px';
+    document.querySelector('main').append(content);
+  }`)
+  assert.equal(await page('document.documentElement.scrollHeight > innerHeight'), true,
+    'Long content must still scroll naturally')
+  await page("document.getElementById('long-content').remove()")
   await page(`{
     const header = document.createElement('header');
     header.dataset.desktopTitlebar = '';
@@ -30,6 +60,8 @@ async function runTitleBarSmoke(window, customTitleBar) {
     document.body.append(header);
   }`)
   await waitFor({ fallbackVisible: false, fallback: false, overlayHeight: 72 })
+  assert.equal(await page("document.querySelector('main').getBoundingClientRect().height === innerHeight"), true,
+    'Integrated headers must not leave the fallback height compensation active')
   // Real web headers use border-box sizing and a bottom divider. Caption
   // controls must leave that divider visible instead of protruding below it.
   await page(`{
@@ -49,6 +81,7 @@ async function runTitleBarSmoke(window, customTitleBar) {
   // SPA transitions back to a loading/error screen restore the fallback.
   await page("document.querySelector('header').remove()")
   await waitFor({ fallbackVisible: true, fallback: true, overlayHeight: 48 })
+  await assertFitsViewport()
   return state
 }
 

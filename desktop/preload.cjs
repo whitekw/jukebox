@@ -31,6 +31,9 @@ if (process.argv.includes('--bside-custom-titlebar') && process.isMainFrame) {
       }
       #bside-titlebar-fallback[hidden] { display: none; }
       html[data-bside-titlebar-fallback] body { min-height: calc(100dvh - 48px); }
+      html[data-bside-titlebar-fallback] #root > main:is(.min-h-screen, .min-h-dvh) {
+        min-height: calc(100dvh - 48px);
+      }
       html[data-bside-titlebar-fallback] #root > main.h-dvh {
         height: calc(100dvh - 48px);
       }
