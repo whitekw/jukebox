@@ -74,14 +74,14 @@ export function SearchPanel({ onAddSong, className }: SearchPanelProps) {
         />
         <button
           className={cn(
-            buttonStyles({ intent: 'primary', size: 'sm' }),
-            'size-11 min-h-11 shrink-0 rounded-lg px-0',
+            buttonStyles({ intent: 'outline', size: 'sm' }),
+            'size-11 min-h-11 shrink-0 rounded-md border-0 bg-transparent px-0 text-purple-light hover:bg-purple/15',
           )}
           type="submit"
           disabled={searching}
           aria-label={searching ? t('search.searching') : t('search.button')}
         >
-          <SearchIcon size={20} />
+          <SearchIcon size={20} aria-hidden="true" />
         </button>
       </form>
       <p className="mx-[3px] mt-2 shrink-0 text-[10px] text-dim">
