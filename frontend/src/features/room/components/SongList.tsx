@@ -1,5 +1,7 @@
-import { useState, type DragEvent } from 'react'
-import { CirclePlus, Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { useEffect, useState, type DragEvent } from 'react'
+import { Check, CirclePlus, Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { useAuth } from '../../auth/context'
+import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
@@ -13,6 +15,7 @@ export function SongList({
   onRemove,
   canRemove,
   onLibraryChange,
+  libraryRevision,
 }: {
   songs: Song[]
   emptyMessage: string
@@ -21,14 +24,44 @@ export function SongList({
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
   onLibraryChange: () => void
+  libraryRevision: number
 }) {
   const { t } = useI18n()
+  const { user } = useAuth()
   const [saveSong, setSaveSong] = useState<Song | null>(null)
+  const [savedMembership, setSavedMembership] = useState<{
+    userId: string
+    byVideoId: Record<string, boolean>
+  } | null>(null)
   const [draggedSongId, setDraggedSongId] = useState('')
   const [dropTarget, setDropTarget] = useState<{
     songId: string
     edge: 'before' | 'after'
   } | null>(null)
+  const videoIdsKey = [...new Set(songs.map((song) => song.videoId))].sort().join(',')
+
+  useEffect(() => {
+    if (!user?.id || !videoIdsKey) return
+    let active = true
+    const userId = user.id
+    void Promise.allSettled(videoIdsKey.split(',').map(async (videoId) => {
+      const { items } = await libraryApi.list(videoId)
+      return { videoId, saved: items.some((playlist) => playlist.containsTrack) }
+    })).then((results) => {
+      if (!active) return
+      setSavedMembership((previous) => {
+        const byVideoId = previous?.userId === userId ? { ...previous.byVideoId } : {}
+        for (const result of results) {
+          if (result.status === 'fulfilled') byVideoId[result.value.videoId] = result.value.saved
+        }
+        return { userId, byVideoId }
+      })
+    })
+    return () => { active = false }
+  }, [user?.id, videoIdsKey, libraryRevision])
+  const savedByVideoId: Record<string, boolean> = user && savedMembership?.userId === user.id
+    ? savedMembership.byVideoId
+    : {}
 
   function startDragging(event: DragEvent<HTMLLIElement>, songId: string) {
     if (!onReorder || songs.length < 2) {
@@ -147,11 +180,13 @@ export function SongList({
               className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-muted transition-colors hover:bg-purple/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light"
               type="button"
               draggable={false}
-              aria-label={`${song.title} · ${t('library.addToPlaylist')}`}
-              title={t('library.addToPlaylist')}
+              aria-label={`${song.title} · ${t(savedByVideoId[song.videoId] ? 'library.savedInPlaylist' : 'library.addToPlaylist')}`}
+              title={t(savedByVideoId[song.videoId] ? 'library.savedInPlaylist' : 'library.addToPlaylist')}
               onClick={() => setSaveSong(song)}
             >
-              <CirclePlus size={18} aria-hidden="true" />
+              {savedByVideoId[song.videoId]
+                ? <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
+                : <CirclePlus size={18} aria-hidden="true" />}
             </button>
             {onRemove && (canRemove?.(song) ?? true) && (
               <button
@@ -173,6 +208,13 @@ export function SongList({
       key={saveSong.id}
       song={{ videoId: saveSong.videoId, roomSongId: saveSong.id }}
       onClose={() => setSaveSong(null)}
+      onSavedChange={(saved) => {
+        if (!user) return
+        setSavedMembership((previous) => ({
+          userId: user.id,
+          byVideoId: { ...(previous?.userId === user.id ? previous.byVideoId : {}), [saveSong.videoId]: saved },
+        }))
+      }}
       onLibraryChange={onLibraryChange}
     />}
     </>

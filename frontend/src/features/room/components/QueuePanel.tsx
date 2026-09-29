@@ -12,6 +12,7 @@ type QueuePanelProps = {
   canRemove?: (song: Song) => boolean
   onRequestSong?: () => void
   onLibraryChange: () => void
+  libraryRevision: number
 }
 
 export function QueuePanel({
@@ -22,6 +23,7 @@ export function QueuePanel({
   canRemove,
   onRequestSong,
   onLibraryChange,
+  libraryRevision,
 }: QueuePanelProps) {
   const { t } = useI18n()
 
@@ -61,6 +63,7 @@ export function QueuePanel({
           onRemove={onRemove}
           canRemove={canRemove}
           onLibraryChange={onLibraryChange}
+          libraryRevision={libraryRevision}
         />
       </div>
     </section>
