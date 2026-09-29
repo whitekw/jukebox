@@ -62,8 +62,23 @@ export function VideoResultList({
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(video.durationSeconds)}
           </span>
+          {onManageSaved && <button
+            className={cn(
+              'col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-lg border border-transparent bg-transparent text-muted transition-colors duration-150',
+              'hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:col-auto md:row-auto',
+            )}
+            type="button"
+            aria-label={`${video.title} · ${t('library.savedInPlaylist')}`}
+            title={t('library.savedInPlaylist')}
+            onClick={() => onManageSaved(video.videoId)}
+          >
+            <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
+          </button>}
           {onAddSong && <button
-            className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime transition-colors duration-150 enabled:group-hover:border-lime/60 enabled:group-hover:bg-lime/15 enabled:group-focus-within:border-lime/60 enabled:group-focus-within:bg-lime/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
+            className={cn(
+              'row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime transition-colors duration-150 enabled:group-hover:border-lime/60 enabled:group-hover:bg-lime/15 enabled:group-focus-within:border-lime/60 enabled:group-focus-within:bg-lime/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto',
+              onManageSaved ? 'col-start-3' : 'col-start-2',
+            )}
             type="button"
             aria-label={
               video.embeddable
@@ -75,19 +90,6 @@ export function VideoResultList({
             onClick={() => onAddSong(video.videoId)}
           >
             {addingId === video.videoId ? '…' : '+'}
-          </button>}
-          {onManageSaved && <button
-            className={cn(
-              'row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-lg border border-transparent bg-transparent text-muted transition-colors duration-150',
-              'hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:col-auto md:row-auto',
-              onAddSong ? 'col-start-3' : 'col-start-2',
-            )}
-            type="button"
-            aria-label={`${video.title} · ${t('library.savedInPlaylist')}`}
-            title={t('library.savedInPlaylist')}
-            onClick={() => onManageSaved(video.videoId)}
-          >
-            <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
           </button>}
         </li>
       ))}
