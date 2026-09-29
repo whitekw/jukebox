@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Heart, ListMusic, X } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../shared/styles'
+import { buttonStyles, panelCloseButtonStyles } from '../../shared/styles'
 import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
 
@@ -67,7 +67,7 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, me
 
   return (
     <section ref={panelRef} aria-labelledby={titleId} className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas p-4 text-ink sm:p-6">
-      <div className="mb-5 flex shrink-0 items-center justify-between gap-3">
+      <div className="mb-5 flex shrink-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-purple to-[#9de0cf] text-white">
             {playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : playlist.thumbnailUrl ? <img src={playlist.thumbnailUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
@@ -77,7 +77,7 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, me
             <p className="m-0 text-xs text-muted">{t('library.trackCount', { count: loading || error ? playlist.trackCount : tracks.length })}</p>
           </div>
         </div>
-        <button ref={closeButtonRef} type="button" className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-8 shrink-0 px-0')} aria-label={t('common.close')} onClick={onClose}>
+        <button ref={closeButtonRef} type="button" className={panelCloseButtonStyles} aria-label={t('common.close')} onClick={onClose}>
           <X size={18} aria-hidden="true" />
         </button>
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../../shared/styles'
+import { panelCloseButtonStyles } from '../../../shared/styles'
 import { SearchPanel } from './SearchPanel'
 
 export function SongRequestDialog({ open, onClose, onAddSong, message, error }: {
@@ -44,10 +44,10 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
       className="absolute inset-0 z-20 m-0 h-full max-h-none w-full max-w-none overflow-hidden border-0 bg-canvas p-0 text-ink"
     >
       <div className="flex h-full min-h-0 flex-col p-4 sm:p-6">
-        <div className="mb-5 flex shrink-0 items-center justify-between gap-3">
+        <div className="mb-5 flex shrink-0 items-start justify-between gap-3">
           <h2 id={titleId} className="text-xl font-bold">{t('search.requestSong')}</h2>
           <button
-            className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-8 shrink-0 px-0')}
+            className={panelCloseButtonStyles}
             type="button"
             aria-label={t('common.close')}
             onClick={() => dialogRef.current?.close()}
