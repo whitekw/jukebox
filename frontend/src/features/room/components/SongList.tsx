@@ -185,7 +185,7 @@ export function SongList({
               onClick={() => setSaveSong(song)}
             >
               {savedByVideoId[song.videoId]
-                ? <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
+                ? <span className="grid size-4 place-items-center rounded-full bg-lime text-canvas"><Check size={11} strokeWidth={3} aria-hidden="true" /></span>
                 : <CirclePlus size={18} aria-hidden="true" />}
             </button>
             {onRemove && (canRemove?.(song) ?? true) && (
