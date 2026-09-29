@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { UsersRound as UsersIcon } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
-import { cn } from '../../../shared/styles'
+import { chromeIconButtonStyles, cn } from '../../../shared/styles'
 import type { RoomParticipant } from '../types'
 
 type ParticipantsMenuProps = {
@@ -104,11 +104,7 @@ export function ParticipantsMenu({
   return (
     <div className="relative" ref={containerRef}>
       <button
-        className={cn(
-          'inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-sm text-muted',
-          'transition-colors hover:border-purple/50 hover:bg-purple/[0.08] hover:text-ink',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple',
-        )}
+        className={cn(chromeIconButtonStyles, 'min-w-12 gap-1 px-1')}
         type="button"
         aria-label={`${t('participants.openList')} · ${t('participants.count', { count: onlineParticipants.length })}`}
         aria-haspopup="dialog"

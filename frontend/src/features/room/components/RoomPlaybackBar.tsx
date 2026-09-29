@@ -3,7 +3,7 @@ import { Check, CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX }
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../../shared/styles'
+import { chromeIconButtonStyles } from '../../../shared/styles'
 import { expectedPlaybackPosition, type PlaybackSynchronization } from '../playback/playbackSync'
 import type { PlayerAudioSettings } from '../playback/playerAudioSettings'
 import type { Song } from '../types'
@@ -134,10 +134,7 @@ export function RoomPlaybackBar({
           <div className="flex shrink-0 items-center gap-2">
             {onGlobalPlaybackToggle && (
               <button
-                className={cn(
-                  buttonStyles({ intent: paused ? 'primary' : 'outline', size: 'md' }),
-                  'size-10 shrink-0 px-0',
-                )}
+                className={chromeIconButtonStyles}
                 type="button"
                 aria-label={paused ? t('manager.playAll') : t('manager.pauseAll')}
                 title={paused ? t('manager.playAll') : t('manager.pauseAll')}
@@ -148,10 +145,7 @@ export function RoomPlaybackBar({
             )}
             {onAdvance && (
               <button
-                className={cn(
-                  buttonStyles({ intent: 'outline', size: 'md' }),
-                  'size-10 shrink-0 px-0',
-                )}
+                className={chromeIconButtonStyles}
                 type="button"
                 aria-label={t('manager.skip')}
                 title={t('manager.skip')}

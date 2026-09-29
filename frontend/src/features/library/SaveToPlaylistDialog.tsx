@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Check, Heart, ListMusic, Plus, Search, X } from 'lucide-react'
 import { useAuth } from '../auth/context'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../shared/styles'
+import { buttonStyles, cn, panelCloseButtonStyles } from '../../shared/styles'
 import { libraryApi, type Playlist } from './api'
 
 export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryChange }: {
@@ -115,7 +115,7 @@ export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryCh
       <div className="flex max-h-[min(650px,calc(100dvh-32px))] flex-col">
         <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-5 pb-3">
           <h2 id={titleId} className="m-0 text-lg font-bold">{t('library.addToPlaylist')}</h2>
-          <button type="button" className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-8 px-0')} aria-label={t('common.close')} onClick={onClose}>
+          <button type="button" className={cn(panelCloseButtonStyles, 'size-8')} aria-label={t('common.close')} onClick={onClose}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>

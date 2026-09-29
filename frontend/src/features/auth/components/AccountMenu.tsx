@@ -3,7 +3,7 @@ import { CircleUserRound as UserCircleIcon, LogOut as LogoutIcon } from 'lucide-
 import { SiDiscord as DiscordIcon } from 'react-icons/si'
 import { useAuth } from '../context'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../../shared/styles'
+import { buttonStyles, chromeIconButtonStyles, cn } from '../../../shared/styles'
 
 export function AccountMenu({
   compact = false,
@@ -61,8 +61,8 @@ export function AccountMenu({
     return (
       <a
         className={cn(
-          buttonStyles({ intent: 'outline', size: 'sm' }),
-          compact && 'size-9 px-0 sm:w-auto sm:px-3',
+          compact ? chromeIconButtonStyles : buttonStyles({ intent: 'outline', size: 'sm' }),
+          compact && 'size-9 sm:w-auto sm:px-2',
         )}
         href={loginUrl()}
         aria-label={t('auth.loginWithDiscord')}

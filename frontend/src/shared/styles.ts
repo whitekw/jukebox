@@ -47,6 +47,9 @@ export const buttonStyles = tv({
 export const panelCloseButtonStyles =
   'grid size-9 shrink-0 place-items-center rounded-lg border-0 bg-transparent p-0 text-ink/75 transition-colors hover:bg-white/[0.07] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light'
 
+export const chromeIconButtonStyles =
+  'inline-flex size-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent p-0 text-ink/75 transition-colors hover:bg-white/[0.07] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light disabled:cursor-not-allowed disabled:opacity-45'
+
 export const formControlStyles = tv({
   base: [
     'w-full rounded-[10px] border border-line bg-white/[0.045] text-ink outline-none',

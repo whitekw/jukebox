@@ -16,6 +16,7 @@ import {
   buttonStyles,
   cn,
   formControlStyles,
+  panelCloseButtonStyles,
   panelStyles,
   sectionKickerStyles,
 } from '../../../shared/styles'
@@ -177,7 +178,7 @@ export function ChatPanel({
               <span className={sectionKickerStyles}>ROOM CHAT</span>
             </div>
             <button
-              className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-white/[0.035] text-muted transition-colors hover:bg-white/10 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
+              className={panelCloseButtonStyles}
               type="button"
               aria-label={t('chat.close')}
               onClick={() => setOpen(false)}

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Settings, X as CloseIcon } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn, formControlStyles } from '../../../shared/styles'
+import { buttonStyles, chromeIconButtonStyles, cn, formControlStyles, panelCloseButtonStyles } from '../../../shared/styles'
 import type { RoomState } from '../types'
 
 export function RoomSettingsButton({ room, onSave }: {
@@ -49,7 +49,7 @@ export function RoomSettingsButton({ room, onSave }: {
     <>
       <button
         ref={triggerRef}
-        className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-10 bg-transparent px-0')}
+        className={chromeIconButtonStyles}
         type="button"
         aria-label={t('roomSettings.open')}
         aria-haspopup="dialog"
@@ -76,7 +76,7 @@ export function RoomSettingsButton({ room, onSave }: {
             <h2 id={titleId} className="text-xl font-bold tracking-[-0.03em]">{t('roomSettings.heading')}</h2>
             <p className="mt-1 text-xs font-mono text-muted">ROOM · {room.code}</p>
           </div>
-          <button className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-8 shrink-0 px-0')} type="button" aria-label={t('common.close')} disabled={saving} onClick={() => dialogRef.current?.close()}>
+          <button className={cn(panelCloseButtonStyles, 'size-8 disabled:cursor-not-allowed disabled:opacity-45')} type="button" aria-label={t('common.close')} disabled={saving} onClick={() => dialogRef.current?.close()}>
             <CloseIcon size={16} />
           </button>
         </div>

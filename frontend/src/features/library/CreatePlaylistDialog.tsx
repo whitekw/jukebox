@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../shared/styles'
+import { buttonStyles, cn, panelCloseButtonStyles } from '../../shared/styles'
 import { libraryApi, type Playlist } from './api'
 
 export function CreatePlaylistDialog({ onClose, onCreated }: {
@@ -51,7 +51,7 @@ export function CreatePlaylistDialog({ onClose, onCreated }: {
       <form onSubmit={(event) => void create(event)}>
         <div className="flex items-center justify-between gap-3 px-5 pt-5">
           <h2 id={titleId} className="m-0 text-lg font-bold">{t('library.newPlaylist')}</h2>
-          <button type="button" disabled={saving} className={cn(buttonStyles({ intent: 'outline', size: 'sm' }), 'size-8 px-0')} aria-label={t('common.close')} onClick={onClose}>
+          <button type="button" disabled={saving} className={cn(panelCloseButtonStyles, 'size-8 disabled:cursor-not-allowed disabled:opacity-45')} aria-label={t('common.close')} onClick={onClose}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>
