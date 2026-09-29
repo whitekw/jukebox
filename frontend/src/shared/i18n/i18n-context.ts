@@ -57,6 +57,10 @@ const errorMessageKeys: Partial<Record<string, TranslationKey>> = {
   VIDEO_NOT_PLAYABLE: 'errors.VIDEO_NOT_PLAYABLE',
   INVALID_QUERY: 'errors.INVALID_QUERY',
   INVALID_CHAT_MESSAGE: 'errors.INVALID_CHAT_MESSAGE',
+  INVALID_PLAYLIST_NAME: 'errors.INVALID_PLAYLIST_NAME',
+  PLAYLIST_NOT_FOUND: 'errors.PLAYLIST_NOT_FOUND',
+  PLAYLIST_IMMUTABLE: 'errors.PLAYLIST_IMMUTABLE',
+  INVALID_LIBRARY_SONG: 'errors.INVALID_LIBRARY_SONG',
 }
 
 export function getErrorMessage(error: unknown, t: Translate) {

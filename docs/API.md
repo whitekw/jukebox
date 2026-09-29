@@ -138,6 +138,14 @@ type RoomEvent = {
 | POST | `/api/extension/logout` | 확장 프로그램 Bearer | 없음 | 확장 프로그램 세션 폐기 |
 | GET | `/api/extension/rooms` | 확장 프로그램 Bearer | 없음 | 계정이 참여한 방과 소유 방 목록 |
 | POST | `/api/extension/rooms/:code/songs` | 확장 프로그램 Bearer + 해당 방 멤버십 | 변경 | 영상 ID를 검증한 뒤 `RoomState` |
+| GET | `/api/me/playlists?videoId={videoId}` | 로그인 | 없음 | 내 플레이리스트 목록과 해당 영상의 포함 여부 |
+| GET | `/api/me/saved-videos` | 로그인 | 없음 | 내 플레이리스트 중 하나 이상에 저장한 영상 ID 목록 |
+| GET | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 없음 | 목록에 저장한 곡 |
+| POST | `/api/me/playlists` | 로그인 | 변경 | 새 플레이리스트 |
+| PATCH | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 이름 변경 |
+| DELETE | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 삭제 |
+| PUT | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 변경 | 방 곡을 목록에 저장 |
+| DELETE | `/api/me/playlists/:playlistId/tracks/:videoId` | 로그인·목록 소유자 | 변경 | 목록에서 곡 제거 |
 | POST | `/api/rooms` | 로그인 | 변경 | 방 생성 정보 |
 | GET | `/api/rooms/owned` | 로그인 | 없음 | 계정 소유 방 목록 |
 | GET | `/api/rooms/joined` | 로그인 | 없음 | 계정으로 참여한 방 목록(소유 방 제외) |
@@ -480,7 +488,19 @@ position = playbackPositionSeconds
 
 방 소유자의 로그인 세션이 필요합니다. 대상의 현재 Socket.IO 연결을 모두 종료하고 즉시 오프라인으로 표시합니다. 로그인 멤버십과 익명 참여 토큰은 유지되므로 다시 입장할 수 있습니다. 연결 중이 아니면 `PARTICIPANT_OFFLINE`을 반환합니다. 방 소유자를 대상으로 할 수 없습니다.
 
-## 10. Socket.IO 계약
+## 10. 개인 플레이리스트
+
+개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성하고, 기본 목록을 먼저 반환합니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
+
+`GET /api/me/saved-videos`는 로그인 계정의 플레이리스트 중 하나 이상에 저장된 영상 ID를 중복 없이 `videoIds` 배열로 반환합니다. 대기열의 저장 표시를 한 번에 갱신할 때 사용합니다.
+
+`POST /api/me/playlists`는 `{ "name": "플레이리스트 이름" }`을 받으며 공백을 제거한 1~60자 이름을 요구합니다. `PUT /api/me/playlists/:playlistId/tracks`는 `{ "roomSongId": "방의 곡 ID" }` 또는 `{ "videoId": "이미 저장된 영상 ID" }` 중 하나를 받습니다. 방 곡 ID를 쓰면 서버에 저장된 곡 메타데이터를 공통 곡 테이블에 기록하고, 영상 ID를 쓰면 공통 곡 테이블에 이미 저장된 곡을 다른 목록에 추가합니다. 같은 곡을 같은 목록에 다시 추가해도 중복되지 않으며, 다른 목록에는 독립적으로 저장됩니다. `DELETE /api/me/playlists/:playlistId/tracks/:videoId`는 해당 목록에서만 곡을 제거합니다. 두 변경 API는 `{ "videoId": "...", "added": true | false }`를 반환합니다. 다른 사용자의 목록은 `PLAYLIST_NOT_FOUND`로 응답합니다.
+
+`GET /api/me/playlists/:playlistId/tracks`는 최신 추가순으로 곡을 반환합니다. 각 항목에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있습니다.
+
+`PATCH /api/me/playlists/:playlistId`는 `{ "name": "새 이름" }`을 받아 공백을 제거한 1~60자 이름으로 바꾸고 `{ "id", "name", "updatedAt" }`을 반환합니다. `DELETE /api/me/playlists/:playlistId`는 목록과 곡 매핑만 삭제하고 `{ "deleted": true }`를 반환합니다. 다른 목록의 곡과 공통 곡 정보는 유지됩니다. 기본 `favorites` 목록은 두 API 모두 `PLAYLIST_IMMUTABLE`로 거부합니다.
+
+## 11. Socket.IO 계약
 
 Socket.IO는 REST 서버와 같은 origin 및 포트를 사용합니다.
 
@@ -528,7 +548,7 @@ payload는 전체 `RoomState`입니다. 참여, 곡 추가/이동/삭제, 재생
 
 payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한 참여자 토큰이나 로그인한 방 멤버십으로 구독한 해당 방의 소켓에만 전달됩니다. 재접속 중 이벤트를 놓친 경우 REST의 최근 기록과 항목 ID를 기준으로 병합합니다.
 
-## 11. 오류 계약
+## 12. 오류 계약
 
 ```json
 {
@@ -543,9 +563,9 @@ payload는 새로 저장된 `ChatMessage` 또는 `RoomEvent`입니다. 유효한
 
 | 분류 | 코드 |
 | --- | --- |
-| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_QUEUE_POSITION`, `INVALID_PLAYBACK_MODE`, `EMPTY_SETTINGS` |
+| 요청 | `INVALID_JSON`, `INVALID_QUERY`, `INVALID_NICKNAME`, `INVALID_CHAT_MESSAGE`, `INVALID_QUEUE_POSITION`, `INVALID_PLAYBACK_MODE`, `INVALID_PLAYLIST_NAME`, `INVALID_LIBRARY_SONG`, `EMPTY_SETTINGS` |
 | 인증/권한 | `PARTICIPANT_REQUIRED`, `MANAGER_FORBIDDEN`, `HOST_FORBIDDEN`, `HOST_ONLY_REQUIRED`, `CONTROL_FORBIDDEN`, `OWNER_FORBIDDEN`, `OWNER_MODERATION_FORBIDDEN` |
-| 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG` |
+| 방/곡 | `ROOM_NOT_FOUND`, `DUPLICATE_SONG`, `SONG_NOT_FOUND`, `NO_CURRENT_SONG`, `PLAYLIST_NOT_FOUND` |
 | 설정/관리자 | `INVALID_HOST_VOLUME`, `PARTICIPANT_NOT_FOUND`, `PARTICIPANT_OFFLINE`, `INVALID_MANAGER_STATE`, `MANAGER_ACCOUNT_REQUIRED` |
 | YouTube | `YOUTUBE_NOT_CONFIGURED`, `YOUTUBE_UNAVAILABLE`, `YOUTUBE_API_ERROR`, `INVALID_VIDEO`, `VIDEO_NOT_PLAYABLE` |
 | 인프라 | `RATE_LIMITED`, `INTERNAL_ERROR` |

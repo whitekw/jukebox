@@ -4,7 +4,7 @@ import { EntryLayout } from '../../../shared/ui/EntryLayout'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 
 const sections = [
-  { title: 'privacy.dataTitle', paragraphs: ['privacy.dataDiscord', 'privacy.dataRoom', 'privacy.dataExtension', 'privacy.dataTechnical'] },
+  { title: 'privacy.dataTitle', paragraphs: ['privacy.dataDiscord', 'privacy.dataRoom', 'privacy.dataLibrary', 'privacy.dataExtension', 'privacy.dataTechnical'] },
   { title: 'privacy.purposeTitle', paragraphs: ['privacy.purpose'] },
   { title: 'privacy.retentionTitle', paragraphs: ['privacy.retentionAccount', 'privacy.retentionRoom', 'privacy.retentionSession'] },
   { title: 'privacy.thirdPartyTitle', paragraphs: ['privacy.thirdPartyDiscord', 'privacy.thirdPartyYouTube', 'privacy.thirdPartyOther'] },

@@ -11,7 +11,7 @@ test('creates the current schema and reopens it without data loss', () => {
   const databasePath = path.join(directory, 'jukebox.sqlite')
   try {
     let db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4)
     const roomColumns = db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name)
     assert.ok(roomColumns.includes('owner_user_id'))
     assert.ok(roomColumns.includes('title'))
@@ -29,7 +29,7 @@ test('creates the current schema and reopens it without data loss', () => {
     ).run()
     db.close()
     db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4)
     assert.equal(
       db.prepare("SELECT host_token_hash FROM rooms WHERE code = 'ABC234'").get().host_token_hash,
       '',
@@ -54,7 +54,7 @@ test('upgrades version 1 databases without deleting rooms', () => {
     db.close()
 
     db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4)
     assert.equal(db.prepare("SELECT code FROM rooms WHERE id = 'room-1'").get().code, 'ABC234')
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'extension_sessions'").get())
     db.close()
@@ -76,11 +76,30 @@ test('upgrades existing rooms with a code title and guest access enabled', () =>
     db.close()
 
     db = createDatabase(databasePath)
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4)
     const room = db.prepare("SELECT title, allow_guests FROM rooms WHERE code = 'ABC234'").get()
     db.close()
     assert.equal(room.title, 'ABC234')
     assert.equal(room.allow_guests, 1)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('upgrades version 3 databases with personal playlists and keeps songs', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-playlist-upgrade-'))
+  const databasePath = path.join(directory, 'jukebox.sqlite')
+  try {
+    let db = createDatabase(databasePath)
+    db.prepare(`INSERT INTO rooms (id, code, host_token_hash, created_at)
+      VALUES ('room-1', 'ABC234', '', 1)`).run()
+    db.exec('DROP TABLE playlist_tracks; DROP TABLE playlists; DROP TABLE library_tracks; PRAGMA user_version = 3;')
+    db.close()
+    db = createDatabase(databasePath)
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4)
+    assert.equal(db.prepare("SELECT code FROM rooms WHERE id = 'room-1'").get().code, 'ABC234')
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'playlist_tracks'").get())
+    db.close()
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }

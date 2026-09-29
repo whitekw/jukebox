@@ -32,6 +32,8 @@ import { CollectionsRail } from '../components/CollectionsRail'
 import { InviteRoomButton } from '../components/InviteRoomButton'
 import { RoomJoinPreview } from '../components/RoomJoinPreview'
 import { RoomSettingsButton } from '../components/RoomSettingsButton'
+import { PlaylistTracksPanel } from '../../library/PlaylistTracksPanel'
+import type { Playlist } from '../../library/api'
 import { canControlSong, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
@@ -79,15 +81,29 @@ export function RoomPage() {
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
+  const [selectedPlaylist, setSelectedPlaylist] = useState<{ userId: string; playlist: Playlist } | null>(null)
+  const [libraryRevision, setLibraryRevision] = useState(0)
   const [songControlTick, setSongControlTick] = useState(0)
   const [localPlaybackPosition, setLocalPlaybackPosition] = useState<{
     songId: string
     positionSeconds: number
   } | null>(null)
   const [audioSettings, setAudioSettings] = useState<PlayerAudioSettings | null>(null)
+  const lastAudibleVolume = useRef(50)
   const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
+  const activePlaylist = selectedPlaylist && user?.id === selectedPlaylist.userId ? selectedPlaylist.playlist : null
+  const closePlaylist = useCallback(() => setSelectedPlaylist(null), [])
+  function openSongRequest() {
+    setSelectedPlaylist(null)
+    setRequestSongOpen(true)
+  }
+  function openPlaylist(playlist: Playlist) {
+    if (!user) return
+    setRequestSongOpen(false)
+    setSelectedPlaylist({ userId: user.id, playlist })
+  }
   const serverNow = Date.now() + serverTimeOffsetMs
 
   useEffect(() => {
@@ -345,28 +361,29 @@ export function RoomPage() {
       </header>
 
       <section className={cn(
-        'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 lg:gap-0 lg:overflow-hidden lg:p-0',
-        'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+        'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 room:auto-rows-auto room:gap-0 room:overflow-hidden room:p-0',
+        'room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
-          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} />
-          <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
-            <div inert={requestSongOpen} aria-hidden={requestSongOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
+          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
+          <div className="relative min-w-0 room:h-full room:min-h-0 room:overflow-y-auto room:overscroll-contain room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden">
+            <div inert={requestSongOpen || Boolean(activePlaylist)} aria-hidden={requestSongOpen || Boolean(activePlaylist)} className="flex min-h-full flex-col items-center justify-center px-0 py-6 room:px-6">
             <NowPlaying
-              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
+              onRequestSong={participant ? openSongRequest : undefined}
               song={room.currentSong}
-              paused={room.playbackPaused}
-              blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
               player={
                 canPlayLocally && room.currentSong ? (
                   <YouTubePlayer
                     videoId={room.currentSong.videoId}
                     volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
                     requestedAudioSettings={audioSettings ?? undefined}
-                    onAudioSettingsChange={(settings) => setAudioSettings((previous) =>
-                      previous?.volume === settings.volume && previous.muted === settings.muted
-                        ? previous
-                        : settings,
-                    )}
+                    onAudioSettingsChange={(settings) => {
+                      if (settings.volume > 0) lastAudibleVolume.current = settings.volume
+                      setAudioSettings((previous) =>
+                        previous?.volume === settings.volume && previous.muted === settings.muted
+                          ? previous
+                          : settings,
+                      )
+                    }}
                     paused={room.playbackPaused}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
@@ -426,11 +443,35 @@ export function RoomPage() {
                 error={error || roomError}
               />
             )}
+            {activePlaylist && (
+              <PlaylistTracksPanel
+                key={activePlaylist.id}
+                playlist={activePlaylist}
+                revision={libraryRevision}
+                onClose={closePlaylist}
+                onAddSong={participant ? addSong : undefined}
+                onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
+                onPlaylistRenamed={(name, updatedAt) => {
+                  setSelectedPlaylist((current) => current && current.playlist.id === activePlaylist.id
+                    ? { ...current, playlist: { ...current.playlist, name, updatedAt } }
+                    : current)
+                  setLibraryRevision((revision) => revision + 1)
+                }}
+                onPlaylistDeleted={() => {
+                  setSelectedPlaylist(null)
+                  setLibraryRevision((revision) => revision + 1)
+                }}
+                message={message}
+                roomError={error || roomError}
+              />
+            )}
           </div>
             <QueuePanel
-              className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
+              className="min-h-[280px] room:h-full room:min-h-0 room:rounded-none room:border-y-0 room:border-r-0 room:bg-panel"
               songs={room.queue}
-              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
+              onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
+              libraryRevision={libraryRevision}
+              onRequestSong={participant ? openSongRequest : undefined}
               onReorder={
                 controlCredentials
                   ? (songId, targetIndex) =>
@@ -467,6 +508,8 @@ export function RoomPage() {
 
       <RoomPlaybackBar
         song={room.currentSong}
+        libraryRevision={libraryRevision}
+        onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
         paused={room.playbackPaused}
         blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
         synchronization={playbackSynchronization}
@@ -476,8 +519,16 @@ export function RoomPage() {
         audioSettings={canPlayLocally && room.currentSong ? currentAudioSettings : undefined}
         onVolumeChange={(volume) => {
           const nextVolume = clampVolume(volume)
+          if (nextVolume > 0) lastAudibleVolume.current = nextVolume
           setAudioSettings({ volume: nextVolume, muted: nextVolume === 0 })
         }}
+        onMuteToggle={() => setAudioSettings((previous) => {
+          const current = previous ?? currentAudioSettings
+          if (current.muted || current.volume === 0) {
+            return { volume: current.volume || lastAudibleVolume.current, muted: false }
+          }
+          return { ...current, muted: true }
+        })}
         onAdvance={
           songActionCredentials && room.currentSong &&
           canControlSong(room.currentSong, participant?.id, isController, serverNow)
@@ -504,12 +555,12 @@ export function RoomPage() {
         />
       )}
 
-      {(error || roomError) && !requestSongOpen && (
+      {(error || roomError) && !requestSongOpen && !activePlaylist && (
         <div className={noticeStyles({ tone: 'error' })}>
           {error || roomError}
         </div>
       )}
-      {message && !requestSongOpen && (
+      {message && !requestSongOpen && !activePlaylist && (
         <div
           className={noticeStyles({ tone: 'success' })}
           role="status"

@@ -1,8 +1,10 @@
-import { useState, type DragEvent } from 'react'
-import { Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
-import { formatDuration } from '../../../shared/format'
+import { useEffect, useState, type DragEvent } from 'react'
+import { Check, CirclePlus, Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { useAuth } from '../../auth/context'
+import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
+import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 import type { Song } from '../types'
 
 export function SongList({
@@ -12,6 +14,8 @@ export function SongList({
   onReorder,
   onRemove,
   canRemove,
+  onLibraryChange,
+  libraryRevision,
 }: {
   songs: Song[]
   emptyMessage: string
@@ -19,13 +23,34 @@ export function SongList({
   onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
+  onLibraryChange: () => void
+  libraryRevision: number
 }) {
   const { t } = useI18n()
+  const { user } = useAuth()
+  const [saveSong, setSaveSong] = useState<Song | null>(null)
+  const [savedMembership, setSavedMembership] = useState<{
+    userId: string
+    byVideoId: Record<string, boolean>
+  } | null>(null)
   const [draggedSongId, setDraggedSongId] = useState('')
   const [dropTarget, setDropTarget] = useState<{
     songId: string
     edge: 'before' | 'after'
   } | null>(null)
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
+    const userId = user.id
+    void libraryApi.savedVideoIds().then(({ videoIds }) => {
+      if (!active) return
+      setSavedMembership({ userId, byVideoId: Object.fromEntries(videoIds.map((videoId) => [videoId, true])) })
+    }).catch(() => {})
+    return () => { active = false }
+  }, [user?.id, libraryRevision])
+  const savedByVideoId: Record<string, boolean> = user && savedMembership?.userId === user.id
+    ? savedMembership.byVideoId
+    : {}
 
   function startDragging(event: DragEvent<HTMLLIElement>, songId: string) {
     if (!onReorder || songs.length < 2) {
@@ -92,11 +117,12 @@ export function SongList({
   }
 
   return (
+    <>
     <ol className="m-0 flex list-none flex-col gap-[7px] p-0">
       {songs.map((song) => (
         <li
           className={cn(
-            'relative flex min-h-[68px] items-center gap-[11px] rounded-[11px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
+            'relative flex min-h-[68px] items-center gap-[11px] rounded-[4px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
             onReorder && songs.length > 1 &&
               'cursor-grab select-none active:cursor-grabbing',
             draggedSongId === song.id && 'opacity-35',
@@ -116,16 +142,16 @@ export function SongList({
           <img
             src={song.thumbnailUrl}
             alt=""
-            className="aspect-video w-[62px] shrink-0 rounded-[7px] bg-[#17151c] object-cover md:w-[72px]"
+            className="size-14 shrink-0 rounded-[4px] bg-[#17151c] object-cover"
           />
           <div className="flex min-w-0 flex-1 flex-col">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
               {song.title}
             </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted">
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap pr-16 text-[11px] text-muted">
               {song.artist}
             </span>
-            <span className="mt-1 flex min-w-0 items-center gap-1.5">
+            <span className="mt-1 flex min-w-0 items-center gap-1.5 pr-16">
               <span className="grid size-[18px] shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
                 {song.addedByAvatarUrl ? (
                   <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
@@ -138,25 +164,48 @@ export function SongList({
               </small>
             </span>
           </div>
-          <span className="hidden font-mono text-[10px] text-dim md:inline">
-            {formatDuration(song.durationSeconds)}
-          </span>
-          {onRemove && (canRemove?.(song) ?? true) && (
+          <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
             <button
-              className={cn(
-                'grid size-[29px] shrink-0 place-items-center rounded-[7px] border-0 bg-transparent p-0',
-                'text-[#847e8c] hover:bg-danger/[0.08] hover:text-danger',
-              )}
+              className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-muted transition-colors hover:bg-purple/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light"
               type="button"
               draggable={false}
-              aria-label={t('song.removeFromQueue')}
-              onClick={() => onRemove(song.id)}
+              aria-label={`${song.title} · ${t(savedByVideoId[song.videoId] ? 'library.savedInPlaylist' : 'library.addToPlaylist')}`}
+              title={t(savedByVideoId[song.videoId] ? 'library.savedInPlaylist' : 'library.addToPlaylist')}
+              onClick={() => setSaveSong(song)}
             >
-              <TrashIcon size={17} />
+              {savedByVideoId[song.videoId]
+                ? <span className="grid size-4 place-items-center rounded-full bg-lime text-canvas"><Check size={11} strokeWidth={3} aria-hidden="true" /></span>
+                : <CirclePlus size={18} aria-hidden="true" />}
             </button>
-          )}
+            {onRemove && (canRemove?.(song) ?? true) && (
+              <button
+                className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] transition-colors hover:bg-danger/[0.08] hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
+                type="button"
+                draggable={false}
+                aria-label={`${song.title} · ${t('song.removeFromQueue')}`}
+                title={t('song.removeFromQueue')}
+                onClick={() => onRemove(song.id)}
+              >
+                <TrashIcon size={17} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </li>
       ))}
     </ol>
+    {saveSong && <SaveToPlaylistDialog
+      key={saveSong.id}
+      song={{ videoId: saveSong.videoId, roomSongId: saveSong.id }}
+      onClose={() => setSaveSong(null)}
+      onSavedChange={(saved) => {
+        if (!user) return
+        setSavedMembership((previous) => ({
+          userId: user.id,
+          byVideoId: { ...(previous?.userId === user.id ? previous.byVideoId : {}), [saveSong.videoId]: saved },
+        }))
+      }}
+      onLibraryChange={onLibraryChange}
+    />}
+    </>
   )
 }

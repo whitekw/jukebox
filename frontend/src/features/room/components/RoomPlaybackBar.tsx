@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { useAuth } from '../../auth/context'
+import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn } from '../../../shared/styles'
+import { chromeIconButtonStyles } from '../../../shared/styles'
 import { expectedPlaybackPosition, type PlaybackSynchronization } from '../playback/playbackSync'
 import type { PlayerAudioSettings } from '../playback/playerAudioSettings'
 import type { Song } from '../types'
+import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 
 type RoomPlaybackBarProps = {
   song: Song | null
@@ -14,8 +17,11 @@ type RoomPlaybackBarProps = {
   localPositionSeconds?: number
   audioSettings?: PlayerAudioSettings
   onVolumeChange?: (volume: number) => void
+  onMuteToggle?: () => void
   onAdvance?: () => void
   onGlobalPlaybackToggle?: () => void
+  onLibraryChange?: () => void
+  libraryRevision?: number
 }
 
 export function RoomPlaybackBar({
@@ -26,17 +32,42 @@ export function RoomPlaybackBar({
   localPositionSeconds,
   audioSettings,
   onVolumeChange,
+  onMuteToggle,
   onAdvance,
   onGlobalPlaybackToggle,
+  onLibraryChange,
+  libraryRevision = 0,
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
+  const { user } = useAuth()
   const [now, setNow] = useState(() => Date.now())
+  const [saveSongId, setSaveSongId] = useState<string | null>(null)
+  const [savedMembership, setSavedMembership] = useState<{ userId: string; videoId: string; saved: boolean } | null>(null)
+  const membershipRequest = useRef(0)
   const songId = song?.id
+  const userId = user?.id
+  const videoId = song?.videoId
   useEffect(() => {
     if (!songId) return
     const timer = window.setInterval(() => setNow(Date.now()), 500)
     return () => window.clearInterval(timer)
   }, [songId])
+
+  useEffect(() => {
+    const requestId = ++membershipRequest.current
+    if (!userId || !videoId) return
+    void libraryApi.list(videoId).then(({ items }) => {
+      if (requestId === membershipRequest.current) {
+        setSavedMembership({ userId, videoId, saved: items.some((playlist) => playlist.containsTrack) })
+      }
+    }).catch(() => {
+      // The save dialog can retry if the library is temporarily unavailable.
+    })
+    return () => { membershipRequest.current += 1 }
+  }, [userId, videoId, libraryRevision])
+
+  const isSaved = Boolean(userId && videoId && savedMembership?.userId === userId &&
+    savedMembership.videoId === videoId && savedMembership.saved)
 
   const duration = song?.durationSeconds ?? 0
   const position = Math.min(
@@ -44,6 +75,8 @@ export function RoomPlaybackBar({
     Math.max(0, localPositionSeconds ?? expectedPlaybackPosition(synchronization, paused || blocked, now)),
   )
   const progress = duration > 0 ? (position / duration) * 100 : 0
+  const isMuted = audioSettings?.muted || audioSettings?.volume === 0
+  const displayedVolume = isMuted ? 0 : audioSettings?.volume ?? 0
 
   return (
     <footer className="relative z-20 shrink-0 border-t border-line bg-[#110f16]/95 py-2.5">
@@ -75,7 +108,7 @@ export function RoomPlaybackBar({
               <Music2 size={20} />
             </div>
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 max-w-[min(520px,40vw)]">
             <h1 className="m-0 truncate text-sm font-bold text-ink" title={song?.title}>
               {song?.title ?? t('status.waiting')}
             </h1>
@@ -83,15 +116,25 @@ export function RoomPlaybackBar({
               {song?.artist ?? t('nowPlaying.empty')}
             </p>
           </div>
+          {song && (
+            <button
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light"
+              type="button"
+              aria-label={isSaved ? t('library.savedInPlaylist') : t('library.addToPlaylist')}
+              title={isSaved ? t('library.savedInPlaylist') : t('library.addToPlaylist')}
+              onClick={() => setSaveSongId(song.id)}
+            >
+              {isSaved
+                ? <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
+                : <CirclePlus size={21} aria-hidden="true" />}
+            </button>
+          )}
         </div>
         {(onGlobalPlaybackToggle || onAdvance) && song && (
           <div className="flex shrink-0 items-center gap-2">
             {onGlobalPlaybackToggle && (
               <button
-                className={cn(
-                  buttonStyles({ intent: paused ? 'primary' : 'outline', size: 'md' }),
-                  'size-10 shrink-0 px-0',
-                )}
+                className={chromeIconButtonStyles}
                 type="button"
                 aria-label={paused ? t('manager.playAll') : t('manager.pauseAll')}
                 title={paused ? t('manager.playAll') : t('manager.pauseAll')}
@@ -102,10 +145,7 @@ export function RoomPlaybackBar({
             )}
             {onAdvance && (
               <button
-                className={cn(
-                  buttonStyles({ intent: 'outline', size: 'md' }),
-                  'size-10 shrink-0 px-0',
-                )}
+                className={chromeIconButtonStyles}
                 type="button"
                 aria-label={t('manager.skip')}
                 title={t('manager.skip')}
@@ -116,26 +156,44 @@ export function RoomPlaybackBar({
             )}
           </div>
         )}
-        {song && audioSettings && onVolumeChange && (
-          <div className="flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20">
-            {audioSettings.muted || audioSettings.volume === 0
-              ? <VolumeX size={18} aria-hidden="true" className="shrink-0" />
-              : <Volume2 size={18} aria-hidden="true" className="shrink-0" />}
+        {song && audioSettings && onVolumeChange && onMuteToggle && (
+          <div className="room-volume-control flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20">
+            <button
+              className="grid size-6 shrink-0 place-items-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
+              type="button"
+              aria-label={isMuted ? t('playback.unmute') : t('playback.mute')}
+              title={isMuted ? t('playback.unmute') : t('playback.mute')}
+              aria-pressed={isMuted}
+              onClick={onMuteToggle}
+            >
+              {isMuted ? <VolumeX size={18} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
+            </button>
             <input
-              className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-purple-light [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-light"
+              className="room-volume-slider h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light"
               type="range"
               min={0}
               max={100}
               step={1}
-              value={audioSettings.volume}
+              value={displayedVolume}
               onChange={(event) => onVolumeChange(event.currentTarget.valueAsNumber)}
               aria-label={t('playback.volume')}
-              title={`${t('playback.volume')}: ${audioSettings.volume}%`}
-              style={{ background: `linear-gradient(to right, var(--color-purple-light) ${audioSettings.volume}%, rgba(255,255,255,.18) ${audioSettings.volume}%)` }}
+              title={`${t('playback.volume')}: ${displayedVolume}%`}
+              style={{ background: `linear-gradient(to right, var(--room-volume-fill) ${displayedVolume}%, rgba(255,255,255,.3) ${displayedVolume}%)` }}
             />
           </div>
         )}
       </div>
+      {song && saveSongId === song.id && <SaveToPlaylistDialog
+        key={song.id}
+        song={{ videoId: song.videoId, roomSongId: song.id }}
+        onClose={() => setSaveSongId(null)}
+        onSavedChange={(saved) => {
+          if (!userId) return
+          membershipRequest.current += 1
+          setSavedMembership({ userId, videoId: song.videoId, saved })
+        }}
+        onLibraryChange={() => onLibraryChange?.()}
+      />}
     </footer>
   )
 }
