@@ -62,15 +62,15 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
               key={playlist.id}
               type="button"
               className={cn(
-                'grid size-11 shrink-0 place-items-center overflow-hidden rounded-[4px] border border-transparent bg-white/5 text-purple-light transition-colors hover:border-purple-light/60 hover:bg-purple/15 focus-visible:outline-2 focus-visible:outline-purple-light',
-                selectedPlaylistId === playlist.id && 'border-purple-light bg-purple/20',
+                'grid size-11 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-white/5 text-purple-light ring-1 ring-inset ring-transparent transition-colors hover:bg-purple/15 hover:ring-purple-light/60 focus-visible:outline-2 focus-visible:outline-purple-light',
+                selectedPlaylistId === playlist.id && 'bg-purple/20 ring-purple-light',
               )}
               aria-label={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
               title={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
               onClick={() => onSelectPlaylist(playlist)}
             >
               {playlist.kind === 'favorites'
-                ? <span className="grid size-full place-items-center bg-gradient-to-br from-purple to-[#9de0cf] text-white"><Heart size={23} fill="currentColor" aria-hidden="true" /></span>
+                ? <span className="grid size-full place-items-center bg-gradient-to-br from-purple to-[#9de0cf] text-white"><Heart size={21} fill="currentColor" aria-hidden="true" /></span>
                 : playlist.thumbnailUrl
                   ? <img className="size-full object-cover" src={playlist.thumbnailUrl} alt="" />
                   : <ListMusic size={21} aria-hidden="true" />}
