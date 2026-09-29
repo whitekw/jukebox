@@ -10,9 +10,21 @@ export type Playlist = {
   thumbnailUrl: string | null
 }
 
+export type LibraryTrack = {
+  videoId: string
+  title: string
+  artist: string
+  durationSeconds: number
+  thumbnailUrl: string
+  addedAt: number
+}
+
 export const libraryApi = {
-  list(videoId: string) {
-    return request<{ items: Playlist[] }>(`/api/me/playlists?videoId=${encodeURIComponent(videoId)}`)
+  list(videoId?: string) {
+    return request<{ items: Playlist[] }>(`/api/me/playlists${videoId ? `?videoId=${encodeURIComponent(videoId)}` : ''}`)
+  },
+  getTracks(playlistId: string) {
+    return request<{ items: LibraryTrack[] }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/tracks`)
   },
   create(name: string) {
     return request<Playlist>('/api/me/playlists', {

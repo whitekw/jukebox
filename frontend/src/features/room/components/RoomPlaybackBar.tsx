@@ -19,6 +19,7 @@ type RoomPlaybackBarProps = {
   onVolumeChange?: (volume: number) => void
   onAdvance?: () => void
   onGlobalPlaybackToggle?: () => void
+  onLibraryChange?: () => void
 }
 
 export function RoomPlaybackBar({
@@ -31,6 +32,7 @@ export function RoomPlaybackBar({
   onVolumeChange,
   onAdvance,
   onGlobalPlaybackToggle,
+  onLibraryChange,
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
   const { user } = useAuth()
@@ -183,6 +185,7 @@ export function RoomPlaybackBar({
           membershipRequest.current += 1
           setSavedMembership({ userId, videoId: song.videoId, saved })
         }}
+        onLibraryChange={() => onLibraryChange?.()}
       />}
     </footer>
   )

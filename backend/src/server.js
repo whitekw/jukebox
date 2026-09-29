@@ -454,6 +454,11 @@ app.get('/api/me/playlists', (req, res) => {
   res.json({ items: library.list(user.id, videoId) })
 })
 
+app.get('/api/me/playlists/:playlistId/tracks', (req, res) => {
+  const user = requireAuthUser(req)
+  res.json({ items: library.listTracks(user.id, req.params.playlistId) })
+})
+
 app.post('/api/me/playlists', mutationLimiter, (req, res) => {
   const user = requireAuthUser(req)
   res.status(201).json(library.create(user.id, req.body?.name))

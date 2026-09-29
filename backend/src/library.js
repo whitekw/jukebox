@@ -55,6 +55,19 @@ function createLibraryService(db) {
     }))
   }
 
+  function listTracks(userId, playlistId) {
+    requireOwnedPlaylist(userId, playlistId)
+    return db.prepare(
+      `SELECT library_tracks.video_id AS videoId, library_tracks.title,
+              library_tracks.artist, library_tracks.duration_seconds AS durationSeconds,
+              library_tracks.thumbnail_url AS thumbnailUrl, playlist_tracks.added_at AS addedAt
+       FROM playlist_tracks
+       JOIN library_tracks ON library_tracks.video_id = playlist_tracks.video_id
+       WHERE playlist_tracks.playlist_id = ?
+       ORDER BY playlist_tracks.added_at DESC, library_tracks.video_id`,
+    ).all(playlistId)
+  }
+
   function create(userId, name) {
     const trimmed = typeof name === 'string' ? name.trim() : ''
     if (!trimmed || trimmed.length > 60) {
@@ -112,7 +125,7 @@ function createLibraryService(db) {
     })
   }
 
-  return { list, create, addTrack, removeTrack }
+  return { list, listTracks, create, addTrack, removeTrack }
 }
 
 module.exports = { createLibraryService }

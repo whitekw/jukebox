@@ -79,6 +79,7 @@ export function RoomPage() {
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
+  const [libraryRevision, setLibraryRevision] = useState(0)
   const [songControlTick, setSongControlTick] = useState(0)
   const [localPlaybackPosition, setLocalPlaybackPosition] = useState<{
     songId: string
@@ -348,7 +349,7 @@ export function RoomPage() {
         'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 lg:gap-0 lg:overflow-hidden lg:p-0',
         'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
-          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} />
+          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} />
           <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
             <div inert={requestSongOpen} aria-hidden={requestSongOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
             <NowPlaying
@@ -465,6 +466,7 @@ export function RoomPage() {
 
       <RoomPlaybackBar
         song={room.currentSong}
+        onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
         paused={room.playbackPaused}
         blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
         synchronization={playbackSynchronization}

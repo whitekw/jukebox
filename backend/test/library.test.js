@@ -30,9 +30,13 @@ test('saves one video in multiple user playlists without changing room history',
     assert.deepEqual(playlists.map(({ trackCount, containsTrack }) => [trackCount, containsTrack]), [[1, true], [1, true]])
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM library_tracks').get().count, 1)
     assert.equal(db.prepare("SELECT status FROM songs WHERE id = 'song-1'").get().status, 'played')
+    assert.deepEqual(library.listTracks('user-1', custom.id).map(({ videoId, title }) => ({ videoId, title })), [
+      { videoId: 'abcdefghijk', title: 'Title' },
+    ])
 
     assert.throws(() => library.addTrack('user-2', custom.id, 'song-1'), { code: 'PLAYLIST_NOT_FOUND' })
     assert.throws(() => library.removeTrack('user-2', favorites.id, 'abcdefghijk'), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.throws(() => library.listTracks('user-2', custom.id), { code: 'PLAYLIST_NOT_FOUND' })
     library.removeTrack('user-1', favorites.id, 'abcdefghijk')
     assert.deepEqual(library.list('user-1', 'abcdefghijk').map(({ trackCount }) => trackCount), [0, 1])
     assert.equal(library.list('user-2', 'abcdefghijk').length, 1)
