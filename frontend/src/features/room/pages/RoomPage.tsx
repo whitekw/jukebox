@@ -349,8 +349,8 @@ export function RoomPage() {
         'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} />
-          <div className="min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
-            <div className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
+          <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+            <div inert={requestSongOpen} aria-hidden={requestSongOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
             <NowPlaying
               onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
               song={room.currentSong}
@@ -417,6 +417,15 @@ export function RoomPage() {
               claimingPlaybackHost={claimingHost}
             />
             </div>
+            {participant && (
+              <SongRequestDialog
+                open={requestSongOpen}
+                onClose={() => setRequestSongOpen(false)}
+                onAddSong={addSong}
+                message={message}
+                error={error}
+              />
+            )}
           </div>
             <QueuePanel
               className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
@@ -455,15 +464,6 @@ export function RoomPage() {
               )}
             />
       </section>
-      {participant && (
-        <SongRequestDialog
-          open={requestSongOpen}
-          onClose={() => setRequestSongOpen(false)}
-          onAddSong={addSong}
-          message={message}
-          error={error}
-        />
-      )}
 
       <RoomPlaybackBar
         song={room.currentSong}

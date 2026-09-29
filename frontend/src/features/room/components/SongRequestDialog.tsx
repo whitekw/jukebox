@@ -18,9 +18,14 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
   useEffect(() => {
     const dialog = dialogRef.current
     if (!open || !dialog) return
-    dialog.showModal()
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog.show()
     dialog.querySelector('input')?.focus()
-    return () => dialog.close()
+    return () => {
+      const restoreFocus = dialog.contains(document.activeElement)
+      dialog.close()
+      if (restoreFocus) trigger?.focus()
+    }
   }, [open])
 
   return (
@@ -28,10 +33,14 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
       ref={dialogRef}
       aria-labelledby={titleId}
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) event.currentTarget.close()
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          event.currentTarget.close()
+        }
       }}
-      className="fixed inset-0 m-auto h-[min(640px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(800px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-line bg-canvas p-0 text-ink shadow-[0_24px_80px_rgba(0,0,0,.4)] backdrop:bg-black/65 backdrop:backdrop-blur-sm"
+      className="absolute inset-0 z-20 m-0 h-full max-h-none w-full max-w-none overflow-hidden border-0 bg-canvas p-0 text-ink"
     >
       <div className="flex h-full min-h-0 flex-col p-4 sm:p-6">
         <div className="mb-5 flex shrink-0 items-center justify-between gap-3">
