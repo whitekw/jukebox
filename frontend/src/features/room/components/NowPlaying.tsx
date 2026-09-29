@@ -85,7 +85,10 @@ export const NowPlaying = ({
             )}
             {onRequestSong && (
               <button
-                className={cn(buttonStyles({ intent: 'primary', size: 'sm' }), 'lg:hidden')}
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'sm' }),
+                  'gap-2 rounded-md border-purple/25 bg-purple/[0.08] text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15 lg:hidden',
+                )}
                 type="button"
                 aria-haspopup="dialog"
                 onClick={onRequestSong}
@@ -114,7 +117,10 @@ export const NowPlaying = ({
             </p>
             {onRequestSong && (
               <button
-                className={cn(buttonStyles({ intent: 'primary', size: 'md' }), 'mt-6')}
+                className={cn(
+                  buttonStyles({ intent: 'outline', size: 'md' }),
+                  'mt-6 gap-2 rounded-md border-purple/25 bg-purple/[0.08] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
+                )}
                 type="button"
                 aria-haspopup="dialog"
                 onClick={onRequestSong}
