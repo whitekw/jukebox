@@ -476,7 +476,12 @@ app.delete('/api/me/playlists/:playlistId', mutationLimiter, (req, res) => {
 
 app.put('/api/me/playlists/:playlistId/tracks', mutationLimiter, (req, res) => {
   const user = requireAuthUser(req)
-  res.json(library.addTrack(user.id, req.params.playlistId, req.body?.roomSongId))
+  if (req.body?.videoId !== undefined && req.body?.roomSongId !== undefined) {
+    throw new AppError(400, '저장할 곡을 하나만 선택해주세요.', 'INVALID_LIBRARY_SONG')
+  }
+  res.json(req.body?.videoId !== undefined
+    ? library.addExistingTrack(user.id, req.params.playlistId, req.body.videoId)
+    : library.addTrack(user.id, req.params.playlistId, req.body?.roomSongId))
 })
 
 app.delete('/api/me/playlists/:playlistId/tracks/:videoId', mutationLimiter, (req, res) => {

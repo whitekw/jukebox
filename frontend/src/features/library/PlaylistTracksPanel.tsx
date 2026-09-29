@@ -4,6 +4,7 @@ import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
 import { buttonStyles, panelCloseButtonStyles } from '../../shared/styles'
 import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
+import { SaveToPlaylistDialog } from './SaveToPlaylistDialog'
 
 export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, onLibraryChange, onPlaylistRenamed, onPlaylistDeleted, message, roomError }: {
   playlist: Playlist
@@ -25,7 +26,7 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, on
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [addingId, setAddingId] = useState('')
-  const [removingId, setRemovingId] = useState('')
+  const [managedTrack, setManagedTrack] = useState<LibraryTrack | null>(null)
   const [mutationError, setMutationError] = useState('')
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(playlist.name)
@@ -72,21 +73,6 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, on
       await onAddSong(videoId)
     } finally {
       if (panelRef.current) setAddingId('')
-    }
-  }
-
-  async function removeSong(videoId: string) {
-    if (removingId) return
-    setRemovingId(videoId)
-    setMutationError('')
-    try {
-      await libraryApi.removeTrack(playlist.id, videoId)
-      if (panelRef.current) setTracks((current) => current.filter((track) => track.videoId !== videoId))
-      onLibraryChange()
-    } catch (cause) {
-      if (panelRef.current) setMutationError(getErrorMessage(cause, t))
-    } finally {
-      if (panelRef.current) setRemovingId('')
     }
   }
 
@@ -164,11 +150,17 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, on
         {loading && !tracks.length ? <p className="py-8 text-center text-sm text-muted">{t('library.loading')}</p> :
           error ? <div className="flex flex-col items-center gap-3 py-8"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>{t('common.retry')}</button></div> :
             tracks.length === 0 ? <p className="py-8 text-center text-sm text-muted">{t('library.emptyPlaylist')}</p> :
-              <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} removingId={removingId} onRemoveSong={(videoId) => void removeSong(videoId)} />}
+              <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} onManageSaved={(videoId) => setManagedTrack(tracks.find((track) => track.videoId === videoId) ?? null)} />}
       </div>
       {mutationError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{mutationError}</p>}
       {roomError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{roomError}</p>}
       {message && !roomError && <p className="mt-3 shrink-0 text-sm text-lime" role="status">{message}</p>}
+      {managedTrack && <SaveToPlaylistDialog
+        key={managedTrack.videoId}
+        song={managedTrack}
+        onClose={() => setManagedTrack(null)}
+        onLibraryChange={onLibraryChange}
+      />}
     </section>
   )
 }

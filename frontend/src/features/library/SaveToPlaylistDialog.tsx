@@ -3,13 +3,12 @@ import { Check, Heart, ListMusic, Plus, Search, X } from 'lucide-react'
 import { useAuth } from '../auth/context'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../shared/styles'
-import type { Song } from '../room/types'
 import { libraryApi, type Playlist } from './api'
 
 export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryChange }: {
-  song: Song
+  song: { videoId: string; roomSongId?: string }
   onClose: () => void
-  onSavedChange: (saved: boolean) => void
+  onSavedChange?: (saved: boolean) => void
   onLibraryChange: () => void
 }) {
   const { t } = useI18n()
@@ -60,13 +59,14 @@ export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryCh
       if (playlist.containsTrack) {
         await libraryApi.removeTrack(playlist.id, song.videoId)
       } else {
-        await libraryApi.addTrack(playlist.id, song.id)
+        if (song.roomSongId) await libraryApi.addTrack(playlist.id, song.roomSongId)
+        else await libraryApi.addExistingTrack(playlist.id, song.videoId)
       }
       onLibraryChange()
-      onSavedChange(!playlist.containsTrack || playlists.some((item) => item.id !== playlist.id && item.containsTrack))
+      onSavedChange?.(!playlist.containsTrack || playlists.some((item) => item.id !== playlist.id && item.containsTrack))
       const { items } = await libraryApi.list(song.videoId)
       setPlaylists(items)
-      onSavedChange(items.some((item) => item.containsTrack))
+      onSavedChange?.(items.some((item) => item.containsTrack))
     } catch (cause) {
       setError(getErrorMessage(cause, t))
     } finally {
@@ -83,11 +83,12 @@ export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryCh
     try {
       const playlist = await libraryApi.create(name)
       created = true
-      await libraryApi.addTrack(playlist.id, song.id)
-      onSavedChange(true)
+      if (song.roomSongId) await libraryApi.addTrack(playlist.id, song.roomSongId)
+      else await libraryApi.addExistingTrack(playlist.id, song.videoId)
+      onSavedChange?.(true)
       const { items } = await libraryApi.list(song.videoId)
       setPlaylists(items)
-      onSavedChange(items.some((item) => item.containsTrack))
+      onSavedChange?.(items.some((item) => item.containsTrack))
       setName('')
       setCreating(false)
     } catch (cause) {

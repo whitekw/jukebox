@@ -140,6 +140,26 @@ function createLibraryService(db) {
     })
   }
 
+  function addExistingTrack(userId, playlistId, videoId) {
+    if (typeof videoId !== 'string' || !videoId) {
+      throw new AppError(400, '저장할 곡을 선택해주세요.', 'INVALID_LIBRARY_SONG')
+    }
+    return transaction(db, () => {
+      requireOwnedPlaylist(userId, playlistId)
+      const track = db.prepare('SELECT video_id FROM library_tracks WHERE video_id = ?').get(videoId)
+      if (!track) throw new AppError(404, '곡을 찾지 못했습니다.', 'SONG_NOT_FOUND')
+      const now = Date.now()
+      const result = db.prepare(
+        `INSERT OR IGNORE INTO playlist_tracks (playlist_id, video_id, added_at)
+         VALUES (?, ?, ?)`,
+      ).run(playlistId, videoId, now)
+      if (result.changes) {
+        db.prepare('UPDATE playlists SET updated_at = ? WHERE id = ?').run(now, playlistId)
+      }
+      return { videoId, added: true }
+    })
+  }
+
   function removeTrack(userId, playlistId, videoId) {
     return transaction(db, () => {
       requireOwnedPlaylist(userId, playlistId)
@@ -153,7 +173,7 @@ function createLibraryService(db) {
     })
   }
 
-  return { list, listTracks, create, rename, remove, addTrack, removeTrack }
+  return { list, listTracks, create, rename, remove, addTrack, addExistingTrack, removeTrack }
 }
 
 module.exports = { createLibraryService }

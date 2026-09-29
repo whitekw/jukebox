@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { formatDuration } from '../../../shared/format'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
@@ -8,19 +8,17 @@ type VideoResultListProps = {
   videos: VideoSearchResult[]
   addingId: string
   onAddSong?: (videoId: string) => void
-  removingId?: string
-  onRemoveSong?: (videoId: string) => void
+  onManageSaved?: (videoId: string) => void
 }
 
 export function VideoResultList({
   videos,
   addingId,
   onAddSong,
-  removingId = '',
-  onRemoveSong,
+  onManageSaved,
 }: VideoResultListProps) {
   const { t } = useI18n()
-  const actionCount = Number(Boolean(onAddSong)) + Number(Boolean(onRemoveSong))
+  const actionCount = Number(Boolean(onAddSong)) + Number(Boolean(onManageSaved))
 
   return (
     <ol className="mt-[18px] flex min-w-0 list-none flex-col gap-1.5 p-0">
@@ -73,24 +71,23 @@ export function VideoResultList({
                 : t('search.cannotAddSong', { title: video.title })
             }
             title={!video.embeddable ? t('search.embedUnavailable') : undefined}
-            disabled={!video.embeddable || Boolean(addingId || removingId)}
+            disabled={!video.embeddable || Boolean(addingId)}
             onClick={() => onAddSong(video.videoId)}
           >
             {addingId === video.videoId ? '…' : '+'}
           </button>}
-          {onRemoveSong && <button
+          {onManageSaved && <button
             className={cn(
-              'row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-transparent bg-transparent text-muted transition-colors duration-150',
-              'hover:border-danger/25 hover:bg-danger/10 hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto',
+              'row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-lg border border-transparent bg-transparent text-muted transition-colors duration-150',
+              'hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:col-auto md:row-auto',
               onAddSong ? 'col-start-3' : 'col-start-2',
             )}
             type="button"
-            aria-label={t('library.removeTrack', { title: video.title })}
-            title={t('library.removeTrack', { title: video.title })}
-            disabled={Boolean(removingId || addingId)}
-            onClick={() => onRemoveSong(video.videoId)}
+            aria-label={`${video.title} · ${t('library.savedInPlaylist')}`}
+            title={t('library.savedInPlaylist')}
+            onClick={() => onManageSaved(video.videoId)}
           >
-            {removingId === video.videoId ? '…' : <Trash2 size={17} aria-hidden="true" />}
+            <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
           </button>}
         </li>
       ))}

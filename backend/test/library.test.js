@@ -81,3 +81,38 @@ test('renames and deletes only owned custom playlists while preserving other col
     db.close()
   }
 })
+
+test('copies a stored video between playlists and can remove it from every playlist', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('user-1', 'discord-1', 'Alice', 1, 1, 1), ('user-2', 'discord-2', 'Bob', 1, 1, 1)`).run()
+    db.prepare(`INSERT INTO rooms (id, code, host_token_hash, created_at)
+      VALUES ('room-1', 'ABC123', '', 1)`).run()
+    db.prepare(`INSERT INTO participants (id, room_id, token_hash, nickname, created_at)
+      VALUES ('participant-1', 'room-1', 'token', 'Requester', 1)`).run()
+    db.prepare(`INSERT INTO songs
+      (id, room_id, video_id, title, artist, duration_seconds, thumbnail_url, added_by, status, position, created_at)
+      VALUES ('song-1', 'room-1', 'abcdefghijk', 'Title', 'Artist', 180, 'https://example.com/cover',
+        'participant-1', 'played', 0, 1)`).run()
+
+    const library = createLibraryService(db)
+    const favorites = library.list('user-1')[0]
+    const custom = library.create('user-1', 'Other playlist')
+    assert.throws(() => library.addExistingTrack('user-1', custom.id, 'not-stored'), { code: 'SONG_NOT_FOUND' })
+    library.addTrack('user-1', favorites.id, 'song-1')
+    library.addExistingTrack('user-1', custom.id, 'abcdefghijk')
+    library.addExistingTrack('user-1', custom.id, 'abcdefghijk')
+    assert.throws(() => library.addExistingTrack('user-2', custom.id, 'abcdefghijk'), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.deepEqual(library.list('user-1', 'abcdefghijk').map(({ trackCount }) => trackCount), [1, 1])
+
+    library.removeTrack('user-1', favorites.id, 'abcdefghijk')
+    library.removeTrack('user-1', custom.id, 'abcdefghijk')
+    assert.equal(library.list('user-1', 'abcdefghijk').some(({ containsTrack }) => containsTrack), false)
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM library_tracks').get().count, 1)
+    library.addExistingTrack('user-1', custom.id, 'abcdefghijk')
+    assert.equal(library.listTracks('user-1', custom.id)[0].videoId, 'abcdefghijk')
+  } finally {
+    db.close()
+  }
+})

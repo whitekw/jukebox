@@ -180,7 +180,7 @@ export function RoomPlaybackBar({
       </div>
       {song && saveSongId === song.id && <SaveToPlaylistDialog
         key={song.id}
-        song={song}
+        song={{ videoId: song.videoId, roomSongId: song.id }}
         onClose={() => setSaveSongId(null)}
         onSavedChange={(saved) => {
           if (!userId) return

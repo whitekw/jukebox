@@ -49,6 +49,12 @@ export const libraryApi = {
       body: JSON.stringify({ roomSongId }),
     })
   },
+  addExistingTrack(playlistId: string, videoId: string) {
+    return request<{ videoId: string; added: boolean }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+      method: 'PUT',
+      body: JSON.stringify({ videoId }),
+    })
+  },
   removeTrack(playlistId: string, videoId: string) {
     return request<{ videoId: string; added: boolean }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/tracks/${encodeURIComponent(videoId)}`, {
       method: 'DELETE',
