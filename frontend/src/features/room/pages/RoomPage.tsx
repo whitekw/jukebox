@@ -446,6 +446,7 @@ export function RoomPage() {
                 revision={libraryRevision}
                 onClose={closePlaylist}
                 onAddSong={participant ? addSong : undefined}
+                onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
                 message={message}
                 roomError={error || roomError}
               />
@@ -491,6 +492,7 @@ export function RoomPage() {
 
       <RoomPlaybackBar
         song={room.currentSong}
+        libraryRevision={libraryRevision}
         onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
         paused={room.playbackPaused}
         blocked={room.playbackMode === 'host_only' && room.playbackBlocked}

@@ -5,11 +5,12 @@ import { buttonStyles, panelCloseButtonStyles } from '../../shared/styles'
 import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
 
-export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, message, roomError }: {
+export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, onLibraryChange, message, roomError }: {
   playlist: Playlist
   revision: number
   onClose: () => void
   onAddSong?: (videoId: string) => Promise<void>
+  onLibraryChange: () => void
   message: string
   roomError: string
 }) {
@@ -22,7 +23,10 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, me
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [addingId, setAddingId] = useState('')
+  const [removingId, setRemovingId] = useState('')
+  const [mutationError, setMutationError] = useState('')
   const name = playlist.kind === 'favorites' ? t('collection.favorites') : playlist.name
+  const coverUrl = loading || error ? playlist.thumbnailUrl : tracks[0]?.thumbnailUrl
 
   useEffect(() => {
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -65,12 +69,27 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, me
     }
   }
 
+  async function removeSong(videoId: string) {
+    if (removingId) return
+    setRemovingId(videoId)
+    setMutationError('')
+    try {
+      await libraryApi.removeTrack(playlist.id, videoId)
+      if (panelRef.current) setTracks((current) => current.filter((track) => track.videoId !== videoId))
+      onLibraryChange()
+    } catch (cause) {
+      if (panelRef.current) setMutationError(getErrorMessage(cause, t))
+    } finally {
+      if (panelRef.current) setRemovingId('')
+    }
+  }
+
   return (
     <section ref={panelRef} aria-labelledby={titleId} className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas p-4 text-ink sm:p-6">
       <div className="mb-5 flex shrink-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-purple to-[#9de0cf] text-white">
-            {playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : playlist.thumbnailUrl ? <img src={playlist.thumbnailUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
+            {playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : coverUrl ? <img src={coverUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
           </span>
           <div className="min-w-0">
             <h2 id={titleId} className="m-0 truncate text-xl font-bold" title={name}>{name}</h2>
@@ -85,8 +104,9 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, me
         {loading && !tracks.length ? <p className="py-8 text-center text-sm text-muted">{t('library.loading')}</p> :
           error ? <div className="flex flex-col items-center gap-3 py-8"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>{t('common.retry')}</button></div> :
             tracks.length === 0 ? <p className="py-8 text-center text-sm text-muted">{t('library.emptyPlaylist')}</p> :
-              <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} />}
+              <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} removingId={removingId} onRemoveSong={(videoId) => void removeSong(videoId)} />}
       </div>
+      {mutationError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{mutationError}</p>}
       {roomError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{roomError}</p>}
       {message && !roomError && <p className="mt-3 shrink-0 text-sm text-lime" role="status">{message}</p>}
     </section>

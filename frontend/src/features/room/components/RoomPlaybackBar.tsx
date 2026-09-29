@@ -20,6 +20,7 @@ type RoomPlaybackBarProps = {
   onAdvance?: () => void
   onGlobalPlaybackToggle?: () => void
   onLibraryChange?: () => void
+  libraryRevision?: number
 }
 
 export function RoomPlaybackBar({
@@ -33,6 +34,7 @@ export function RoomPlaybackBar({
   onAdvance,
   onGlobalPlaybackToggle,
   onLibraryChange,
+  libraryRevision = 0,
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
   const { user } = useAuth()
@@ -60,7 +62,7 @@ export function RoomPlaybackBar({
       // The save dialog can retry if the library is temporarily unavailable.
     })
     return () => { membershipRequest.current += 1 }
-  }, [userId, videoId])
+  }, [userId, videoId, libraryRevision])
 
   const isSaved = Boolean(userId && videoId && savedMembership?.userId === userId &&
     savedMembership.videoId === videoId && savedMembership.saved)
