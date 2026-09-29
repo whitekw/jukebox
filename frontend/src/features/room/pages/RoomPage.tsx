@@ -361,7 +361,7 @@ export function RoomPage() {
       </header>
 
       <section className={cn(
-        'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 room:gap-0 room:overflow-hidden room:p-0',
+        'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 room:auto-rows-auto room:gap-0 room:overflow-hidden room:p-0',
         'room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
