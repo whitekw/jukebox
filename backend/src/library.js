@@ -84,6 +84,15 @@ function createLibraryService(db) {
     ).all(playlistId)
   }
 
+  function listSavedVideoIds(userId) {
+    return db.prepare(
+      `SELECT DISTINCT playlist_tracks.video_id AS videoId
+       FROM playlist_tracks
+       JOIN playlists ON playlists.id = playlist_tracks.playlist_id
+       WHERE playlists.owner_user_id = ?`,
+    ).all(userId).map((row) => row.videoId)
+  }
+
   function create(userId, name) {
     const trimmed = validName(name)
     const now = Date.now()
@@ -173,7 +182,7 @@ function createLibraryService(db) {
     })
   }
 
-  return { list, listTracks, create, rename, remove, addTrack, addExistingTrack, removeTrack }
+  return { list, listTracks, listSavedVideoIds, create, rename, remove, addTrack, addExistingTrack, removeTrack }
 }
 
 module.exports = { createLibraryService }

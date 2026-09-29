@@ -38,27 +38,16 @@ export function SongList({
     songId: string
     edge: 'before' | 'after'
   } | null>(null)
-  const videoIdsKey = [...new Set(songs.map((song) => song.videoId))].sort().join(',')
-
   useEffect(() => {
-    if (!user?.id || !videoIdsKey) return
+    if (!user?.id) return
     let active = true
     const userId = user.id
-    void Promise.allSettled(videoIdsKey.split(',').map(async (videoId) => {
-      const { items } = await libraryApi.list(videoId)
-      return { videoId, saved: items.some((playlist) => playlist.containsTrack) }
-    })).then((results) => {
+    void libraryApi.savedVideoIds().then(({ videoIds }) => {
       if (!active) return
-      setSavedMembership((previous) => {
-        const byVideoId = previous?.userId === userId ? { ...previous.byVideoId } : {}
-        for (const result of results) {
-          if (result.status === 'fulfilled') byVideoId[result.value.videoId] = result.value.saved
-        }
-        return { userId, byVideoId }
-      })
-    })
+      setSavedMembership({ userId, byVideoId: Object.fromEntries(videoIds.map((videoId) => [videoId, true])) })
+    }).catch(() => {})
     return () => { active = false }
-  }, [user?.id, videoIdsKey, libraryRevision])
+  }, [user?.id, libraryRevision])
   const savedByVideoId: Record<string, boolean> = user && savedMembership?.userId === user.id
     ? savedMembership.byVideoId
     : {}

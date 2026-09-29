@@ -49,6 +49,47 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
   }, [userId, libraryRevision, retry])
 
   return <>
+    {userId && <nav className="min-w-0 rounded-[4px] border border-line bg-panel p-2 lg:hidden" aria-label={t('collection.railTitle')}>
+      <div className="px-1 pb-2 text-xs font-semibold text-muted">{t('collection.railTitle')}</div>
+      <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
+        <button
+          type="button"
+          className="flex w-14 shrink-0 flex-col items-center gap-1 text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light"
+          aria-label={t('library.newPlaylist')}
+          onClick={() => setCreating(true)}
+        >
+          <span className="grid size-11 place-items-center rounded-[4px] border border-purple-light/25 bg-purple-light/10"><Plus size={21} aria-hidden="true" /></span>
+          <span className="w-full truncate text-center text-[10px]">{t('library.newPlaylist')}</span>
+        </button>
+        {playlists.map((playlist) => {
+          const name = playlist.kind === 'favorites' ? t('collection.favorites') : playlist.name
+          return <button
+            key={playlist.id}
+            type="button"
+            className="flex w-14 shrink-0 flex-col items-center gap-1 text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
+            aria-label={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
+            aria-pressed={selectedPlaylistId === playlist.id}
+            onClick={() => onSelectPlaylist(playlist)}
+          >
+            <span className={cn(
+              'grid size-11 place-items-center overflow-hidden rounded-[4px] bg-white/5 text-purple-light ring-1 ring-inset ring-transparent',
+              selectedPlaylistId === playlist.id && 'ring-purple-light',
+            )}>
+              {playlist.kind === 'favorites'
+                ? <span className="grid size-full place-items-center bg-gradient-to-br from-purple to-[#9de0cf] text-white"><Heart size={21} fill="currentColor" aria-hidden="true" /></span>
+                : playlist.thumbnailUrl
+                  ? <img className="size-full object-cover" src={playlist.thumbnailUrl} alt="" />
+                  : <ListMusic size={21} aria-hidden="true" />}
+            </span>
+            <span className="w-full truncate text-center text-[10px]">{name}</span>
+          </button>
+        })}
+        {loading && playlists.length === 0 && <span className="size-11 shrink-0 animate-pulse rounded-[4px] bg-white/5" aria-label={t('library.loading')} />}
+        {error && playlists.length === 0 && <button type="button" className="grid size-11 shrink-0 place-items-center rounded-[4px] border border-line text-muted" aria-label={t('common.retry')} onClick={() => setRetry((value) => value + 1)}>
+          <RotateCw size={20} aria-hidden="true" />
+        </button>}
+      </div>
+    </nav>}
     <aside
       className={cn(
         panelStyles({ padding: 'none' }),
@@ -79,6 +120,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
                 selectedPlaylistId === playlist.id && 'bg-purple/20 ring-purple-light',
               )}
               aria-label={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
+              aria-pressed={selectedPlaylistId === playlist.id}
               title={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
               onClick={() => onSelectPlaylist(playlist)}
             >

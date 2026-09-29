@@ -454,6 +454,11 @@ app.get('/api/me/playlists', (req, res) => {
   res.json({ items: library.list(user.id, videoId) })
 })
 
+app.get('/api/me/saved-videos', (req, res) => {
+  const user = requireAuthUser(req)
+  res.json({ videoIds: library.listSavedVideoIds(user.id) })
+})
+
 app.get('/api/me/playlists/:playlistId/tracks', (req, res) => {
   const user = requireAuthUser(req)
   res.json({ items: library.listTracks(user.id, req.params.playlistId) })

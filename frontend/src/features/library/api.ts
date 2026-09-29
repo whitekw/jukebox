@@ -23,6 +23,9 @@ export const libraryApi = {
   list(videoId?: string) {
     return request<{ items: Playlist[] }>(`/api/me/playlists${videoId ? `?videoId=${encodeURIComponent(videoId)}` : ''}`)
   },
+  savedVideoIds() {
+    return request<{ videoIds: string[] }>('/api/me/saved-videos')
+  },
   getTracks(playlistId: string) {
     return request<{ items: LibraryTrack[] }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/tracks`)
   },

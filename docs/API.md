@@ -139,6 +139,7 @@ type RoomEvent = {
 | GET | `/api/extension/rooms` | 확장 프로그램 Bearer | 없음 | 계정이 참여한 방과 소유 방 목록 |
 | POST | `/api/extension/rooms/:code/songs` | 확장 프로그램 Bearer + 해당 방 멤버십 | 변경 | 영상 ID를 검증한 뒤 `RoomState` |
 | GET | `/api/me/playlists?videoId={videoId}` | 로그인 | 없음 | 내 플레이리스트 목록과 해당 영상의 포함 여부 |
+| GET | `/api/me/saved-videos` | 로그인 | 없음 | 내 플레이리스트 중 하나 이상에 저장한 영상 ID 목록 |
 | GET | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 없음 | 목록에 저장한 곡 |
 | POST | `/api/me/playlists` | 로그인 | 변경 | 새 플레이리스트 |
 | PATCH | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 이름 변경 |
@@ -490,6 +491,8 @@ position = playbackPositionSeconds
 ## 10. 개인 플레이리스트
 
 개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성하고, 기본 목록을 먼저 반환합니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
+
+`GET /api/me/saved-videos`는 로그인 계정의 플레이리스트 중 하나 이상에 저장된 영상 ID를 중복 없이 `videoIds` 배열로 반환합니다. 대기열의 저장 표시를 한 번에 갱신할 때 사용합니다.
 
 `POST /api/me/playlists`는 `{ "name": "플레이리스트 이름" }`을 받으며 공백을 제거한 1~60자 이름을 요구합니다. `PUT /api/me/playlists/:playlistId/tracks`는 `{ "roomSongId": "방의 곡 ID" }` 또는 `{ "videoId": "이미 저장된 영상 ID" }` 중 하나를 받습니다. 방 곡 ID를 쓰면 서버에 저장된 곡 메타데이터를 공통 곡 테이블에 기록하고, 영상 ID를 쓰면 공통 곡 테이블에 이미 저장된 곡을 다른 목록에 추가합니다. 같은 곡을 같은 목록에 다시 추가해도 중복되지 않으며, 다른 목록에는 독립적으로 저장됩니다. `DELETE /api/me/playlists/:playlistId/tracks/:videoId`는 해당 목록에서만 곡을 제거합니다. 두 변경 API는 `{ "videoId": "...", "added": true | false }`를 반환합니다. 다른 사용자의 목록은 `PLAYLIST_NOT_FOUND`로 응답합니다.
 
