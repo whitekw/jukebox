@@ -30,14 +30,14 @@ export function VideoResultList({
             'grid min-w-0 gap-x-3 gap-y-2 overflow-hidden',
             actionCount === 2 ? 'grid-cols-[minmax(0,1fr)_36px_36px]' :
               actionCount === 1 ? 'grid-cols-[minmax(0,1fr)_36px]' : 'grid-cols-1',
-            'group rounded-[10px] bg-white/[0.035] p-3 ring-1 ring-transparent ring-inset transition-colors duration-150 hover:bg-purple/15 hover:ring-purple/40 focus-within:bg-purple/15 focus-within:ring-purple/40',
+            'group rounded-[4px] bg-white/[0.035] p-3 ring-1 ring-transparent ring-inset transition-colors duration-150 hover:bg-purple/15 hover:ring-purple/40 focus-within:bg-purple/15 focus-within:ring-purple/40',
             'md:flex md:items-center md:gap-[11px] md:p-2',
           )}
           key={video.videoId}
         >
           <div className="relative col-start-1 row-start-1 aspect-video w-24 shrink-0 md:w-[76px]">
             <img
-              className="size-full rounded-[7px] object-cover"
+              className="size-full rounded-[4px] object-cover"
               src={video.thumbnailUrl}
               alt=""
             />

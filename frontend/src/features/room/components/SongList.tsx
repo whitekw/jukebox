@@ -96,7 +96,7 @@ export function SongList({
       {songs.map((song) => (
         <li
           className={cn(
-            'relative flex min-h-[68px] items-center gap-[11px] rounded-[11px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
+            'relative flex min-h-[68px] items-center gap-[11px] rounded-[4px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
             onReorder && songs.length > 1 &&
               'cursor-grab select-none active:cursor-grabbing',
             draggedSongId === song.id && 'opacity-35',
@@ -116,7 +116,7 @@ export function SongList({
           <img
             src={song.thumbnailUrl}
             alt=""
-            className="aspect-video w-[62px] shrink-0 rounded-[7px] bg-[#17151c] object-cover md:w-[72px]"
+            className="aspect-video w-[62px] shrink-0 rounded-[4px] bg-[#17151c] object-cover md:w-[72px]"
           />
           <div className="flex min-w-0 flex-1 flex-col">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
