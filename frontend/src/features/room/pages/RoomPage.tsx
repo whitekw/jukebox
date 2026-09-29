@@ -32,6 +32,8 @@ import { CollectionsRail } from '../components/CollectionsRail'
 import { InviteRoomButton } from '../components/InviteRoomButton'
 import { RoomJoinPreview } from '../components/RoomJoinPreview'
 import { RoomSettingsButton } from '../components/RoomSettingsButton'
+import { PlaylistTracksPanel } from '../../library/PlaylistTracksPanel'
+import type { Playlist } from '../../library/api'
 import { canControlSong, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
@@ -79,6 +81,7 @@ export function RoomPage() {
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
+  const [selectedPlaylist, setSelectedPlaylist] = useState<{ userId: string; playlist: Playlist } | null>(null)
   const [libraryRevision, setLibraryRevision] = useState(0)
   const [songControlTick, setSongControlTick] = useState(0)
   const [localPlaybackPosition, setLocalPlaybackPosition] = useState<{
@@ -89,6 +92,17 @@ export function RoomPage() {
   const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
+  const activePlaylist = selectedPlaylist && user?.id === selectedPlaylist.userId ? selectedPlaylist.playlist : null
+  const closePlaylist = useCallback(() => setSelectedPlaylist(null), [])
+  function openSongRequest() {
+    setSelectedPlaylist(null)
+    setRequestSongOpen(true)
+  }
+  function openPlaylist(playlist: Playlist) {
+    if (!user) return
+    setRequestSongOpen(false)
+    setSelectedPlaylist({ userId: user.id, playlist })
+  }
   const serverNow = Date.now() + serverTimeOffsetMs
 
   useEffect(() => {
@@ -349,11 +363,11 @@ export function RoomPage() {
         'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 lg:gap-0 lg:overflow-hidden lg:p-0',
         'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
-          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} />
+          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
           <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
-            <div inert={requestSongOpen} aria-hidden={requestSongOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
+            <div inert={requestSongOpen || Boolean(activePlaylist)} aria-hidden={requestSongOpen || Boolean(activePlaylist)} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
             <NowPlaying
-              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
+              onRequestSong={participant ? openSongRequest : undefined}
               song={room.currentSong}
               player={
                 canPlayLocally && room.currentSong ? (
@@ -425,11 +439,22 @@ export function RoomPage() {
                 error={error || roomError}
               />
             )}
+            {activePlaylist && (
+              <PlaylistTracksPanel
+                key={activePlaylist.id}
+                playlist={activePlaylist}
+                revision={libraryRevision}
+                onClose={closePlaylist}
+                onAddSong={participant ? addSong : undefined}
+                message={message}
+                roomError={error || roomError}
+              />
+            )}
           </div>
             <QueuePanel
               className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
               songs={room.queue}
-              onRequestSong={participant ? () => setRequestSongOpen(true) : undefined}
+              onRequestSong={participant ? openSongRequest : undefined}
               onReorder={
                 controlCredentials
                   ? (songId, targetIndex) =>
@@ -504,12 +529,12 @@ export function RoomPage() {
         />
       )}
 
-      {(error || roomError) && !requestSongOpen && (
+      {(error || roomError) && !requestSongOpen && !activePlaylist && (
         <div className={noticeStyles({ tone: 'error' })}>
           {error || roomError}
         </div>
       )}
-      {message && !requestSongOpen && (
+      {message && !requestSongOpen && !activePlaylist && (
         <div
           className={noticeStyles({ tone: 'success' })}
           role="status"

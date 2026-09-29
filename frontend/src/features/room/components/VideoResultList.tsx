@@ -6,7 +6,7 @@ import type { VideoSearchResult } from '../types'
 type VideoResultListProps = {
   videos: VideoSearchResult[]
   addingId: string
-  onAddSong: (videoId: string) => void
+  onAddSong?: (videoId: string) => void
 }
 
 export function VideoResultList({
@@ -21,7 +21,8 @@ export function VideoResultList({
       {videos.map((video) => (
         <li
           className={cn(
-            'grid min-w-0 grid-cols-[minmax(0,1fr)_36px] gap-x-3 gap-y-2 overflow-hidden',
+            'grid min-w-0 gap-x-3 gap-y-2 overflow-hidden',
+            onAddSong ? 'grid-cols-[minmax(0,1fr)_36px]' : 'grid-cols-1',
             'group rounded-[10px] bg-white/[0.035] p-3 ring-1 ring-transparent ring-inset transition-colors duration-150 hover:bg-purple/15 hover:ring-purple/40 focus-within:bg-purple/15 focus-within:ring-purple/40',
             'md:flex md:items-center md:gap-[11px] md:p-2',
           )}
@@ -34,7 +35,7 @@ export function VideoResultList({
               alt=""
             />
           </div>
-          <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-col md:col-span-1 md:row-auto">
+          <div className={cn('row-start-2 flex min-w-0 flex-1 flex-col md:col-span-1 md:row-auto', onAddSong && 'col-span-2')}>
             <strong
               className="line-clamp-2 max-w-full text-[13px] leading-[1.45] md:block md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
               title={video.title}
@@ -56,7 +57,7 @@ export function VideoResultList({
           <span className="hidden font-mono text-[10px] text-dim md:inline">
             {formatDuration(video.durationSeconds)}
           </span>
-          <button
+          {onAddSong && <button
             className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime transition-colors duration-150 enabled:group-hover:border-lime/60 enabled:group-hover:bg-lime/15 enabled:group-focus-within:border-lime/60 enabled:group-focus-within:bg-lime/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
             type="button"
             aria-label={
@@ -69,7 +70,7 @@ export function VideoResultList({
             onClick={() => onAddSong(video.videoId)}
           >
             {addingId === video.videoId ? '…' : '+'}
-          </button>
+          </button>}
         </li>
       ))}
     </ol>

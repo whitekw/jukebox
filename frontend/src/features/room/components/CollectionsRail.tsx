@@ -2,24 +2,23 @@ import { useEffect, useState, type Ref } from 'react'
 import { Heart, ListMusic, RotateCw } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi, type Playlist } from '../../library/api'
-import { PlaylistTracksDialog } from '../../library/PlaylistTracksDialog'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn, panelStyles } from '../../../shared/styles'
 
-export function CollectionsRail({ chatTriggerRef, libraryRevision = 0 }: {
+export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedPlaylistId, onSelectPlaylist }: {
   chatTriggerRef?: Ref<HTMLDivElement>
   libraryRevision?: number
+  selectedPlaylistId: string | null
+  onSelectPlaylist: (playlist: Playlist) => void
 }) {
   const { t } = useI18n()
   const { user } = useAuth()
   const userId = user?.id
   const [loaded, setLoaded] = useState<{ userId: string; items: Playlist[] } | null>(null)
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [retry, setRetry] = useState(0)
   const playlists = loaded && loaded.userId === userId ? loaded.items : []
-  const selected = playlists.find((playlist) => playlist.id === selectedPlaylistId)
 
   useEffect(() => {
     if (!userId) return
@@ -68,7 +67,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0 }: {
               )}
               aria-label={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
               title={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
-              onClick={() => setSelectedPlaylistId(playlist.id)}
+              onClick={() => onSelectPlaylist(playlist)}
             >
               {playlist.kind === 'favorites'
                 ? <span className="grid size-full place-items-center bg-gradient-to-br from-purple to-[#9de0cf] text-white"><Heart size={23} fill="currentColor" aria-hidden="true" /></span>
@@ -88,7 +87,6 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0 }: {
       {chatTriggerRef && (
         <div className="mt-auto flex w-full shrink-0 justify-center border-t border-line pt-3" ref={chatTriggerRef} />
       )}
-      {selected && <PlaylistTracksDialog key={selected.id} playlist={selected} revision={libraryRevision} onClose={() => setSelectedPlaylistId(null)} />}
     </aside>
   )
 }
