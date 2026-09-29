@@ -21,7 +21,15 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog.show()
     dialog.querySelector('input')?.focus()
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing ||
+        document.querySelector('dialog:modal')) return
+      event.preventDefault()
+      dialog.close()
+    }
+    document.addEventListener('keydown', closeOnEscape)
     return () => {
+      document.removeEventListener('keydown', closeOnEscape)
       const restoreFocus = dialog.contains(document.activeElement)
       dialog.close()
       if (restoreFocus) trigger?.focus()
@@ -33,13 +41,6 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
       ref={dialogRef}
       aria-labelledby={titleId}
       onClose={onClose}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          event.stopPropagation()
-          event.currentTarget.close()
-        }
-      }}
       className="absolute inset-0 z-20 m-0 h-full max-h-none w-full max-w-none overflow-hidden border-0 bg-canvas p-0 text-ink"
     >
       <div className="flex h-full min-h-0 flex-col p-4 sm:p-6">

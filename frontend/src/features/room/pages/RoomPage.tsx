@@ -423,7 +423,7 @@ export function RoomPage() {
                 onClose={() => setRequestSongOpen(false)}
                 onAddSong={addSong}
                 message={message}
-                error={error}
+                error={error || roomError}
               />
             )}
           </div>
