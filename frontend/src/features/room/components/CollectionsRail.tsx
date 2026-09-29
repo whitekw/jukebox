@@ -62,7 +62,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
               key={playlist.id}
               type="button"
               className={cn(
-                'grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg border border-transparent bg-white/5 text-purple-light transition-colors hover:border-purple-light/60 hover:bg-purple/15 focus-visible:outline-2 focus-visible:outline-purple-light',
+                'grid size-11 shrink-0 place-items-center overflow-hidden rounded-[4px] border border-transparent bg-white/5 text-purple-light transition-colors hover:border-purple-light/60 hover:bg-purple/15 focus-visible:outline-2 focus-visible:outline-purple-light',
                 selectedPlaylistId === playlist.id && 'border-purple-light bg-purple/20',
               )}
               aria-label={`${name} · ${t('library.trackCount', { count: playlist.trackCount })}`}
@@ -77,9 +77,9 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
             </button>
           )
         })}
-        {userId && loading && playlists.length === 0 && <span className="size-11 shrink-0 animate-pulse rounded-lg bg-white/5" aria-label={t('library.loading')} />}
+        {userId && loading && playlists.length === 0 && <span className="size-11 shrink-0 animate-pulse rounded-[4px] bg-white/5" aria-label={t('library.loading')} />}
         {userId && error && playlists.length === 0 && (
-          <button type="button" className="grid size-11 shrink-0 place-items-center rounded-lg border border-line text-muted hover:text-ink" aria-label={t('common.retry')} title={t('common.retry')} onClick={() => setRetry((value) => value + 1)}>
+          <button type="button" className="grid size-11 shrink-0 place-items-center rounded-[4px] border border-line text-muted hover:text-ink" aria-label={t('common.retry')} title={t('common.retry')} onClick={() => setRetry((value) => value + 1)}>
             <RotateCw size={20} aria-hidden="true" />
           </button>
         )}
