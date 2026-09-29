@@ -153,7 +153,7 @@ export function SongList({
           <img
             src={song.thumbnailUrl}
             alt=""
-            className="aspect-video w-[62px] shrink-0 rounded-[4px] bg-[#17151c] object-cover md:w-[72px]"
+            className="size-14 shrink-0 rounded-[4px] bg-[#17151c] object-cover"
           />
           <div className="flex min-w-0 flex-1 flex-col">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
