@@ -7,15 +7,17 @@ import {
   type FormEvent,
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { WifiOff } from 'lucide-react'
 import { roomApi } from '../api'
 import { Brand } from '../../../shared/ui/Brand'
 import { AccountMenu } from '../../auth/components/AccountMenu'
 import { useAuth } from '../../auth/context'
 import { YouTubePlayer } from '../playback/YouTubePlayer'
+import { clampVolume, readPlayerAudioSettings, type PlayerAudioSettings } from '../playback/playerAudioSettings'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import {
   buttonStyles,
-  connectionDotStyles,
+  cn,
   noticeStyles,
   pageMessageStyles,
 } from '../../../shared/styles'
@@ -25,6 +27,8 @@ import { ChatPanel } from '../chat/ChatPanel'
 import { ParticipantsMenu } from '../components/ParticipantsMenu'
 import { QueuePanel } from '../components/QueuePanel'
 import { SearchPanel } from '../components/SearchPanel'
+import { RoomPlaybackBar } from '../components/RoomPlaybackBar'
+import { CollectionsRail } from '../components/CollectionsRail'
 import { InviteRoomButton } from '../components/InviteRoomButton'
 import { RoomJoinPreview } from '../components/RoomJoinPreview'
 import { RoomSettingsButton } from '../components/RoomSettingsButton'
@@ -75,6 +79,12 @@ export function RoomPage() {
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [songControlTick, setSongControlTick] = useState(0)
+  const [localPlaybackPosition, setLocalPlaybackPosition] = useState<{
+    songId: string
+    positionSeconds: number
+  } | null>(null)
+  const [audioSettings, setAudioSettings] = useState<PlayerAudioSettings | null>(null)
+  const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
   const serverNow = Date.now() + serverTimeOffsetMs
@@ -229,18 +239,62 @@ export function RoomPage() {
     )
   }
 
+  const canPlayLocally = isHost || (Boolean(participant) && room.playbackMode === 'all_devices')
+  const currentAudioSettings = audioSettings ?? readPlayerAudioSettings(
+    room.playbackMode === 'host_only' ? room.hostVolume : 100,
+  )
+  const playbackStatus = !room.currentSong
+    ? 'waiting'
+    : room.playbackPaused || (room.playbackMode === 'host_only' && room.playbackBlocked)
+      ? 'paused'
+      : room.playbackPending
+        ? 'waiting'
+        : 'playing'
+  const playbackStatusLabel = playbackStatus === 'playing'
+    ? t('status.nowPlaying')
+    : playbackStatus === 'paused'
+      ? t('status.paused')
+      : t('status.waiting')
+  const playbackSynchronization = {
+    positionSeconds: room.playbackPositionSeconds,
+    anchorAt: room.playbackAnchorAt,
+    revision: room.playbackRevision,
+    serverTimeOffsetMs,
+    pending: room.playbackPending,
+  }
+
   return (
-    <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)] px-3 pt-[17px] pb-20 md:px-[clamp(18px,3vw,46px)] md:pt-[22px]">
-      <header className="relative z-[60] mx-auto mb-[22px] flex max-w-[1500px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)]">
+      <header className="relative z-[60] flex w-full shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-line px-4 py-3 md:py-4">
         <div className="flex min-w-0 items-center gap-5">
           <Brand className="gap-2 text-base tracking-[0.14em] max-[380px]:[&>span]:hidden md:gap-3 md:text-lg md:tracking-[0.18em]" />
           <div className="flex min-w-0 items-center gap-2 border-l border-line pl-3 font-mono text-xs tracking-[0.08em] text-muted sm:pl-5">
-            <span className={connectionDotStyles({ connected })} />
+            <span
+              className={cn(
+                'size-[7px] shrink-0 rounded-full',
+                playbackStatus === 'playing' && 'bg-lime shadow-[0_0_0_4px_rgba(215,255,100,.08),0_0_12px_rgba(215,255,100,.45)]',
+                playbackStatus === 'paused' && 'bg-yellow-400 shadow-[0_0_0_4px_rgba(250,204,21,.08),0_0_12px_rgba(250,204,21,.35)]',
+                playbackStatus === 'waiting' && 'bg-dim',
+              )}
+              role="img"
+              aria-label={playbackStatusLabel}
+              title={playbackStatusLabel}
+            />
             <span className="max-w-[min(36vw,380px)] truncate text-ink" title={room.title}>{room.title}</span>
             <span className="hidden shrink-0 sm:inline">· {code}</span>
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {!connected && (
+            <span
+              role="status"
+              className="flex items-center gap-2 text-xs text-yellow-400"
+              title={t('room.connecting')}
+            >
+              <WifiOff size={16} aria-hidden="true" className="shrink-0" />
+              <span className="sr-only sm:not-sr-only">{t('room.connecting')}</span>
+            </span>
+          )}
           {(participant || isHost || isOwner) && (
             <ParticipantsMenu
               participants={room.participants}
@@ -289,22 +343,31 @@ export function RoomPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[1500px] gap-4">
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(340px,.8fr)] lg:items-start">
-          <div className="flex min-w-0 flex-col gap-4">
+      <section className={cn(
+        'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 lg:gap-0 lg:overflow-hidden lg:p-0',
+        'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+      )}>
+          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} />
+          <div className={cn(
+            'min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:px-4 lg:pt-4 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
+            participant && 'flex flex-col gap-3 lg:overscroll-contain',
+          )}>
+            <div className="min-h-[300px] lg:min-h-0 lg:shrink-0">
             <NowPlaying
               song={room.currentSong}
               paused={room.playbackPaused}
-              blocked={
-                room.playbackMode === 'host_only' && room.playbackBlocked
-              }
+              blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
               player={
-                (isHost ||
-                  (Boolean(participant) && room.playbackMode === 'all_devices')) &&
-                room.currentSong ? (
+                canPlayLocally && room.currentSong ? (
                   <YouTubePlayer
                     videoId={room.currentSong.videoId}
                     volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
+                    requestedAudioSettings={audioSettings ?? undefined}
+                    onAudioSettingsChange={(settings) => setAudioSettings((previous) =>
+                      previous?.volume === settings.volume && previous.muted === settings.muted
+                        ? previous
+                        : settings,
+                    )}
                     paused={room.playbackPaused}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
@@ -322,6 +385,16 @@ export function RoomPage() {
                         ? reportPlaybackStarted
                         : undefined
                     }
+                    onPositionChange={(videoId, positionSeconds) => {
+                      const songId = room.currentSong?.id
+                      if (!songId || videoId !== room.currentSong?.videoId) return
+                      setLocalPlaybackPosition((previous) =>
+                        previous?.songId === songId &&
+                        Math.abs(previous.positionSeconds - positionSeconds) < 0.2
+                          ? previous
+                          : { songId, positionSeconds },
+                      )
+                    }}
                     onEnded={
                       isHost && room.playbackMode === 'host_only'
                         ? () =>
@@ -330,18 +403,10 @@ export function RoomPage() {
                             )
                         : undefined
                     }
-                    synchronization={
-                      room.playbackMode === 'all_devices' ||
+                    synchronization={room.playbackMode === 'all_devices' ||
                       (isHost && resumeClaimedPlayback)
-                        ? {
-                            positionSeconds: room.playbackPositionSeconds,
-                            anchorAt: room.playbackAnchorAt,
-                            revision: room.playbackRevision,
-                            serverTimeOffsetMs,
-                            pending: room.playbackPending,
-                          }
-                        : undefined
-                    }
+                        ? playbackSynchronization
+                        : undefined}
                   />
                 ) : undefined
               }
@@ -351,41 +416,14 @@ export function RoomPage() {
                   : undefined
               }
               claimingPlaybackHost={claimingHost}
-              onAdvance={
-                songActionCredentials &&
-                room.currentSong &&
-                canControlSong(
-                  room.currentSong,
-                  participant?.id,
-                  isController,
-                  serverNow,
-                )
-                  ? () =>
-                      runQueueAction(() =>
-                        roomApi.advance(code, songActionCredentials),
-                      )
-                  : undefined
-              }
-              onGlobalPlaybackToggle={
-                controlCredentials
-                  ? () =>
-                      runQueueAction(() =>
-                        roomApi.setPlaybackPaused(
-                          code,
-                          controlCredentials,
-                          !room.playbackPaused,
-                        ),
-                      )
-                  : undefined
-              }
             />
+            </div>
             {participant && (
-              <SearchPanel onAddSong={addSong} />
+              <SearchPanel className="min-h-[250px] lg:grow lg:shrink-0" onAddSong={addSong} />
             )}
           </div>
-          <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
             <QueuePanel
-              className="lg:max-h-[calc(100dvh-2rem)] lg:overflow-hidden"
+              className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
               songs={room.queue}
               onReorder={
                 controlCredentials
@@ -419,17 +457,46 @@ export function RoomPage() {
                 serverNow,
               )}
             />
-          </div>
-        </div>
-        {participant && (
-          <ChatPanel
-            roomCode={code}
-            messages={chatMessages}
-            currentParticipantId={participant.id}
-            onSend={sendChatMessage}
-          />
-        )}
       </section>
+
+      <RoomPlaybackBar
+        song={room.currentSong}
+        paused={room.playbackPaused}
+        blocked={room.playbackMode === 'host_only' && room.playbackBlocked}
+        synchronization={playbackSynchronization}
+        localPositionSeconds={canPlayLocally && localPlaybackPosition && localPlaybackPosition.songId === room.currentSong?.id
+          ? localPlaybackPosition.positionSeconds
+          : undefined}
+        audioSettings={canPlayLocally && room.currentSong ? currentAudioSettings : undefined}
+        onVolumeChange={(volume) => {
+          const nextVolume = clampVolume(volume)
+          setAudioSettings({ volume: nextVolume, muted: nextVolume === 0 })
+        }}
+        onAdvance={
+          songActionCredentials && room.currentSong &&
+          canControlSong(room.currentSong, participant?.id, isController, serverNow)
+            ? () => runQueueAction(() => roomApi.advance(code, songActionCredentials))
+            : undefined
+        }
+        onGlobalPlaybackToggle={
+          controlCredentials
+            ? () => runQueueAction(() => roomApi.setPlaybackPaused(
+                code,
+                controlCredentials,
+                !room.playbackPaused,
+              ))
+            : undefined
+        }
+      />
+      {participant && (
+        <ChatPanel
+          roomCode={code}
+          messages={chatMessages}
+          currentParticipantId={participant.id}
+          triggerContainer={chatTriggerContainer}
+          onSend={sendChatMessage}
+        />
+      )}
 
       {(error || roomError) && (
         <div className={noticeStyles({ tone: 'error' })}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useI18n, type Translate } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 import {
@@ -42,6 +42,9 @@ export function YouTubePlayer({
   playbackBlocked = false,
   onPlaybackBlockedChange,
   onPlaybackStarted,
+  onPositionChange,
+  requestedAudioSettings,
+  onAudioSettingsChange,
   onEnded,
   synchronization,
 }: {
@@ -51,6 +54,9 @@ export function YouTubePlayer({
   playbackBlocked?: boolean
   onPlaybackBlockedChange?: (blocked: boolean) => void
   onPlaybackStarted?: (videoId: string, positionSeconds: number) => void
+  onPositionChange?: (videoId: string, positionSeconds: number) => void
+  requestedAudioSettings?: PlayerAudioSettings
+  onAudioSettingsChange?: (settings: PlayerAudioSettings) => void
   onEnded?: () => void
   synchronization?: PlaybackSynchronization
 }) {
@@ -65,6 +71,7 @@ export function YouTubePlayer({
   }
   const volumeRef = useRef(initialAudioSettingsRef.current.volume)
   const mutedRef = useRef(initialAudioSettingsRef.current.muted)
+  const lastRequestedAudioChangeAtRef = useRef(-Infinity)
   const volumePropRef = useRef(volume)
   const pausedRef = useRef(paused)
   const synchronizationRef = useRef(synchronization)
@@ -73,6 +80,8 @@ export function YouTubePlayer({
   const locallyPausedRef = useRef(false)
   const onPlaybackBlockedChangeRef = useRef(onPlaybackBlockedChange)
   const onPlaybackStartedRef = useRef(onPlaybackStarted)
+  const onPositionChangeRef = useRef(onPositionChange)
+  const onAudioSettingsChangeRef = useRef(onAudioSettingsChange)
   const onEndedRef = useRef(onEnded)
   const requestedPausedStateRef = useRef<boolean | null>(null)
   const playbackSessionRef = useRef<PlaybackSession>({
@@ -99,12 +108,17 @@ export function YouTubePlayer({
   }
 
   function capturePlayerAudioSettings(player: YTPlayer) {
+    // iframe의 값 반영이 늦더라도 드래그 중인 슬라이더를 이전 값으로 되돌리지 않는다.
+    if (performance.now() - lastRequestedAudioChangeAtRef.current < 750) return
     try {
       const currentVolume = player.getVolume()
       if (!Number.isFinite(currentVolume)) return
 
       const nextVolume = clampVolume(currentVolume)
       const nextMuted = player.isMuted()
+      // YouTube는 0으로 설정해도 최소 볼륨(예: 5)을 보고할 수 있다.
+      // 하단 슬라이더가 선택한 0% 음소거 상태는 그대로 유지한다.
+      if (volumeRef.current === 0 && mutedRef.current && nextMuted) return
       if (
         nextVolume === volumeRef.current &&
         nextMuted === mutedRef.current
@@ -115,6 +129,7 @@ export function YouTubePlayer({
       volumeRef.current = nextVolume
       mutedRef.current = nextMuted
       writePlayerAudioSettings({ volume: nextVolume, muted: nextMuted })
+      onAudioSettingsChangeRef.current?.({ volume: nextVolume, muted: nextMuted })
     } catch {
       // 아직 준비되지 않았거나 제거 중인 iframe의 값은 읽을 수 없다.
     }
@@ -281,6 +296,14 @@ export function YouTubePlayer({
   }, [onPlaybackStarted])
 
   useEffect(() => {
+    onPositionChangeRef.current = onPositionChange
+  }, [onPositionChange])
+
+  useEffect(() => {
+    onAudioSettingsChangeRef.current = onAudioSettingsChange
+  }, [onAudioSettingsChange])
+
+  useEffect(() => {
     playbackBlockedRef.current = playbackBlocked
     onPlaybackBlockedChangeRef.current = onPlaybackBlockedChange
   }, [onPlaybackBlockedChange, playbackBlocked])
@@ -295,7 +318,29 @@ export function YouTubePlayer({
       muted: mutedRef.current,
     })
     playerRef.current?.setVolume(volumeRef.current)
+    onAudioSettingsChangeRef.current?.({
+      volume: volumeRef.current,
+      muted: mutedRef.current,
+    })
   }, [volume])
+
+  useLayoutEffect(() => {
+    if (!requestedAudioSettings) return
+    const nextVolume = clampVolume(requestedAudioSettings.volume)
+    const nextMuted = requestedAudioSettings.muted
+    if (nextVolume === volumeRef.current && nextMuted === mutedRef.current) return
+
+    volumeRef.current = nextVolume
+    mutedRef.current = nextMuted
+    lastRequestedAudioChangeAtRef.current = performance.now()
+    writePlayerAudioSettings({ volume: nextVolume, muted: nextMuted })
+    const player = playerRef.current
+    if (player && playerReadyRef.current) {
+      player.setVolume(nextVolume)
+      if (nextMuted) player.mute()
+      else player.unMute()
+    }
+  }, [requestedAudioSettings])
 
   useEffect(() => {
     pausedRef.current = paused
@@ -372,6 +417,17 @@ export function YouTubePlayer({
       const player = playerRef.current
       if (player && playerReadyRef.current) {
         capturePlayerAudioSettings(player)
+        try {
+          const loadedVideoId = getLoadedVideoId(player)
+          if (loadedVideoId === videoIdRef.current) {
+            const positionSeconds = player.getCurrentTime()
+            if (Number.isFinite(positionSeconds) && positionSeconds >= 0) {
+              onPositionChangeRef.current?.(loadedVideoId, positionSeconds)
+            }
+          }
+        } catch {
+          // 영상을 전환하거나 iframe을 제거하는 중에는 재생 시점을 읽지 못할 수 있다.
+        }
       }
     }, AUDIO_SETTINGS_POLL_INTERVAL_MS)
     return () => window.clearInterval(timer)
@@ -405,6 +461,10 @@ export function YouTubePlayer({
           onReady: (event) => {
             playerReadyRef.current = true
             applyPlayerAudioSettings(event.target)
+            onAudioSettingsChangeRef.current?.({
+              volume: volumeRef.current,
+              muted: mutedRef.current,
+            })
             const loadedVideoId = getLoadedVideoId(event.target)
             if (
               initialVideoId !== videoIdRef.current ||

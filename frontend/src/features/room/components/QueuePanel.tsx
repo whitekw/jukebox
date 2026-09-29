@@ -1,6 +1,6 @@
 import { SongList } from './SongList'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { cn, panelStyles, sectionKickerStyles } from '../../../shared/styles'
+import { cn, panelStyles } from '../../../shared/styles'
 import type { Song } from '../types'
 
 type QueuePanelProps = {
@@ -24,20 +24,17 @@ export function QueuePanel({
     <section
       className={cn(
         panelStyles({ padding: 'responsive' }),
-        'flex min-h-0 flex-col',
+        'flex min-h-0 flex-col md:p-7 lg:overflow-y-auto lg:overscroll-contain lg:px-4 lg:py-5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
         className,
       )}
     >
-      <div className="mx-1 mb-4 flex items-center justify-between gap-4 md:mx-[7px]">
-        <span className={sectionKickerStyles}>UP NEXT</span>
-        <span
-          className="grid size-8 shrink-0 place-items-center rounded-full border border-line bg-white/[0.035] font-mono text-xs font-bold text-muted"
-          aria-label={t('queue.songCount', { count: songs.length })}
-        >
-          {songs.length}
+      <div className="mb-3 flex items-baseline gap-2 border-b border-line px-1 pb-3">
+        <h2 className="m-0 text-base font-bold text-ink">{t('queue.title')}</h2>
+        <span className="font-mono text-xs text-muted">
+          · {t('queue.countShort', { count: songs.length })}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex flex-1 flex-col">
         <SongList
           songs={songs}
           emptyMessage={t('host.emptyQueue')}
