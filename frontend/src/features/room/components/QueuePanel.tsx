@@ -38,12 +38,15 @@ export function QueuePanel({
         </span>
         {onRequestSong && (
           <button
-            className={cn(buttonStyles({ intent: 'primary', size: 'sm' }), 'ml-auto gap-1.5 rounded-lg px-3')}
+            className={cn(
+              buttonStyles({ intent: 'outline', size: 'sm' }),
+              'ml-auto shrink-0 gap-2 rounded-md border-purple/25 bg-purple/[0.08] px-3 text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
+            )}
             type="button"
             aria-haspopup="dialog"
             onClick={onRequestSong}
           >
-            <Plus size={16} aria-hidden="true" />{t('search.requestSong')}
+            <Plus size={15} strokeWidth={2} aria-hidden="true" />{t('search.requestSong')}
           </button>
         )}
       </div>
