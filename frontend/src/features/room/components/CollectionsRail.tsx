@@ -1,7 +1,8 @@
 import { useEffect, useState, type Ref } from 'react'
-import { Heart, ListMusic, RotateCw } from 'lucide-react'
+import { Heart, ListMusic, Plus, RotateCw } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi, type Playlist } from '../../library/api'
+import { CreatePlaylistDialog } from '../../library/CreatePlaylistDialog'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn, panelStyles } from '../../../shared/styles'
 
@@ -18,6 +19,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [retry, setRetry] = useState(0)
+  const [creating, setCreating] = useState(false)
   const playlists = loaded && loaded.userId === userId ? loaded.items : []
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
     }
   }, [userId, libraryRevision, retry])
 
-  return (
+  return <>
     <aside
       className={cn(
         panelStyles({ padding: 'none' }),
@@ -54,6 +56,17 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
       )}
       aria-label={t('collection.railTitle')}
     >
+      {userId && <div className="flex w-full shrink-0 justify-center px-2 pb-3">
+        <button
+          type="button"
+          className="grid size-11 shrink-0 place-items-center rounded-[4px] border border-purple-light/25 bg-purple-light/10 text-purple-light transition-colors hover:border-purple-light/50 hover:bg-purple/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light"
+          aria-label={t('library.newPlaylist')}
+          title={t('library.newPlaylist')}
+          onClick={() => setCreating(true)}
+        >
+          <Plus size={21} aria-hidden="true" />
+        </button>
+      </div>}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {playlists.map((playlist) => {
           const name = playlist.kind === 'favorites' ? t('collection.favorites') : playlist.name
@@ -88,5 +101,16 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
         <div className="mt-auto flex w-full shrink-0 justify-center border-t border-line pt-3" ref={chatTriggerRef} />
       )}
     </aside>
-  )
+    {creating && userId && <CreatePlaylistDialog
+      onClose={() => setCreating(false)}
+      onCreated={(playlist) => {
+        setLoaded((current) => current?.userId === userId
+          ? { userId, items: [...current.items.filter((item) => item.kind === 'favorites'), playlist, ...current.items.filter((item) => item.kind !== 'favorites')] }
+          : current)
+        setRetry((value) => value + 1)
+        onSelectPlaylist(playlist)
+        setCreating(false)
+      }}
+    />}
+  </>
 }
