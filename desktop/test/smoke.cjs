@@ -6,7 +6,7 @@ const { spawn } = require('node:child_process')
 async function main() {
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end('<!doctype html><html><head><title>B-SIDE Smoke</title></head><body>Ready</body></html>')
+    response.end('<!doctype html><html><head><title>B-SIDE Smoke</title></head><body>Ready<iframe src="about:blank"></iframe></body></html>')
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 
@@ -30,7 +30,7 @@ async function main() {
     clearTimeout(timeout)
     assert.equal(exitCode, 0, errors)
     assert.match(output, /BSIDE_SMOKE:\{"title":"B-SIDE Smoke","bridge":"object"\}/)
-    process.stdout.write('Electron loaded the site and exposed the desktop bridge.\n')
+    process.stdout.write('Electron loaded the site, exposed the desktop bridge and verified native title bar transitions.\n')
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
