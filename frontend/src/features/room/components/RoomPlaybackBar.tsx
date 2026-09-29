@@ -121,7 +121,7 @@ export function RoomPlaybackBar({
               onClick={() => setSaveSongId(song.id)}
             >
               {isSaved
-                ? <span className="grid size-6 place-items-center rounded-full bg-lime text-canvas"><Check size={16} strokeWidth={3} aria-hidden="true" /></span>
+                ? <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
                 : <CirclePlus size={21} aria-hidden="true" />}
             </button>
           )}
