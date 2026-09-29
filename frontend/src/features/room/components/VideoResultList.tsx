@@ -22,7 +22,7 @@ export function VideoResultList({
         <li
           className={cn(
             'grid min-w-0 grid-cols-[minmax(0,1fr)_36px] gap-x-3 gap-y-2 overflow-hidden',
-            'rounded-[10px] bg-white/[0.035] p-3',
+            'group rounded-[10px] bg-white/[0.035] p-3 ring-1 ring-transparent ring-inset transition-colors duration-150 hover:bg-purple/15 hover:ring-purple/40 focus-within:bg-purple/15 focus-within:ring-purple/40',
             'md:flex md:items-center md:gap-[11px] md:p-2',
           )}
           key={video.videoId}
@@ -57,7 +57,7 @@ export function VideoResultList({
             {formatDuration(video.durationSeconds)}
           </span>
           <button
-            className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
+            className="col-start-2 row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime transition-colors duration-150 enabled:group-hover:border-lime/60 enabled:group-hover:bg-lime/15 enabled:group-focus-within:border-lime/60 enabled:group-focus-within:bg-lime/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto"
             type="button"
             aria-label={
               video.embeddable
