@@ -17,6 +17,7 @@ type RoomPlaybackBarProps = {
   localPositionSeconds?: number
   audioSettings?: PlayerAudioSettings
   onVolumeChange?: (volume: number) => void
+  onMuteToggle?: () => void
   onAdvance?: () => void
   onGlobalPlaybackToggle?: () => void
   onLibraryChange?: () => void
@@ -31,6 +32,7 @@ export function RoomPlaybackBar({
   localPositionSeconds,
   audioSettings,
   onVolumeChange,
+  onMuteToggle,
   onAdvance,
   onGlobalPlaybackToggle,
   onLibraryChange,
@@ -73,6 +75,8 @@ export function RoomPlaybackBar({
     Math.max(0, localPositionSeconds ?? expectedPlaybackPosition(synchronization, paused || blocked, now)),
   )
   const progress = duration > 0 ? (position / duration) * 100 : 0
+  const isMuted = audioSettings?.muted || audioSettings?.volume === 0
+  const displayedVolume = isMuted ? 0 : audioSettings?.volume ?? 0
 
   return (
     <footer className="relative z-20 shrink-0 border-t border-line bg-[#110f16]/95 py-2.5">
@@ -158,22 +162,29 @@ export function RoomPlaybackBar({
             )}
           </div>
         )}
-        {song && audioSettings && onVolumeChange && (
-          <div className="flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20">
-            {audioSettings.muted || audioSettings.volume === 0
-              ? <VolumeX size={18} aria-hidden="true" className="shrink-0" />
-              : <Volume2 size={18} aria-hidden="true" className="shrink-0" />}
+        {song && audioSettings && onVolumeChange && onMuteToggle && (
+          <div className="room-volume-control flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20">
+            <button
+              className="grid size-6 shrink-0 place-items-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
+              type="button"
+              aria-label={isMuted ? t('playback.unmute') : t('playback.mute')}
+              title={isMuted ? t('playback.unmute') : t('playback.mute')}
+              aria-pressed={isMuted}
+              onClick={onMuteToggle}
+            >
+              {isMuted ? <VolumeX size={18} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
+            </button>
             <input
-              className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-purple-light [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-light"
+              className="room-volume-slider h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-light"
               type="range"
               min={0}
               max={100}
               step={1}
-              value={audioSettings.volume}
+              value={displayedVolume}
               onChange={(event) => onVolumeChange(event.currentTarget.valueAsNumber)}
               aria-label={t('playback.volume')}
-              title={`${t('playback.volume')}: ${audioSettings.volume}%`}
-              style={{ background: `linear-gradient(to right, var(--color-purple-light) ${audioSettings.volume}%, rgba(255,255,255,.18) ${audioSettings.volume}%)` }}
+              title={`${t('playback.volume')}: ${displayedVolume}%`}
+              style={{ background: `linear-gradient(to right, var(--room-volume-fill) ${displayedVolume}%, rgba(255,255,255,.3) ${displayedVolume}%)` }}
             />
           </div>
         )}

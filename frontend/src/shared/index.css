@@ -123,3 +123,39 @@ html[data-bside-desktop] .desktop-entry > [data-desktop-titlebar] {
     @apply text-[#121017];
   }
 }
+
+.room-volume-control {
+  --room-volume-fill: #fff;
+}
+
+.room-volume-control:hover,
+.room-volume-control:focus-within {
+  --room-volume-fill: #1ed760;
+}
+
+.room-volume-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.room-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.room-volume-control:hover .room-volume-slider::-webkit-slider-thumb,
+.room-volume-control:focus-within .room-volume-slider::-webkit-slider-thumb {
+  background: #fff;
+}
+
+.room-volume-control:hover .room-volume-slider::-moz-range-thumb,
+.room-volume-control:focus-within .room-volume-slider::-moz-range-thumb {
+  background: #fff;
+}

@@ -89,6 +89,7 @@ export function RoomPage() {
     positionSeconds: number
   } | null>(null)
   const [audioSettings, setAudioSettings] = useState<PlayerAudioSettings | null>(null)
+  const lastAudibleVolume = useRef(50)
   const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
@@ -375,11 +376,14 @@ export function RoomPage() {
                     videoId={room.currentSong.videoId}
                     volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
                     requestedAudioSettings={audioSettings ?? undefined}
-                    onAudioSettingsChange={(settings) => setAudioSettings((previous) =>
-                      previous?.volume === settings.volume && previous.muted === settings.muted
-                        ? previous
-                        : settings,
-                    )}
+                    onAudioSettingsChange={(settings) => {
+                      if (settings.volume > 0) lastAudibleVolume.current = settings.volume
+                      setAudioSettings((previous) =>
+                        previous?.volume === settings.volume && previous.muted === settings.muted
+                          ? previous
+                          : settings,
+                      )
+                    }}
                     paused={room.playbackPaused}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
@@ -513,8 +517,16 @@ export function RoomPage() {
         audioSettings={canPlayLocally && room.currentSong ? currentAudioSettings : undefined}
         onVolumeChange={(volume) => {
           const nextVolume = clampVolume(volume)
+          if (nextVolume > 0) lastAudibleVolume.current = nextVolume
           setAudioSettings({ volume: nextVolume, muted: nextVolume === 0 })
         }}
+        onMuteToggle={() => setAudioSettings((previous) => {
+          const current = previous ?? currentAudioSettings
+          if (current.muted || current.volume === 0) {
+            return { volume: current.volume || lastAudibleVolume.current, muted: false }
+          }
+          return { ...current, muted: true }
+        })}
         onAdvance={
           songActionCredentials && room.currentSong &&
           canControlSong(room.currentSong, participant?.id, isController, serverNow)
