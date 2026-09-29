@@ -469,6 +469,7 @@ export function RoomPage() {
             <QueuePanel
               className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
               songs={room.queue}
+              onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
               onRequestSong={participant ? openSongRequest : undefined}
               onReorder={
                 controlCredentials

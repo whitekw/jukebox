@@ -1,8 +1,8 @@
 import { useState, type DragEvent } from 'react'
-import { Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
-import { formatDuration } from '../../../shared/format'
+import { CirclePlus, Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
+import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 import type { Song } from '../types'
 
 export function SongList({
@@ -12,6 +12,7 @@ export function SongList({
   onReorder,
   onRemove,
   canRemove,
+  onLibraryChange,
 }: {
   songs: Song[]
   emptyMessage: string
@@ -19,8 +20,10 @@ export function SongList({
   onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
+  onLibraryChange: () => void
 }) {
   const { t } = useI18n()
+  const [saveSong, setSaveSong] = useState<Song | null>(null)
   const [draggedSongId, setDraggedSongId] = useState('')
   const [dropTarget, setDropTarget] = useState<{
     songId: string
@@ -92,6 +95,7 @@ export function SongList({
   }
 
   return (
+    <>
     <ol className="m-0 flex list-none flex-col gap-[7px] p-0">
       {songs.map((song) => (
         <li
@@ -122,10 +126,10 @@ export function SongList({
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
               {song.title}
             </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted">
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap pr-16 text-[11px] text-muted">
               {song.artist}
             </span>
-            <span className="mt-1 flex min-w-0 items-center gap-1.5">
+            <span className="mt-1 flex min-w-0 items-center gap-1.5 pr-16">
               <span className="grid size-[18px] shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
                 {song.addedByAvatarUrl ? (
                   <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
@@ -138,25 +142,39 @@ export function SongList({
               </small>
             </span>
           </div>
-          <span className="hidden font-mono text-[10px] text-dim md:inline">
-            {formatDuration(song.durationSeconds)}
-          </span>
-          {onRemove && (canRemove?.(song) ?? true) && (
+          <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
             <button
-              className={cn(
-                'grid size-[29px] shrink-0 place-items-center rounded-[7px] border-0 bg-transparent p-0',
-                'text-[#847e8c] hover:bg-danger/[0.08] hover:text-danger',
-              )}
+              className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-muted transition-colors hover:bg-purple/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light"
               type="button"
               draggable={false}
-              aria-label={t('song.removeFromQueue')}
-              onClick={() => onRemove(song.id)}
+              aria-label={`${song.title} · ${t('library.addToPlaylist')}`}
+              title={t('library.addToPlaylist')}
+              onClick={() => setSaveSong(song)}
             >
-              <TrashIcon size={17} />
+              <CirclePlus size={18} aria-hidden="true" />
             </button>
-          )}
+            {onRemove && (canRemove?.(song) ?? true) && (
+              <button
+                className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-[#847e8c] transition-colors hover:bg-danger/[0.08] hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
+                type="button"
+                draggable={false}
+                aria-label={`${song.title} · ${t('song.removeFromQueue')}`}
+                title={t('song.removeFromQueue')}
+                onClick={() => onRemove(song.id)}
+              >
+                <TrashIcon size={17} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </li>
       ))}
     </ol>
+    {saveSong && <SaveToPlaylistDialog
+      key={saveSong.id}
+      song={{ videoId: saveSong.videoId, roomSongId: saveSong.id }}
+      onClose={() => setSaveSong(null)}
+      onLibraryChange={onLibraryChange}
+    />}
+    </>
   )
 }
