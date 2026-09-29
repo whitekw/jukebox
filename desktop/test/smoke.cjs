@@ -6,7 +6,15 @@ const { spawn } = require('node:child_process')
 async function main() {
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end('<!doctype html><html><head><title>B-SIDE Smoke</title></head><body>Ready</body></html>')
+    response.end(`<!doctype html><html><head><title>B-SIDE Smoke</title><style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; }
+      .min-h-screen { min-height: 100vh; }
+      .min-h-dvh { min-height: 100dvh; }
+      .h-dvh { height: 100dvh; }
+      main { display: grid; place-items: center; padding: 24px; }
+      iframe { display: none; }
+    </style></head><body><div id="root"><main class="min-h-screen"><h1 style="margin:0">Ready</h1></main></div><iframe src="about:blank"></iframe></body></html>`)
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 
@@ -30,7 +38,7 @@ async function main() {
     clearTimeout(timeout)
     assert.equal(exitCode, 0, errors)
     assert.match(output, /BSIDE_SMOKE:\{"title":"B-SIDE Smoke","bridge":"object"\}/)
-    process.stdout.write('Electron loaded the site and exposed the desktop bridge.\n')
+    process.stdout.write('Electron loaded the site, exposed the desktop bridge and verified native title bar transitions.\n')
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }

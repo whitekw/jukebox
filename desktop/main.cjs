@@ -11,7 +11,13 @@ const {
 const APP_ID = 'com.whitekw.bside'
 const siteUrl = siteOrigin(process.env.BSIDE_APP_URL || DEFAULT_SITE_URL)
 const smokeTest = process.env.BSIDE_DESKTOP_SMOKE === '1'
+const customTitleBar = process.platform === 'win32'
 let mainWindow = null
+
+// Keep development and smoke runs from activating an already installed app.
+if (smokeTest || process.env.BSIDE_APP_URL) {
+  app.setPath('userData', `${app.getPath('userData')}-${smokeTest ? `smoke-${process.pid}` : 'development'}`)
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -41,6 +47,10 @@ if (!app.requestSingleInstanceLock()) {
       backgroundColor: '#0d0a14',
       show: !smokeTest,
       autoHideMenuBar: true,
+      ...(customTitleBar ? {
+        titleBarStyle: 'hidden',
+        titleBarOverlay: { color: '#00000000', symbolColor: '#f6f4ff', height: 48 },
+      } : {}),
       icon: path.join(__dirname, 'assets', 'icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
@@ -48,6 +58,7 @@ if (!app.requestSingleInstanceLock()) {
         contextIsolation: true,
         sandbox: true,
         webviewTag: false,
+        additionalArguments: customTitleBar ? ['--bside-custom-titlebar'] : [],
       },
     })
 
@@ -75,6 +86,20 @@ if (!app.requestSingleInstanceLock()) {
         openExternal(url)
       }
       return { action: 'deny' }
+    })
+
+    // Only the main frame may resize the native caption controls. Navigation
+    // outside the site (Discord sign-in) always uses the fallback title bar.
+    ipcMain.on('desktop:titlebar-height', (event, height) => {
+      if (!customTitleBar || !mainWindow || mainWindow.isDestroyed()
+        || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame
+        || !isAllowedNavigation(event.senderFrame.url, siteUrl)
+        || !Number.isInteger(height) || height < 48 || height > 144) return
+      mainWindow.setTitleBarOverlay({ height })
+    })
+    mainWindow.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
+      if (customTitleBar && isMainFrame && !inPlace) mainWindow.setTitleBarOverlay({ height: 48 })
     })
 
     ipcMain.on('desktop:chat', (event, payload) => {
@@ -106,11 +131,15 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.on('closed', () => { mainWindow = null })
     if (smokeTest) {
       mainWindow.webContents.once('did-finish-load', async () => {
-        const state = await mainWindow.webContents.executeJavaScript(
-          '({ title: document.title, bridge: typeof window.bsideDesktop })',
-        )
-        process.stdout.write(`BSIDE_SMOKE:${JSON.stringify(state)}\n`)
-        app.quit()
+        try {
+          const { runTitleBarSmoke } = require('./test/titleBarSmoke.cjs')
+          const state = await runTitleBarSmoke(mainWindow, customTitleBar)
+          process.stdout.write(`BSIDE_SMOKE:${JSON.stringify(state)}\n`)
+          app.quit()
+        } catch (error) {
+          process.stderr.write(`BSIDE_SMOKE_ERROR:${error.stack}\n`)
+          app.exit(1)
+        }
       })
       mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
         process.stderr.write(`BSIDE_SMOKE_ERROR:${errorCode}:${errorDescription}\n`)

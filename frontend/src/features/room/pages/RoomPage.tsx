@@ -266,7 +266,7 @@ export function RoomPage() {
 
   return (
     <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)]">
-      <header className="relative z-[60] flex w-full shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-line px-4 py-3 md:py-4">
+      <header data-desktop-titlebar className="relative z-[60] flex w-full shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-line px-4 py-3 md:py-4">
         <div className="flex min-w-0 items-center gap-5">
           <Brand className="gap-2 text-base tracking-[0.14em] max-[380px]:[&>span]:hidden md:gap-3 md:text-lg md:tracking-[0.18em]" />
           <div className="flex min-w-0 items-center gap-2 border-l border-line pl-3 font-mono text-xs tracking-[0.08em] text-muted sm:pl-5">
@@ -285,7 +285,7 @@ export function RoomPage() {
             <span className="hidden shrink-0 sm:inline">· {code}</span>
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div data-desktop-no-drag className="ml-auto flex shrink-0 items-center gap-2">
           {!connected && (
             <span
               role="status"

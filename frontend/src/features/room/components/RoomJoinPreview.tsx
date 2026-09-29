@@ -43,8 +43,8 @@ export function RoomJoinPreview({
   const guestJoinBlocked = !user && !room.allowGuests && !participantError
 
   return (
-    <main className="min-h-screen bg-canvas bg-[radial-gradient(circle_at_30%_50%,rgba(96,72,163,.13),transparent_40%)] px-4">
-      <header className="mx-auto flex max-w-[1120px] items-center justify-between py-6">
+    <main className="desktop-entry desktop-join min-h-screen bg-canvas bg-[radial-gradient(circle_at_30%_50%,rgba(96,72,163,.13),transparent_40%)] px-4">
+      <header data-desktop-titlebar className="mx-auto flex max-w-[1120px] items-center justify-between py-6">
         <Brand />
         <AccountMenu compact />
       </header>
