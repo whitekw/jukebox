@@ -6,7 +6,11 @@ import { buttonStyles, cn } from '../../shared/styles'
 import type { Song } from '../room/types'
 import { libraryApi, type Playlist } from './api'
 
-export function SaveToPlaylistDialog({ song, onClose }: { song: Song; onClose: () => void }) {
+export function SaveToPlaylistDialog({ song, onClose, onSavedChange }: {
+  song: Song
+  onClose: () => void
+  onSavedChange: (saved: boolean) => void
+}) {
   const { t } = useI18n()
   const { user, enabled, loading: authLoading, loginUrl } = useAuth()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -57,8 +61,10 @@ export function SaveToPlaylistDialog({ song, onClose }: { song: Song; onClose: (
       } else {
         await libraryApi.addTrack(playlist.id, song.id)
       }
+      onSavedChange(!playlist.containsTrack || playlists.some((item) => item.id !== playlist.id && item.containsTrack))
       const { items } = await libraryApi.list(song.videoId)
       setPlaylists(items)
+      onSavedChange(items.some((item) => item.containsTrack))
     } catch (cause) {
       setError(getErrorMessage(cause, t))
     } finally {
@@ -74,8 +80,10 @@ export function SaveToPlaylistDialog({ song, onClose }: { song: Song; onClose: (
     try {
       const playlist = await libraryApi.create(name)
       await libraryApi.addTrack(playlist.id, song.id)
+      onSavedChange(true)
       const { items } = await libraryApi.list(song.videoId)
       setPlaylists(items)
+      onSavedChange(items.some((item) => item.containsTrack))
       setName('')
       setCreating(false)
     } catch (cause) {

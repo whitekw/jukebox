@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import { CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { useAuth } from '../../auth/context'
+import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn } from '../../../shared/styles'
 import { expectedPlaybackPosition, type PlaybackSynchronization } from '../playback/playbackSync'
@@ -31,14 +33,35 @@ export function RoomPlaybackBar({
   onGlobalPlaybackToggle,
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
+  const { user } = useAuth()
   const [now, setNow] = useState(() => Date.now())
   const [saveSongId, setSaveSongId] = useState<string | null>(null)
+  const [savedMembership, setSavedMembership] = useState<{ userId: string; videoId: string; saved: boolean } | null>(null)
+  const membershipRequest = useRef(0)
   const songId = song?.id
+  const userId = user?.id
+  const videoId = song?.videoId
   useEffect(() => {
     if (!songId) return
     const timer = window.setInterval(() => setNow(Date.now()), 500)
     return () => window.clearInterval(timer)
   }, [songId])
+
+  useEffect(() => {
+    const requestId = ++membershipRequest.current
+    if (!userId || !videoId) return
+    void libraryApi.list(videoId).then(({ items }) => {
+      if (requestId === membershipRequest.current) {
+        setSavedMembership({ userId, videoId, saved: items.some((playlist) => playlist.containsTrack) })
+      }
+    }).catch(() => {
+      // The save dialog can retry if the library is temporarily unavailable.
+    })
+    return () => { membershipRequest.current += 1 }
+  }, [userId, videoId])
+
+  const isSaved = Boolean(userId && videoId && savedMembership?.userId === userId &&
+    savedMembership.videoId === videoId && savedMembership.saved)
 
   const duration = song?.durationSeconds ?? 0
   const position = Math.min(
@@ -89,11 +112,13 @@ export function RoomPlaybackBar({
             <button
               className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-white/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light"
               type="button"
-              aria-label={t('library.addToPlaylist')}
-              title={t('library.addToPlaylist')}
+              aria-label={isSaved ? t('library.savedInPlaylist') : t('library.addToPlaylist')}
+              title={isSaved ? t('library.savedInPlaylist') : t('library.addToPlaylist')}
               onClick={() => setSaveSongId(song.id)}
             >
-              <CirclePlus size={21} aria-hidden="true" />
+              {isSaved
+                ? <span className="grid size-6 place-items-center rounded-full bg-lime text-canvas"><Check size={16} strokeWidth={3} aria-hidden="true" /></span>
+                : <CirclePlus size={21} aria-hidden="true" />}
             </button>
           )}
         </div>
@@ -149,7 +174,16 @@ export function RoomPlaybackBar({
           </div>
         )}
       </div>
-      {song && saveSongId === song.id && <SaveToPlaylistDialog key={song.id} song={song} onClose={() => setSaveSongId(null)} />}
+      {song && saveSongId === song.id && <SaveToPlaylistDialog
+        key={song.id}
+        song={song}
+        onClose={() => setSaveSongId(null)}
+        onSavedChange={(saved) => {
+          if (!userId) return
+          membershipRequest.current += 1
+          setSavedMembership({ userId, videoId: song.videoId, saved })
+        }}
+      />}
     </footer>
   )
 }
