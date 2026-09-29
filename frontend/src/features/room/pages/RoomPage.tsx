@@ -361,12 +361,12 @@ export function RoomPage() {
       </header>
 
       <section className={cn(
-        'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 lg:gap-0 lg:overflow-hidden lg:p-0',
-        'lg:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+        'grid min-h-0 w-full flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 room:gap-0 room:overflow-hidden room:p-0',
+        'room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
-          <div className="relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
-            <div inert={requestSongOpen || Boolean(activePlaylist)} aria-hidden={requestSongOpen || Boolean(activePlaylist)} className="flex min-h-full flex-col items-center justify-center px-0 py-6 lg:px-6">
+          <div className="relative min-w-0 room:h-full room:min-h-0 room:overflow-y-auto room:overscroll-contain room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden">
+            <div inert={requestSongOpen || Boolean(activePlaylist)} aria-hidden={requestSongOpen || Boolean(activePlaylist)} className="flex min-h-full flex-col items-center justify-center px-0 py-6 room:px-6">
             <NowPlaying
               onRequestSong={participant ? openSongRequest : undefined}
               song={room.currentSong}
@@ -467,7 +467,7 @@ export function RoomPage() {
             )}
           </div>
             <QueuePanel
-              className="min-h-[280px] lg:h-full lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-r-0 lg:bg-panel"
+              className="min-h-[280px] room:h-full room:min-h-0 room:rounded-none room:border-y-0 room:border-r-0 room:bg-panel"
               songs={room.queue}
               onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
               libraryRevision={libraryRevision}

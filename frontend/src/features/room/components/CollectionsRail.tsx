@@ -49,7 +49,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
   }, [userId, libraryRevision, retry])
 
   return <>
-    {userId && <nav className="min-w-0 rounded-[4px] border border-line bg-panel p-2 lg:hidden" aria-label={t('collection.railTitle')}>
+    {userId && <nav className="min-w-0 rounded-[4px] border border-line bg-panel p-2 room:hidden" aria-label={t('collection.railTitle')}>
       <div className="px-1 pb-2 text-xs font-semibold text-muted">{t('collection.railTitle')}</div>
       <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
         <button
@@ -93,7 +93,7 @@ export function CollectionsRail({ chatTriggerRef, libraryRevision = 0, selectedP
     <aside
       className={cn(
         panelStyles({ padding: 'none' }),
-        'hidden min-h-0 w-[72px] flex-col items-center overflow-hidden py-3 lg:flex lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-panel',
+        'hidden min-h-0 w-[72px] flex-col items-center overflow-hidden py-3 room:flex room:rounded-none room:border-y-0 room:border-l-0 room:bg-panel',
       )}
       aria-label={t('collection.railTitle')}
     >

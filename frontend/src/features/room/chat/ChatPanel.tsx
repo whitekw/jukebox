@@ -313,7 +313,7 @@ export function ChatPanel({
       ), 21), triggerContainer)}
       {renderTrigger(cn(
         'fixed right-4 bottom-[92px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-[92px]',
-        triggerContainer && 'lg:hidden',
+        triggerContainer && 'room:hidden',
       ), 25)}
     </>
   )

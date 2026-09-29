@@ -31,7 +31,7 @@ export function QueuePanel({
     <section
       className={cn(
         panelStyles({ padding: 'responsive' }),
-        'flex min-h-0 flex-col md:p-7 lg:overflow-y-auto lg:overscroll-contain lg:px-4 lg:py-5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
+        'flex min-h-0 flex-col md:p-7 room:overflow-y-auto room:overscroll-contain room:px-4 room:py-5 room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden',
         className,
       )}
     >

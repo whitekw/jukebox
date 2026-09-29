@@ -76,7 +76,7 @@ export const NowPlaying = ({
               <button
                 className={cn(
                   buttonStyles({ intent: 'outline', size: 'sm' }),
-                  'gap-2 rounded-md border-purple/25 bg-purple/[0.08] text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15 lg:hidden',
+                  'gap-2 rounded-md border-purple/25 bg-purple/[0.08] text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15 room:hidden',
                 )}
                 type="button"
                 aria-haspopup="dialog"
