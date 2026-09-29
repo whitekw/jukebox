@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { WifiOff } from 'lucide-react'
 import { roomApi } from '../api'
 import { Brand } from '../../../shared/ui/Brand'
 import { AccountMenu } from '../../auth/components/AccountMenu'
@@ -68,6 +69,7 @@ export function RoomPage() {
     room,
     setRoom,
     loading,
+    connected,
     serverTimeOffsetMs,
     chatMessages,
     appendChatMessage,
@@ -283,6 +285,16 @@ export function RoomPage() {
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {!connected && (
+            <span
+              role="status"
+              className="flex items-center gap-2 text-xs text-yellow-400"
+              title={t('room.connecting')}
+            >
+              <WifiOff size={16} aria-hidden="true" className="shrink-0" />
+              <span className="sr-only sm:not-sr-only">{t('room.connecting')}</span>
+            </span>
+          )}
           {(participant || isHost || isOwner) && (
             <ParticipantsMenu
               participants={room.participants}
