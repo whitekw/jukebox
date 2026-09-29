@@ -2,20 +2,16 @@ import { useState, type FormEvent } from 'react'
 import { Search as SearchIcon } from 'lucide-react'
 import { roomApi } from '../api'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
-import {
-  buttonStyles,
-  cn,
-  panelStyles,
-  sectionKickerStyles,
-} from '../../../shared/styles'
+import { buttonStyles, cn } from '../../../shared/styles'
 import type { VideoSearchResult } from '../types'
 import { VideoResultList } from './VideoResultList'
 
 type SearchPanelProps = {
   onAddSong: (videoId: string) => Promise<void>
+  className?: string
 }
 
-export function SearchPanel({ onAddSong }: SearchPanelProps) {
+export function SearchPanel({ onAddSong, className }: SearchPanelProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<VideoSearchResult[]>([])
@@ -53,20 +49,13 @@ export function SearchPanel({ onAddSong }: SearchPanelProps) {
   }
 
   return (
-    <section className={panelStyles({ padding: 'responsive' })}>
-      <div className="mx-1 mb-[18px] md:mx-[7px]">
-        <div>
-          <span className={sectionKickerStyles}>REQUEST A SONG</span>
-          <h2 className="mt-1.5 text-xl tracking-[-0.03em] md:text-[23px]">
-            {t('search.title')}
-          </h2>
-        </div>
-      </div>
+    <section className={cn('flex min-w-0 flex-col', className)}>
       <form
         className="flex items-center gap-2.5 rounded-xl border border-line bg-white/[0.035] py-1.5 pr-[7px] pl-3.5 text-dim focus-within:border-purple/65"
         onSubmit={search}
       >
         <input
+          id="room-song-search"
           className="h-[42px] min-w-0 flex-1 border-0 bg-transparent p-0 text-ink outline-none placeholder:text-white/20"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -100,11 +89,13 @@ export function SearchPanel({ onAddSong }: SearchPanelProps) {
         </p>
       )}
       {!searching && results.length > 0 && (
-        <VideoResultList
-          videos={results}
-          addingId={addingId}
-          onAddSong={(videoId) => void addSong(videoId)}
-        />
+        <div>
+          <VideoResultList
+            videos={results}
+            addingId={addingId}
+            onAddSong={(videoId) => void addSong(videoId)}
+          />
+        </div>
       )}
     </section>
   )

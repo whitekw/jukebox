@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { Music2 as MusicIcon, Pause as PauseIcon, Play as PlayIcon, SkipForward as SkipIcon } from 'lucide-react'
+import { Music2 as MusicIcon, Play as PlayIcon } from 'lucide-react'
 import type { Song } from '../types'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn, panelStyles, vinylStyles } from '../../../shared/styles'
+import { buttonStyles, cn, vinylStyles } from '../../../shared/styles'
 
 export const NowPlaying = ({
   song,
@@ -11,8 +11,6 @@ export const NowPlaying = ({
   player,
   onClaimPlaybackHost,
   claimingPlaybackHost = false,
-  onAdvance,
-  onGlobalPlaybackToggle,
 }: {
   song: Song | null
   paused: boolean
@@ -20,49 +18,58 @@ export const NowPlaying = ({
   player?: ReactNode
   onClaimPlaybackHost?: () => void
   claimingPlaybackHost?: boolean
-  onAdvance?: () => void
-  onGlobalPlaybackToggle?: () => void
 }) => {
   const { t } = useI18n()
+  const playbackStatus = blocked
+    ? t('status.autoplayBlocked')
+    : paused
+      ? t('status.paused')
+      : t('status.nowPlaying')
 
   return (
-    <div
-      className={cn(
-        panelStyles({ tone: 'purple', padding: 'responsive' }),
-        'flex h-full min-h-0 flex-col',
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-[10px] font-black tracking-[0.16em] text-purple-light">
-          <i
-            className={cn(
-              'block size-1.5 rounded-full',
-              song
-                ? 'bg-purple-light shadow-[0_0_10px_#9b7bff]'
-                : 'bg-purple/60',
-            )}
-          />
-          {!song
-            ? t('status.waiting')
-            : blocked
-              ? t('status.autoplayBlocked')
-              : paused
-                ? t('status.paused')
-                : t('status.nowPlaying')}
-        </span>
-      </div>
+    <div className="flex w-full flex-col overflow-hidden xl:[container-type:inline-size]">
       {song ? (
-        <>
-          {player && (
-            <div className="relative mt-4 aspect-video overflow-hidden rounded-xl bg-[#050507]">
-              {player}
+        <div className="grid gap-5 xl:grid-cols-[min(55cqw,calc(45dvh*16/9))_minmax(0,1fr)] xl:items-center xl:gap-4">
+          <div className="flex min-w-0 items-center justify-center">
+            {player ? (
+              <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-[#050507]">
+                {player}
+              </div>
+            ) : (
+              <img
+                className="aspect-video w-full rounded-xl object-contain"
+                src={song.thumbnailUrl}
+                alt=""
+              />
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col justify-center gap-3 lg:gap-4">
+            <span className="text-xs font-bold text-purple-light">{playbackStatus}</span>
+            <div className="min-w-0">
+              <h2 className="m-0 line-clamp-3 break-words text-xl font-bold leading-snug text-ink md:text-2xl" title={song.title}>
+                {song.title}
+              </h2>
+              <p className="m-0 mt-2 truncate text-sm text-muted md:text-base" title={song.artist}>
+                {song.artist}
+              </p>
             </div>
-          )}
-          {!player && onClaimPlaybackHost && (
+            <div className="flex min-w-0 items-center gap-2 text-sm text-muted">
+              <span className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/30 bg-purple/20 text-xs font-bold text-purple-light">
+                {song.addedByAvatarUrl ? (
+                  <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
+                ) : (
+                  song.addedBy.trim().slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="truncate" title={t('song.requestedBy', { nickname: song.addedBy })}>
+                {t('song.requestedBy', { nickname: song.addedBy })}
+              </span>
+            </div>
+            {!player && onClaimPlaybackHost && (
             <button
               className={cn(
                 buttonStyles({ intent: 'primary', size: 'md' }),
-                'mt-4 w-full justify-center sm:w-auto',
+                'mt-1 w-full justify-center sm:w-fit',
               )}
               disabled={claimingPlaybackHost}
               type="button"
@@ -73,71 +80,9 @@ export const NowPlaying = ({
                 ? t('host.claimingPlayback')
                 : t('host.claimPlayback')}
             </button>
-          )}
-          <div className="mt-[13px] flex items-end justify-between gap-3 md:gap-4">
-            <div className="flex min-w-0 items-center gap-3 md:gap-4">
-              {!player && (
-                <div className="relative aspect-video w-[108px] shrink-0 overflow-hidden rounded-[10px] md:w-[142px]">
-                  <img
-                    className="size-full object-cover"
-                    src={song.thumbnailUrl}
-                    alt=""
-                  />
-                </div>
-              )}
-              <div className="min-w-0">
-                <h1 className="mb-[5px] overflow-hidden text-ellipsis whitespace-nowrap text-[17px] md:text-[22px]">
-                  {song.title}
-                </h1>
-                <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted md:text-base">
-                  {song.artist}
-                </p>
-                <small className="text-dim">
-                  {t('song.requestedBy', { nickname: song.addedBy })}
-                </small>
-              </div>
-            </div>
-            {(onGlobalPlaybackToggle || onAdvance) && (
-              <div className="flex shrink-0 items-center gap-2">
-                {onGlobalPlaybackToggle && (
-                  <button
-                    className={cn(
-                      buttonStyles({
-                        intent: paused ? 'primary' : 'outline',
-                        size: 'md',
-                      }),
-                      'size-11 shrink-0 px-0 font-bold',
-                    )}
-                    type="button"
-                    aria-label={
-                      paused ? t('manager.playAll') : t('manager.pauseAll')
-                    }
-                    title={
-                      paused ? t('manager.playAll') : t('manager.pauseAll')
-                    }
-                    onClick={onGlobalPlaybackToggle}
-                  >
-                    {paused ? <PlayIcon size={18} /> : <PauseIcon size={18} />}
-                  </button>
-                )}
-                {onAdvance && (
-                  <button
-                    className={cn(
-                      buttonStyles({ intent: 'outline', size: 'md' }),
-                      'size-11 shrink-0 px-0 font-bold',
-                    )}
-                    type="button"
-                    aria-label={t('manager.skip')}
-                    title={t('manager.skip')}
-                    onClick={onAdvance}
-                  >
-                    <SkipIcon size={18} />
-                  </button>
-                )}
-              </div>
             )}
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex min-h-[190px] flex-1 items-center justify-center px-4 py-8 text-center md:min-h-[220px]">
           <div className="flex max-w-[360px] flex-col items-center">

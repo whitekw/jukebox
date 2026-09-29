@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { MessageCircleMore as MessageCircleIcon, Send as SendIcon, X as CloseIcon } from 'lucide-react'
 import {
   getErrorMessage,
@@ -28,6 +29,7 @@ type ChatPanelProps = {
   messages: ChatMessage[]
   currentParticipantId: string
   onSend: (content: string) => Promise<void>
+  triggerContainer?: HTMLElement | null
 }
 
 function formatSystemMessage(message: SystemChatMessage, t: Translate) {
@@ -68,6 +70,7 @@ export function ChatPanel({
   messages,
   currentParticipantId,
   onSend,
+  triggerContainer,
 }: ChatPanelProps) {
   const { locale, t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -131,13 +134,33 @@ export function ChatPanel({
     }
   }
 
+  function renderTrigger(className: string, iconSize: number) {
+    return (
+      <button
+        className={className}
+        type="button"
+        aria-label={open ? t('chat.close') : t('chat.open')}
+        title={open ? t('chat.close') : t('chat.open')}
+        aria-expanded={open}
+        onClick={toggleChat}
+      >
+        {open ? <CloseIcon size={iconSize} /> : <MessageCircleIcon size={iconSize} />}
+        {!open && unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-canvas bg-lime px-1 text-[10px] font-black text-[#11140a]">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+    )
+  }
+
   return (
     <>
       {open && (
         <section
           className={cn(
             panelStyles({ padding: 'none' }),
-            'fixed right-3 bottom-[84px] z-[70] flex h-[min(560px,calc(100dvh-104px))] w-[calc(100vw-24px)] max-w-[400px] flex-col overflow-hidden bg-[#110f16]/95 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl md:right-auto md:bottom-auto md:h-auto md:w-auto md:max-w-none',
+            'fixed right-3 bottom-[155px] z-[70] flex h-[min(560px,calc(100dvh-175px))] w-[calc(100vw-24px)] max-w-[400px] flex-col overflow-hidden bg-[#110f16]/95 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl md:right-auto md:bottom-auto md:h-auto md:w-auto md:max-w-none',
           )}
           style={chatWindowStyle}
           role="dialog"
@@ -283,20 +306,14 @@ export function ChatPanel({
         </section>
       )}
 
-      <button
-        className="fixed right-4 bottom-4 z-[70] grid size-14 place-items-center rounded-full border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-6"
-        type="button"
-        aria-label={open ? t('chat.close') : t('chat.open')}
-        aria-expanded={open}
-        onClick={toggleChat}
-      >
-        {open ? <CloseIcon size={22} /> : <MessageCircleIcon size={25} />}
-        {!open && unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-canvas bg-lime px-1 text-[10px] font-black text-[#11140a]">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+      {triggerContainer && createPortal(renderTrigger(cn(
+        'relative grid size-11 shrink-0 place-items-center rounded-[4px] border border-purple-light/25 text-purple-light transition-colors hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light',
+        open ? 'bg-purple/55 text-white' : 'bg-purple-light/20',
+      ), 21), triggerContainer)}
+      {renderTrigger(cn(
+        'fixed right-4 bottom-[92px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-[92px]',
+        triggerContainer && 'lg:hidden',
+      ), 25)}
     </>
   )
 }
