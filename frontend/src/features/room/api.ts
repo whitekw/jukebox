@@ -4,6 +4,7 @@ import type {
   PlaybackMode,
   RoomSession,
   RoomState,
+  RoomStats,
   VideoSearchResult,
 } from './types'
 import { request } from '../../shared/http'
@@ -30,6 +31,13 @@ function controlHeaders(credentials: ControlCredentials) {
 }
 
 export const roomApi = {
+  getRoomStats(code: string, participantToken: string, timeZone: string) {
+    const query = new URLSearchParams({ timeZone })
+    return request<RoomStats>(`/api/rooms/${encodeURIComponent(code)}/stats?${query}`, {
+      headers: participantToken ? { 'x-participant-token': participantToken } : {},
+    })
+  },
+
   createRoom(
     playbackMode: PlaybackMode,
     title: string,
@@ -155,6 +163,24 @@ export const roomApi = {
       headers: { 'x-participant-token': participantToken },
       body: JSON.stringify({ videoId }),
     })
+  },
+
+  getSongVote(code: string, songId: string, participantToken: string) {
+    return request<{ vote: 'up' | 'down' | null; canVote: boolean }>(
+      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/vote`,
+      { headers: participantToken ? { 'x-participant-token': participantToken } : {} },
+    )
+  },
+
+  setSongVote(code: string, songId: string, participantToken: string, vote: 'up' | 'down' | null) {
+    return request<RoomState>(
+      `/api/rooms/${encodeURIComponent(code)}/songs/${encodeURIComponent(songId)}/vote`,
+      {
+        method: 'POST',
+        headers: participantToken ? { 'x-participant-token': participantToken } : {},
+        body: JSON.stringify({ vote }),
+      },
+    )
   },
 
   advance(code: string, credentials: ControlCredentials) {

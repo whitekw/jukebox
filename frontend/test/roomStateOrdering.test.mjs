@@ -16,3 +16,12 @@ test('non-playback room updates and resets still apply', () => {
   assert.equal(preferCurrentPlaybackRevision(current, null), null)
   assert.equal(preferCurrentPlaybackRevision(null, participantUpdate), participantUpdate)
 })
+
+test('a delayed vote response cannot replace newer totals for the same song', () => {
+  const newer = { code: 'ABC123', playbackRevision: 6, currentSong: { id: 'song', voteRevision: 3, upvotes: 1, downvotes: 0 } }
+  const older = { code: 'ABC123', playbackRevision: 6, currentSong: { id: 'song', voteRevision: 2, upvotes: 2, downvotes: 0 } }
+  assert.equal(preferCurrentPlaybackRevision(newer, older), newer)
+  assert.equal(preferCurrentPlaybackRevision(older, newer), newer)
+  const nextSong = { code: 'ABC123', playbackRevision: 7, currentSong: { id: 'next', voteRevision: 0 } }
+  assert.equal(preferCurrentPlaybackRevision(newer, nextSong), nextSong)
+})

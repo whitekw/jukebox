@@ -1,6 +1,7 @@
 const crypto = require('node:crypto')
 const { transaction } = require('./db')
 const { AppError } = require('./errors')
+const { buildPlaybackSeries } = require('./roomStats')
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
@@ -226,6 +227,9 @@ function createRoomService(db, options = {}) {
       addedByAvatarUrl: row.avatar_url ?? null,
       otherControlAvailableAt: otherControlAvailableAt(row),
       position: row.position,
+      upvotes: Number(row.upvotes ?? 0),
+      downvotes: Number(row.downvotes ?? 0),
+      voteRevision: Number(row.vote_revision ?? 0),
     }
   }
 
@@ -395,7 +399,9 @@ function createRoomService(db, options = {}) {
       ? db
           .prepare(
             `SELECT songs.*, participants.nickname, participants.avatar_url,
-                    participants.left_at, participants.offline_since
+                    participants.left_at, participants.offline_since,
+                    (SELECT COUNT(*) FROM song_votes WHERE song_id = songs.id AND vote = 1) AS upvotes,
+                    (SELECT COUNT(*) FROM song_votes WHERE song_id = songs.id AND vote = -1) AS downvotes
              FROM songs
              JOIN participants ON participants.id = songs.added_by
              WHERE songs.id = ?`,
@@ -445,6 +451,145 @@ function createRoomService(db, options = {}) {
       currentSong: serializeSong(current),
       queue: queue.map(serializeSong),
     }
+  }
+
+  function requireCurrentSong(room, songId) {
+    if (!room.current_song_id || room.current_song_id !== songId) {
+      throw new AppError(409, '현재 재생 중인 곡에만 투표할 수 있습니다.', 'SONG_NOT_CURRENT')
+    }
+    const song = db.prepare(
+      `SELECT songs.id, songs.added_by, participants.user_id AS requester_user_id
+       FROM songs
+       JOIN participants ON participants.id = songs.added_by
+       WHERE songs.id = ? AND songs.room_id = ? AND songs.status = 'current'`,
+    ).get(songId, room.id)
+    if (!song) {
+      throw new AppError(409, '현재 재생 중인 곡에만 투표할 수 있습니다.', 'SONG_NOT_CURRENT')
+    }
+    return song
+  }
+
+  function isOwnSongRequest(song, participant) {
+    return song.added_by === participant.id || Boolean(
+      participant.user_id && song.requester_user_id === participant.user_id,
+    )
+  }
+
+  function getRoomStats(code, credentials, timeZone = 'UTC') {
+    const room = getRoomRecord(code)
+    requireParticipant(room, credentials?.participantToken, credentials?.userId)
+    if (typeof timeZone !== 'string' || timeZone.length > 100) {
+      throw new AppError(400, '시간대가 올바르지 않습니다.', 'INVALID_TIME_ZONE')
+    }
+    const plays = db.prepare(
+      'SELECT started_at, started_at_estimated, added_by FROM songs WHERE room_id = ? AND started_at IS NOT NULL',
+    ).all(room.id)
+    let series
+    try {
+      series = buildPlaybackSeries(plays.map(({ started_at }) => Number(started_at)), now(), timeZone)
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error
+      throw new AppError(400, '시간대가 올바르지 않습니다.', 'INVALID_TIME_ZONE')
+    }
+    const voters = db.prepare(
+      `SELECT requester_participant_id,
+              SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) AS upvotes,
+              SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) AS downvotes
+       FROM song_votes WHERE room_id = ? GROUP BY requester_participant_id`,
+    ).all(room.id)
+    const byParticipant = new Map()
+    for (const play of plays) {
+      const totals = byParticipant.get(play.added_by) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      totals.plays += 1
+      byParticipant.set(play.added_by, totals)
+    }
+    for (const voter of voters) {
+      const totals = byParticipant.get(voter.requester_participant_id) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      totals.upvotes += Number(voter.upvotes)
+      totals.downvotes += Number(voter.downvotes)
+      byParticipant.set(voter.requester_participant_id, totals)
+    }
+    const participantRecords = db.prepare(
+      'SELECT id, user_id, nickname, avatar_url, left_at FROM participants WHERE room_id = ? AND user_id IS NOT NULL ORDER BY created_at ASC, rowid ASC',
+    ).all(room.id)
+    const grouped = new Map()
+    for (const record of participantRecords) {
+      const key = record.user_id ? `account:${record.user_id}` : `guest:${record.id}`
+      const totals = byParticipant.get(record.id) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      const existing = grouped.get(key)
+      grouped.set(key, {
+        id: record.id,
+        nickname: record.nickname,
+        avatarUrl: record.avatar_url ?? null,
+        active: existing?.active || record.left_at === null,
+        plays: (existing?.plays ?? 0) + totals.plays,
+        upvotes: (existing?.upvotes ?? 0) + totals.upvotes,
+        downvotes: (existing?.downvotes ?? 0) + totals.downvotes,
+      })
+    }
+    const participants = [...grouped.values()]
+      .filter((participant) => participant.active || participant.plays > 0)
+      .sort((left, right) => right.plays - left.plays || right.upvotes - left.upvotes ||
+        left.nickname.localeCompare(right.nickname))
+      .map(({ active, ...participant }) => participant)
+    return {
+      totalPlays: plays.length,
+      totalUpvotes: voters.reduce((total, row) => total + Number(row.upvotes), 0),
+      totalDownvotes: voters.reduce((total, row) => total + Number(row.downvotes), 0),
+      hasEstimatedHistory: plays.some(({ started_at_estimated }) => Boolean(started_at_estimated)),
+      timeZone,
+      ...series,
+      participants,
+    }
+  }
+
+  function getSongVote(code, credentials, songId) {
+    const room = getRoomRecord(code)
+    const participant = requireParticipant(room, credentials?.participantToken, credentials?.userId)
+    const song = requireCurrentSong(room, songId)
+    const row = db.prepare(
+      'SELECT vote FROM song_votes WHERE song_id = ? AND voter_participant_id = ?',
+    ).get(songId, participant.id)
+    return {
+      vote: row?.vote === 1 ? 'up' : row?.vote === -1 ? 'down' : null,
+      canVote: !isOwnSongRequest(song, participant),
+    }
+  }
+
+  function setSongVote(code, credentials, songId, vote) {
+    if (vote !== 'up' && vote !== 'down' && vote !== null) {
+      throw new AppError(400, '추천 또는 비추천을 선택해주세요.', 'INVALID_SONG_VOTE')
+    }
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const participant = requireParticipant(room, credentials?.participantToken, credentials?.userId)
+      const song = requireCurrentSong(room, songId)
+      if (isOwnSongRequest(song, participant)) {
+        throw new AppError(403, '본인이 신청한 곡에는 투표할 수 없습니다.', 'SELF_VOTE_FORBIDDEN')
+      }
+      const existing = db.prepare(
+        'SELECT vote FROM song_votes WHERE song_id = ? AND voter_participant_id = ?',
+      ).get(songId, participant.id)
+      const nextValue = vote === 'up' ? 1 : vote === 'down' ? -1 : null
+      if ((existing?.vote ?? null) === nextValue) return getPublicRoom(code)
+
+      if (nextValue === null) {
+        db.prepare('DELETE FROM song_votes WHERE song_id = ? AND voter_participant_id = ?')
+          .run(songId, participant.id)
+      } else {
+        const changedAt = now()
+        db.prepare(
+          `INSERT INTO song_votes (
+             room_id, song_id, requester_participant_id, voter_participant_id,
+             vote, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(song_id, voter_participant_id) DO UPDATE SET
+             vote = excluded.vote, updated_at = excluded.updated_at`,
+        ).run(room.id, songId, song.added_by, participant.id, nextValue, changedAt, changedAt)
+      }
+      db.prepare('UPDATE songs SET vote_revision = vote_revision + 1 WHERE id = ?').run(songId)
+      return getPublicRoom(code)
+    })
   }
 
   function normalizeNickname(nickname) {
@@ -854,8 +999,8 @@ function createRoomService(db, options = {}) {
       db.prepare(
         `INSERT INTO songs (
           id, room_id, video_id, title, artist, duration_seconds, thumbnail_url,
-          added_by, status, position, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          added_by, status, position, started_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         room.id,
@@ -867,6 +1012,7 @@ function createRoomService(db, options = {}) {
         participant.id,
         status,
         status === 'current' ? 0 : nextPosition,
+        status === 'current' ? createdAt : null,
         createdAt,
       )
       if (status === 'current') {
@@ -902,7 +1048,8 @@ function createRoomService(db, options = {}) {
       )
       .get(room.id)
     if (next) {
-      db.prepare("UPDATE songs SET status = 'current' WHERE id = ?").run(next.id)
+      db.prepare("UPDATE songs SET status = 'current', started_at = ? WHERE id = ?")
+        .run(changedAt, next.id)
     }
     db.prepare(
       `UPDATE rooms
@@ -1362,6 +1509,9 @@ function createRoomService(db, options = {}) {
     resumeAccountParticipant,
     leaveAccountRoom,
     getPublicRoom,
+    getRoomStats,
+    getSongVote,
+    setSongVote,
     getParticipantStatus,
     assertCanAddSong,
     getRoomSession,

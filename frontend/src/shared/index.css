@@ -32,9 +32,47 @@ html[data-bside-desktop] .desktop-entry > [data-desktop-titlebar] {
   border-bottom: 1px solid var(--color-line);
 }
 
+/* Keep the native window controls and web header outside the page scroll area. */
+html[data-bside-desktop] .desktop-entry-shell {
+  --desktop-content-padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+html[data-bside-desktop] .desktop-entry-shell > [data-desktop-titlebar] {
+  width: 100%;
+  margin-inline: 0;
+}
+
+html[data-bside-desktop] .desktop-entry-scroll {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-dim) var(--color-canvas);
+}
+
+html[data-bside-desktop] .desktop-entry-content {
+  display: flow-root;
+  min-height: 100%;
+  padding: 0 var(--desktop-page-padding) var(--desktop-content-padding-bottom);
+}
+
+html[data-bside-desktop] .desktop-entry-shell.flex .desktop-entry-content {
+  display: flex;
+  flex-direction: column;
+}
+
 @media (min-width: 768px) {
   html[data-bside-desktop] .desktop-entry:not(.desktop-join) {
     --desktop-page-padding: 40px;
+    --desktop-content-padding-bottom: 32px;
   }
 }
 

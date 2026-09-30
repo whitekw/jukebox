@@ -32,6 +32,7 @@ export function ParticipantsMenu({
   const [error, setError] = useState('')
   const onlineParticipants = participants.filter((participant) => participant.online)
   const offlineMembers = participants.filter((participant) => participant.isMember && !participant.online)
+  const listedParticipants = [...onlineParticipants, ...offlineMembers]
 
   useEffect(() => {
     if (!open) return
@@ -123,44 +124,51 @@ export function ParticipantsMenu({
 
       {open && (
         <div
-          className="fixed top-[68px] right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-2xl border border-line bg-[#15121b] p-3 shadow-[0_24px_70px_rgba(0,0,0,.55)] sm:absolute sm:top-full sm:right-0 sm:mt-2"
+          className="fixed top-[68px] right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl border border-line bg-[#15121b] p-2 shadow-[0_16px_40px_rgba(0,0,0,.4)] sm:absolute sm:top-full sm:right-0 sm:mt-2"
           role="dialog"
           aria-label={t('participants.title')}
         >
-          <div className="flex items-center justify-between gap-4 px-1.5 pt-1 pb-3">
-            <div>
-              <span className="text-[9px] font-black tracking-[0.16em] text-lime">
-                IN THIS ROOM
-              </span>
-              <h2 className="mt-1 text-base tracking-[-0.02em]">
-                {t('participants.title')}
-              </h2>
-            </div>
-            <span className="rounded-full border border-line bg-white/[0.035] px-2.5 py-1 font-mono text-[10px] text-muted">
-              {t('participants.count', { count: onlineParticipants.length })}
+          <div className="mb-1 flex items-center gap-1.5 border-b border-line px-2 pt-1.5 pb-2.5">
+            <h2 className="m-0 text-sm font-semibold tracking-[-0.02em]">
+              {t('participants.title')}
+            </h2>
+            <span className="font-mono text-[11px] text-muted">
+              · {t('participants.count', { count: listedParticipants.length })}
             </span>
           </div>
 
-          <ul className="m-0 flex max-h-[320px] list-none flex-col gap-1 overflow-y-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {[...onlineParticipants, ...offlineMembers].map((roomParticipant, index) => {
+          <ul className="m-0 flex max-h-[320px] list-none flex-col gap-0.5 overflow-y-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {listedParticipants.map((roomParticipant, index) => {
               const isCurrent = roomParticipant.id === currentParticipantId
               const canSetManager = Boolean(onSetManager && roomParticipant.isMember)
               const hasActions = !roomParticipant.isOwner && !isCurrent && (canSetManager || Boolean(onDisconnect && roomParticipant.online))
               return (
                 <li
-                  className={cn('rounded-xl px-2.5 py-2 transition-colors hover:bg-white/[0.04]', !roomParticipant.online && 'opacity-70', index === onlineParticipants.length && offlineMembers.length > 0 && 'mt-2 border-t border-line pt-3')}
+                  className={cn('rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.025] focus-within:bg-white/[0.025]', !roomParticipant.online && 'opacity-70', index === onlineParticipants.length && onlineParticipants.length > 0 && offlineMembers.length > 0 && 'mt-1 border-t border-line pt-2')}
                   key={roomParticipant.id}
                 >
-                  <div className="flex min-h-10 items-center gap-3">
-                    <span className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-sm font-black text-purple-light">
-                      {roomParticipant.avatarUrl ? (
-                        <img
-                          className="size-full object-cover"
-                          src={roomParticipant.avatarUrl}
-                          alt=""
+                  <div className="flex min-h-9 items-center gap-2.5">
+                    <span className="relative size-8 shrink-0">
+                      <span className="grid size-full place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-xs font-bold text-purple-light">
+                        {roomParticipant.avatarUrl ? (
+                          <img
+                            className="size-full object-cover"
+                            src={roomParticipant.avatarUrl}
+                            alt=""
+                          />
+                        ) : (
+                          roomParticipant.nickname.trim().slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      {roomParticipant.online ? (
+                        <span
+                          className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-lime ring-2 ring-[#15121b]"
+                          role="img"
+                          aria-label={t('participants.online')}
+                          title={t('participants.online')}
                         />
                       ) : (
-                        roomParticipant.nickname.trim().slice(0, 1).toUpperCase()
+                        <span className="sr-only">{t('participants.offline')}</span>
                       )}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -168,18 +176,22 @@ export function ParticipantsMenu({
                         <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
                           {roomParticipant.nickname}
                         </strong>
+                        {(roomParticipant.isOwner || roomParticipant.isManager) && (
+                          <span
+                            className={cn('shrink-0 text-sm leading-none', !roomParticipant.isOwner && 'grayscale')}
+                            role="img"
+                            aria-label={t(roomParticipant.isOwner ? 'manager.hostBadge' : 'manager.badge')}
+                            title={t(roomParticipant.isOwner ? 'manager.hostBadge' : 'manager.badge')}
+                          >
+                            👑
+                          </span>
+                        )}
                         {isCurrent && (
                           <span className="shrink-0 text-[10px] text-dim">
                             {t('participants.you')}
                           </span>
                         )}
-                        <span className={cn('size-1.5 shrink-0 rounded-full', roomParticipant.online ? 'bg-lime' : 'bg-dim')} aria-label={roomParticipant.online ? t('participants.online') : t('participants.offline')} />
                       </div>
-                      {(roomParticipant.isOwner || roomParticipant.isManager) && (
-                        <span className="text-[10px] font-bold text-lime">
-                          {t(roomParticipant.isOwner ? 'manager.hostBadge' : 'manager.badge')}
-                        </span>
-                      )}
                     </div>
                     {hasActions && (
                       <button

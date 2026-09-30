@@ -11,6 +11,9 @@ export type Song = {
   addedByAvatarUrl: string | null
   otherControlAvailableAt: number | null
   position: number
+  upvotes: number
+  downvotes: number
+  voteRevision: number
 }
 
 export type RoomState = {
@@ -39,6 +42,25 @@ export type RoomParticipant = {
   isOwner: boolean
   isMember: boolean
   online: boolean
+}
+
+export type RoomStats = {
+  totalPlays: number
+  totalUpvotes: number
+  totalDownvotes: number
+  hasEstimatedHistory: boolean
+  timeZone: string
+  daily: { key: string; count: number }[]
+  weekly: { key: string; count: number }[]
+  monthly: { key: string; count: number }[]
+  participants: {
+    id: string
+    nickname: string
+    avatarUrl: string | null
+    plays: number
+    upvotes: number
+    downvotes: number
+  }[]
 }
 
 export type Participant = {

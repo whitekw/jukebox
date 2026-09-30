@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -7,7 +9,7 @@ import {
   type FormEvent,
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { WifiOff } from 'lucide-react'
+import { BarChart3, WifiOff } from 'lucide-react'
 import { roomApi } from '../api'
 import { Brand } from '../../../shared/ui/Brand'
 import { AccountMenu } from '../../auth/components/AccountMenu'
@@ -38,6 +40,9 @@ import { canControlSong, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
 import { useRoomActions } from '../hooks/useRoomActions'
+import { useSongVote } from '../hooks/useSongVote'
+
+const RoomStatsPanel = lazy(() => import('../components/RoomStatsPanel'))
 
 export function RoomPage() {
   const { t } = useI18n()
@@ -81,6 +86,7 @@ export function RoomPage() {
   const [nickname, setNickname] = useState('')
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<{ userId: string; playlist: Playlist } | null>(null)
   const [libraryRevision, setLibraryRevision] = useState(0)
   const [songControlTick, setSongControlTick] = useState(0)
@@ -95,14 +101,22 @@ export function RoomPage() {
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
   const activePlaylist = selectedPlaylist && user?.id === selectedPlaylist.userId ? selectedPlaylist.playlist : null
   const closePlaylist = useCallback(() => setSelectedPlaylist(null), [])
+  const closeStats = useCallback(() => setStatsOpen(false), [])
   function openSongRequest() {
     setSelectedPlaylist(null)
+    setStatsOpen(false)
     setRequestSongOpen(true)
   }
   function openPlaylist(playlist: Playlist) {
     if (!user) return
     setRequestSongOpen(false)
+    setStatsOpen(false)
     setSelectedPlaylist({ userId: user.id, playlist })
+  }
+  function toggleStats() {
+    setRequestSongOpen(false)
+    setSelectedPlaylist(null)
+    setStatsOpen((current) => !current)
   }
   const serverNow = Date.now() + serverTimeOffsetMs
 
@@ -180,6 +194,13 @@ export function RoomPage() {
     controlCredentials,
     appendChatMessage,
     claimPlaybackHostSession,
+  })
+  const songVote = useSongVote({
+    code,
+    songId: room?.currentSong?.id,
+    participantId: participant?.id,
+    participantToken,
+    setRoom,
   })
 
   async function join(event: FormEvent<HTMLFormElement>) {
@@ -361,12 +382,17 @@ export function RoomPage() {
       </header>
 
       <section className={cn(
-        'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 room:auto-rows-auto room:gap-0 room:overflow-hidden room:p-0',
-        'room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+        'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 sm:auto-rows-auto sm:gap-0 sm:overflow-hidden sm:p-0',
+        'sm:grid-cols-[72px_minmax(0,1fr)_72px] room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
-          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined} libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
-          <div className="relative min-w-0 room:h-full room:min-h-0 room:overflow-y-auto room:overscroll-contain room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden">
-            <div inert={requestSongOpen || Boolean(activePlaylist)} aria-hidden={requestSongOpen || Boolean(activePlaylist)} className="flex min-h-full flex-col items-center justify-center px-0 py-6 room:px-6">
+          <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined}
+            statsOpen={statsOpen} onToggleStats={participant ? toggleStats : undefined}
+            libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
+          <div className={cn(
+            'relative min-w-0 sm:h-full sm:min-h-0 sm:overflow-y-auto sm:overscroll-contain sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden',
+            statsOpen && 'min-h-[max(420px,calc(100dvh-220px))]',
+          )}>
+            <div inert={requestSongOpen || Boolean(activePlaylist) || statsOpen} aria-hidden={requestSongOpen || Boolean(activePlaylist) || statsOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 sm:px-6">
             <NowPlaying
               onRequestSong={participant ? openSongRequest : undefined}
               song={room.currentSong}
@@ -465,9 +491,14 @@ export function RoomPage() {
                 roomError={error || roomError}
               />
             )}
+            {statsOpen && participant && <Suspense fallback={<div className="absolute inset-0 z-20 bg-canvas p-6 text-sm text-muted" role="status">{t('library.loading')}</div>}>
+              <RoomStatsPanel code={code} participantToken={participantToken}
+                revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
+                onClose={closeStats} />
+            </Suspense>}
           </div>
             <QueuePanel
-              className="min-h-[280px] room:h-full room:min-h-0 room:rounded-none room:border-y-0 room:border-r-0 room:bg-panel"
+              className="min-h-[280px] sm:h-full sm:min-h-0 sm:rounded-none sm:border-y-0 sm:border-r-0 sm:bg-panel"
               songs={room.queue}
               onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
               libraryRevision={libraryRevision}
@@ -508,6 +539,15 @@ export function RoomPage() {
 
       <RoomPlaybackBar
         song={room.currentSong}
+        vote={{
+          myVote: songVote.myVote,
+          ready: songVote.ready,
+          isOwnRequest: Boolean(room.currentSong && participant &&
+            room.currentSong.addedById === participant.id) || songVote.isOwnRequest,
+          voting: songVote.voting,
+          error: songVote.error,
+          onVote: (choice) => { void songVote.vote(choice) },
+        }}
         libraryRevision={libraryRevision}
         onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
         paused={room.playbackPaused}
@@ -545,10 +585,18 @@ export function RoomPage() {
             : undefined
         }
       />
+      {participant && <button type="button"
+        className={cn(
+          'fixed right-4 bottom-[196px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48)] backdrop-blur-xl transition-colors hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light sm:hidden',
+          statsOpen ? 'bg-purple/55 text-white' : 'bg-purple/25',
+        )}
+        aria-label={t('stats.open')} title={t('stats.open')} aria-pressed={statsOpen}
+        onClick={toggleStats}><BarChart3 size={25} aria-hidden="true" /></button>}
       {participant && (
         <ChatPanel
           roomCode={code}
           messages={chatMessages}
+          participants={room.participants}
           currentParticipantId={participant.id}
           triggerContainer={chatTriggerContainer}
           onSend={sendChatMessage}

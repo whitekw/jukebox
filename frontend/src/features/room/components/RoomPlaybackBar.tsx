@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, CirclePlus, Music2, Pause, Play, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { Check, CirclePlus, Music2, Pause, Play, SkipForward, ThumbsDown, ThumbsUp, Volume2, VolumeX } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { chromeIconButtonStyles } from '../../../shared/styles'
+import { chromeIconButtonStyles, cn } from '../../../shared/styles'
 import { expectedPlaybackPosition, type PlaybackSynchronization } from '../playback/playbackSync'
 import type { PlayerAudioSettings } from '../playback/playerAudioSettings'
 import type { Song } from '../types'
+import type { SongVote } from '../hooks/useSongVote'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 
 type RoomPlaybackBarProps = {
@@ -22,6 +23,14 @@ type RoomPlaybackBarProps = {
   onGlobalPlaybackToggle?: () => void
   onLibraryChange?: () => void
   libraryRevision?: number
+  vote: {
+    myVote: SongVote | null
+    ready: boolean
+    isOwnRequest: boolean
+    voting: boolean
+    error: string
+    onVote: (choice: SongVote) => void
+  }
 }
 
 export function RoomPlaybackBar({
@@ -37,6 +46,7 @@ export function RoomPlaybackBar({
   onGlobalPlaybackToggle,
   onLibraryChange,
   libraryRevision = 0,
+  vote,
 }: RoomPlaybackBarProps) {
   const { t } = useI18n()
   const { user } = useAuth()
@@ -95,8 +105,9 @@ export function RoomPlaybackBar({
           />
         </div>
       )}
-      <div className="flex h-14 w-full items-center gap-3 px-4 md:gap-5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-3 sm:flex sm:h-14 sm:gap-3 sm:px-4 md:gap-5">
+        <div className={cn('col-start-1 row-start-1 flex min-w-0 flex-1 items-center gap-2 sm:gap-3',
+          !onGlobalPlaybackToggle && !onAdvance && 'col-span-2 sm:col-span-1')}>
           {song ? (
             <img
               className="size-12 shrink-0 rounded-lg object-cover"
@@ -130,8 +141,35 @@ export function RoomPlaybackBar({
             </button>
           )}
         </div>
+        {song && (
+          <div className={cn(
+            'col-start-1 row-start-2 flex items-center gap-1 sm:col-auto sm:row-auto sm:shrink-0',
+            !(audioSettings && onVolumeChange && onMuteToggle) && 'col-span-2 sm:col-span-1',
+          )} role="group" aria-label={t('vote.group')}>
+            {([['up', ThumbsUp, song.upvotes], ['down', ThumbsDown, song.downvotes]] as const).map(([choice, Icon, count]) => (
+              <button
+                key={choice}
+                type="button"
+                className={cn(
+                  'flex h-9 min-w-12 items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-ink/75 transition-colors enabled:hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light disabled:cursor-default',
+                  vote.myVote === choice
+                    ? choice === 'up' ? 'text-lime enabled:hover:text-lime' : 'text-danger enabled:hover:text-danger'
+                    : 'enabled:hover:text-ink',
+                )}
+                aria-label={t(choice === 'up' ? 'vote.upCount' : 'vote.downCount', { count })}
+                title={vote.isOwnRequest ? undefined : !vote.ready ? t('vote.joinRequired') : t(choice === 'up' ? 'vote.up' : 'vote.down')}
+                aria-pressed={vote.myVote === choice}
+                disabled={vote.isOwnRequest || !vote.ready || vote.voting}
+                onClick={() => vote.onVote(choice)}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span aria-hidden="true">{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {(onGlobalPlaybackToggle || onAdvance) && song && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-1 sm:gap-2">
             {onGlobalPlaybackToggle && (
               <button
                 className={chromeIconButtonStyles}
@@ -157,7 +195,7 @@ export function RoomPlaybackBar({
           </div>
         )}
         {song && audioSettings && onVolumeChange && onMuteToggle && (
-          <div className="room-volume-control flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20">
+          <div className="room-volume-control col-start-2 row-start-2 flex w-28 shrink-0 items-center gap-2 text-muted max-[420px]:w-20 sm:col-auto sm:row-auto">
             <button
               className="grid size-6 shrink-0 place-items-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
               type="button"
@@ -183,6 +221,9 @@ export function RoomPlaybackBar({
           </div>
         )}
       </div>
+      {vote.error && <p role="alert" className="absolute right-3 bottom-full mb-2 max-w-[calc(100vw-24px)] rounded-lg border border-danger/35 bg-canvas px-3 py-2 text-xs text-danger shadow-lg">
+        {vote.error}
+      </p>}
       {song && saveSongId === song.id && <SaveToPlaylistDialog
         key={song.id}
         song={{ videoId: song.videoId, roomSongId: song.id }}

@@ -35,6 +35,12 @@ export const libraryApi = {
       body: JSON.stringify({ name }),
     })
   },
+  reorder(playlistId: string, targetIndex: number) {
+    return request<{ items: Playlist[] }>(`/api/me/playlists/${encodeURIComponent(playlistId)}/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ targetIndex }),
+    })
+  },
   rename(playlistId: string, name: string) {
     return request<{ id: string; name: string; updatedAt: number }>(`/api/me/playlists/${encodeURIComponent(playlistId)}`, {
       method: 'PATCH',
