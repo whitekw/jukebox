@@ -102,13 +102,13 @@ export function SongList({
 
   if (songs.length === 0) {
     return (
-      <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-4 py-8 text-center md:min-h-[220px]">
-        <div className="mb-4 grid size-12 place-items-center rounded-full border border-line bg-white/[0.035] text-muted">
-          <MusicIcon size={20} />
+      <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-4 py-8 text-center room:min-h-[220px] sm:max-room:min-h-0 sm:max-room:justify-start sm:max-room:p-0" title={emptyMessage}>
+        <div className="mb-4 grid size-12 place-items-center rounded-full border border-line bg-white/[0.035] text-muted sm:max-room:mb-0 sm:max-room:size-11 sm:max-room:rounded-[4px]">
+          <MusicIcon size={20} aria-hidden="true" />
         </div>
-        <p className="m-0 text-sm font-semibold text-muted">{emptyMessage}</p>
+        <p className="m-0 text-sm font-semibold text-muted sm:max-room:sr-only">{emptyMessage}</p>
         {emptyDescription && (
-          <p className="mt-1.5 mb-0 max-w-[270px] text-[11px] leading-[1.65] text-dim">
+          <p className="mt-1.5 mb-0 max-w-[270px] text-[11px] leading-[1.65] text-dim sm:max-room:sr-only">
             {emptyDescription}
           </p>
         )}
@@ -118,11 +118,12 @@ export function SongList({
 
   return (
     <>
-    <ol className="m-0 flex list-none flex-col gap-[7px] p-0">
+    <ol className="m-0 flex list-none flex-col gap-[7px] p-0 sm:max-room:items-center sm:max-room:gap-2">
       {songs.map((song) => (
         <li
           className={cn(
             'relative flex min-h-[68px] items-center gap-[11px] rounded-[4px] border border-transparent bg-white/[0.035] p-2 transition-[border-color,background-color,opacity] hover:border-line hover:bg-white/[0.055]',
+            'sm:max-room:size-11 sm:max-room:min-h-0 sm:max-room:shrink-0 sm:max-room:gap-0 sm:max-room:border-0 sm:max-room:p-0',
             onReorder && songs.length > 1 &&
               'cursor-grab select-none active:cursor-grabbing',
             draggedSongId === song.id && 'opacity-35',
@@ -133,7 +134,7 @@ export function SongList({
           )}
           key={song.id}
           draggable={Boolean(onReorder && songs.length > 1)}
-          title={onReorder && songs.length > 1 ? t('song.dragToReorder') : undefined}
+          title={`${song.title} · ${song.artist}${onReorder && songs.length > 1 ? ` · ${t('song.dragToReorder')}` : ''}`}
           onDragStart={(event) => startDragging(event, song.id)}
           onDragOver={(event) => markDropTarget(event, song.id)}
           onDrop={(event) => dropSong(event, song.id)}
@@ -142,9 +143,9 @@ export function SongList({
           <img
             src={song.thumbnailUrl}
             alt=""
-            className="size-14 shrink-0 rounded-[4px] bg-[#17151c] object-cover"
+            className="size-14 shrink-0 rounded-[4px] bg-[#17151c] object-cover sm:max-room:size-11"
           />
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col sm:max-room:sr-only">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
               {song.title}
             </strong>
@@ -164,7 +165,7 @@ export function SongList({
               </small>
             </span>
           </div>
-          <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
+          <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5 sm:max-room:hidden">
             <button
               className="grid size-7 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-muted transition-colors hover:bg-purple/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light"
               type="button"

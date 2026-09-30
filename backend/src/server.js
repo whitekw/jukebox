@@ -469,6 +469,11 @@ app.post('/api/me/playlists', mutationLimiter, (req, res) => {
   res.status(201).json(library.create(user.id, req.body?.name))
 })
 
+app.post('/api/me/playlists/:playlistId/reorder', mutationLimiter, (req, res) => {
+  const user = requireAuthUser(req)
+  res.json({ items: library.reorder(user.id, req.params.playlistId, req.body?.targetIndex) })
+})
+
 app.patch('/api/me/playlists/:playlistId', mutationLimiter, (req, res) => {
   const user = requireAuthUser(req)
   res.json(library.rename(user.id, req.params.playlistId, req.body?.name))
@@ -547,6 +552,10 @@ app.post('/api/rooms/:code/host', mutationLimiter, (req, res) => {
 
 app.get('/api/rooms/:code', (req, res) => {
   res.json(withOnlineParticipants(rooms.getPublicRoom(req.params.code)))
+})
+
+app.get('/api/rooms/:code/stats', (req, res) => {
+  res.json(rooms.getRoomStats(req.params.code, controlCredentials(req), req.query.timeZone ?? 'UTC'))
 })
 
 app.get('/api/rooms/:code/session', (req, res) => {
@@ -645,6 +654,20 @@ app.post(
     res.status(201).json(emitRoom(req.params.code, state))
   }),
 )
+
+app.get('/api/rooms/:code/songs/:songId/vote', (req, res) => {
+  res.json(rooms.getSongVote(req.params.code, controlCredentials(req), req.params.songId))
+})
+
+app.post('/api/rooms/:code/songs/:songId/vote', mutationLimiter, (req, res) => {
+  const state = rooms.setSongVote(
+    req.params.code,
+    controlCredentials(req),
+    req.params.songId,
+    req.body?.vote,
+  )
+  res.json(emitRoom(req.params.code, state))
+})
 
 app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   const currentSong = rooms.getPublicRoom(req.params.code).currentSong

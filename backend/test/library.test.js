@@ -119,3 +119,41 @@ test('copies a stored video between playlists and can remove it from every playl
     db.close()
   }
 })
+
+test('keeps creation order after metadata changes and persists a reordered playlist per account', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('user-1', 'discord-1', 'Alice', 1, 1, 1), ('user-2', 'discord-2', 'Bob', 1, 1, 1)`).run()
+    const library = createLibraryService(db)
+    const favorites = library.list('user-1')[0]
+    const oldest = library.create('user-1', 'Oldest')
+    const newest = library.create('user-1', 'Newest')
+    const other = library.list('user-2')[0]
+    const ids = () => library.list('user-1').map(({ id }) => id)
+
+    assert.deepEqual(ids(), [favorites.id, oldest.id, newest.id])
+    library.rename('user-1', oldest.id, 'Renamed')
+    db.prepare(`INSERT INTO library_tracks (video_id, title, artist, duration_seconds, thumbnail_url, updated_at)
+      VALUES ('video-1', 'Song', 'Artist', 90, 'https://example.com/image', 1)`).run()
+    library.addExistingTrack('user-1', newest.id, 'video-1')
+    db.prepare('UPDATE playlists SET updated_at = updated_at + 100000 WHERE id = ?').run(newest.id)
+    assert.deepEqual(ids(), [favorites.id, oldest.id, newest.id])
+
+    assert.deepEqual(library.reorder('user-1', newest.id, 0).map(({ id }) => id), [newest.id, favorites.id, oldest.id])
+    assert.deepEqual(ids(), [newest.id, favorites.id, oldest.id])
+    assert.deepEqual(library.reorder('user-1', newest.id, 0).map(({ id }) => id), ids())
+    assert.deepEqual(library.list('user-2').map(({ id }) => id), [other.id])
+    assert.throws(() => library.reorder('user-2', newest.id, 0), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.throws(() => library.reorder('user-1', other.id, 0), { code: 'PLAYLIST_NOT_FOUND' })
+    assert.throws(() => library.reorder('user-1', oldest.id, -1), { code: 'INVALID_PLAYLIST_POSITION' })
+    assert.throws(() => library.reorder('user-1', oldest.id, 3), { code: 'INVALID_PLAYLIST_POSITION' })
+    assert.throws(() => library.reorder('user-1', oldest.id, 1.5), { code: 'INVALID_PLAYLIST_POSITION' })
+    assert.deepEqual(ids(), [newest.id, favorites.id, oldest.id])
+
+    const appended = library.create('user-1', 'Appended')
+    assert.deepEqual(ids(), [newest.id, favorites.id, oldest.id, appended.id])
+  } finally {
+    db.close()
+  }
+})

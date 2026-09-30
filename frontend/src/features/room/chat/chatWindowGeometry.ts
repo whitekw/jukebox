@@ -6,8 +6,8 @@ export type ChatWindowRect = {
 }
 
 export const WINDOW_MARGIN = 12
-export const DEFAULT_WINDOW_WIDTH = 400
-export const DEFAULT_WINDOW_HEIGHT = 560
+export const DEFAULT_WINDOW_WIDTH = 360
+export const DEFAULT_WINDOW_HEIGHT = 480
 export const MIN_WINDOW_WIDTH = 320
 export const MIN_WINDOW_HEIGHT = 360
 

@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 7
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -112,7 +112,21 @@ function createDatabase(databasePath = ':memory:') {
       added_by TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
       status TEXT NOT NULL CHECK(status IN ('queued', 'current', 'played', 'removed')),
       position INTEGER NOT NULL,
+      vote_revision INTEGER NOT NULL DEFAULT 0,
+      started_at INTEGER,
+      started_at_estimated INTEGER NOT NULL DEFAULT 0 CHECK(started_at_estimated IN (0, 1)),
       created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS song_votes (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+      requester_participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+      voter_participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+      vote INTEGER NOT NULL CHECK(vote IN (-1, 1)),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (song_id, voter_participant_id)
     );
 
     CREATE TABLE IF NOT EXISTS library_tracks (
@@ -129,6 +143,7 @@ function createDatabase(databasePath = ':memory:') {
       owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       kind TEXT NOT NULL CHECK(kind IN ('favorites', 'custom')),
+      position INTEGER NOT NULL DEFAULT 0 CHECK(position >= 0),
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -167,8 +182,10 @@ function createDatabase(databasePath = ':memory:') {
       WHERE user_id IS NOT NULL AND left_at IS NULL;
     CREATE INDEX IF NOT EXISTS songs_by_room_status_position
       ON songs(room_id, status, position);
-    CREATE INDEX IF NOT EXISTS playlists_by_owner_updated
-      ON playlists(owner_user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS song_votes_by_song_vote
+      ON song_votes(song_id, vote);
+    CREATE INDEX IF NOT EXISTS song_votes_by_room_requester
+      ON song_votes(room_id, requester_participant_id, vote);
     CREATE UNIQUE INDEX IF NOT EXISTS one_favorites_playlist_per_user
       ON playlists(owner_user_id) WHERE kind = 'favorites';
     CREATE INDEX IF NOT EXISTS playlist_tracks_by_playlist_added
@@ -179,6 +196,40 @@ function createDatabase(databasePath = ':memory:') {
     CREATE INDEX IF NOT EXISTS room_feed_entries_by_room_sequence
       ON room_feed_entries(room_id, sequence);
   `)
+
+  const playlistColumns = new Set(db.prepare('PRAGMA table_info(playlists)').all().map(({ name }) => name))
+  if (!playlistColumns.has('position')) {
+    transaction(db, () => {
+      db.exec(`
+        ALTER TABLE playlists ADD COLUMN position INTEGER NOT NULL DEFAULT 0 CHECK(position >= 0);
+        WITH ordered AS (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY owner_user_id
+            ORDER BY CASE kind WHEN 'favorites' THEN 0 ELSE 1 END, created_at ASC, rowid ASC
+          ) - 1 AS position
+          FROM playlists
+        )
+        UPDATE playlists SET position = (SELECT position FROM ordered WHERE ordered.id = playlists.id);
+      `)
+    })
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS playlists_by_owner_position ON playlists(owner_user_id, position)')
+  db.exec('DROP INDEX IF EXISTS playlists_by_owner_updated')
+
+  const songColumns = new Set(db.prepare('PRAGMA table_info(songs)').all().map(({ name }) => name))
+  if (!songColumns.has('vote_revision')) {
+    db.exec('ALTER TABLE songs ADD COLUMN vote_revision INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!songColumns.has('started_at')) {
+    db.exec('ALTER TABLE songs ADD COLUMN started_at INTEGER')
+  }
+  if (!songColumns.has('started_at_estimated')) {
+    db.exec('ALTER TABLE songs ADD COLUMN started_at_estimated INTEGER NOT NULL DEFAULT 0 CHECK(started_at_estimated IN (0, 1))')
+  }
+  if (!songColumns.has('started_at')) {
+    db.exec("UPDATE songs SET started_at = created_at, started_at_estimated = 1 WHERE status IN ('current', 'played')")
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS songs_by_room_started ON songs(room_id, started_at)')
 
   const roomColumns = new Set(db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name))
   if (!roomColumns.has('title')) db.exec("ALTER TABLE rooms ADD COLUMN title TEXT NOT NULL DEFAULT ''")

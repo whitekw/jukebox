@@ -65,6 +65,13 @@ export function useChatWindow() {
   const windowRectRef = useRef(windowRect)
   const interactionRef = useRef<WindowInteraction | null>(null)
   const previousUserSelectRef = useRef('')
+  const [mobileViewport, setMobileViewport] = useState(() => ({
+    height: window.visualViewport?.height ?? window.innerHeight,
+    width: window.visualViewport?.width ?? window.innerWidth,
+    top: window.visualViewport?.offsetTop ?? 0,
+    left: window.visualViewport?.offsetLeft ?? 0,
+  }))
+  const sheetHeight = Math.min(640, mobileViewport.height * 0.85)
   const chatWindowStyle: CSSProperties | undefined = isDesktop
     ? {
         left: windowRect.x,
@@ -72,7 +79,12 @@ export function useChatWindow() {
         width: windowRect.width,
         height: windowRect.height,
       }
-    : undefined
+    : {
+        left: mobileViewport.left,
+        top: mobileViewport.top + mobileViewport.height - sheetHeight,
+        width: mobileViewport.width,
+        height: sheetHeight,
+      }
 
   function updateWindowRect(nextRect: ChatWindowRect) {
     windowRectRef.current = nextRect
@@ -81,17 +93,28 @@ export function useChatWindow() {
 
   useEffect(() => {
     const desktopMedia = window.matchMedia('(min-width: 768px)')
+    const visualViewport = window.visualViewport
     const synchronizeViewport = () => {
       const desktop = desktopMedia.matches
       setIsDesktop(desktop)
       if (desktop) updateWindowRect(clampToViewport(windowRectRef.current))
+      else setMobileViewport({
+        height: visualViewport?.height ?? window.innerHeight,
+        width: visualViewport?.width ?? window.innerWidth,
+        top: visualViewport?.offsetTop ?? 0,
+        left: visualViewport?.offsetLeft ?? 0,
+      })
     }
 
     desktopMedia.addEventListener('change', synchronizeViewport)
     window.addEventListener('resize', synchronizeViewport)
+    visualViewport?.addEventListener('resize', synchronizeViewport)
+    visualViewport?.addEventListener('scroll', synchronizeViewport)
     return () => {
       desktopMedia.removeEventListener('change', synchronizeViewport)
       window.removeEventListener('resize', synchronizeViewport)
+      visualViewport?.removeEventListener('resize', synchronizeViewport)
+      visualViewport?.removeEventListener('scroll', synchronizeViewport)
     }
   }, [])
 
@@ -167,10 +190,11 @@ export function useChatWindow() {
       if (!interactionRef.current) return
       interactionRef.current = null
       document.body.style.userSelect = previousUserSelectRef.current
-      localStorage.setItem(
-        CHAT_WINDOW_STORAGE_KEY,
-        JSON.stringify(windowRectRef.current),
-      )
+      try {
+        localStorage.setItem(CHAT_WINDOW_STORAGE_KEY, JSON.stringify(windowRectRef.current))
+      } catch {
+        // The current position still works when storage is unavailable.
+      }
     }
 
     window.addEventListener('pointermove', moveWindow)

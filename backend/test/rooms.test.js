@@ -36,6 +36,118 @@ function insertUser(db, id) {
   ).run(id, `discord-${id}`, id, id)
 }
 
+test('records one private vote per participant and exposes only totals for the current song', () => {
+  const db = createDatabase()
+  try {
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ nickname: 'Host' })
+    const requester = rooms.joinRoom(created.code, { nickname: 'Requester' })
+    const voter = rooms.joinRoom(created.code, { nickname: 'Voter' })
+    const otherVoter = rooms.joinRoom(created.code, { nickname: 'Other' })
+    const first = rooms.addSong(created.code, requester.participantToken, song('vote-song-1', 'First'))
+    const songId = first.currentSong.id
+    const credentials = { participantToken: voter.participantToken }
+    const otherCredentials = { participantToken: otherVoter.participantToken }
+
+    assert.deepEqual(rooms.getSongVote(created.code, credentials, songId), { vote: null, canVote: true })
+    assert.deepEqual(rooms.getSongVote(created.code, { participantToken: requester.participantToken }, songId), {
+      vote: null, canVote: false,
+    })
+    for (const vote of ['up', 'down', null]) {
+      assert.throws(
+        () => rooms.setSongVote(created.code, { participantToken: requester.participantToken }, songId, vote),
+        { code: 'SELF_VOTE_FORBIDDEN' },
+      )
+    }
+    let state = rooms.setSongVote(created.code, credentials, songId, 'up')
+    assert.deepEqual([state.currentSong.upvotes, state.currentSong.downvotes, state.currentSong.voteRevision], [1, 0, 1])
+    assert.deepEqual(rooms.getSongVote(created.code, credentials, songId), { vote: 'up', canVote: true })
+    assert.equal(Object.hasOwn(state.currentSong, 'voters'), false)
+    assert.equal(Object.hasOwn(state.currentSong, 'votes'), false)
+    const stored = db.prepare('SELECT room_id, song_id, requester_participant_id, voter_participant_id, vote FROM song_votes').get()
+    assert.deepEqual({ ...stored }, {
+      room_id: db.prepare('SELECT id FROM rooms WHERE code = ?').get(created.code).id,
+      song_id: songId,
+      requester_participant_id: requester.participant.id,
+      voter_participant_id: voter.participant.id,
+      vote: 1,
+    })
+
+    state = rooms.setSongVote(created.code, credentials, songId, 'up')
+    assert.equal(state.currentSong.voteRevision, 1)
+    state = rooms.setSongVote(created.code, otherCredentials, songId, 'down')
+    assert.deepEqual([state.currentSong.upvotes, state.currentSong.downvotes], [1, 1])
+    state = rooms.setSongVote(created.code, credentials, songId, 'down')
+    assert.deepEqual([state.currentSong.upvotes, state.currentSong.downvotes], [0, 2])
+    assert.equal(db.prepare('SELECT COUNT(*) AS total FROM song_votes WHERE song_id = ?').get(songId).total, 2)
+    state = rooms.setSongVote(created.code, credentials, songId, null)
+    assert.deepEqual([state.currentSong.upvotes, state.currentSong.downvotes], [0, 1])
+    assert.deepEqual(rooms.getSongVote(created.code, credentials, songId), { vote: null, canVote: true })
+
+    assert.throws(() => rooms.setSongVote(created.code, {}, songId, 'up'), { code: 'PARTICIPANT_REQUIRED' })
+    assert.throws(() => rooms.setSongVote(created.code, { participantToken: 'wrong' }, songId, 'up'), { code: 'PARTICIPANT_REQUIRED' })
+    assert.throws(() => rooms.setSongVote(created.code, credentials, songId, 'other'), { code: 'INVALID_SONG_VOTE' })
+    assert.throws(() => rooms.setSongVote(created.code, credentials, songId, undefined), { code: 'INVALID_SONG_VOTE' })
+
+    rooms.addSong(created.code, requester.participantToken, song('vote-song-2', 'Second'))
+    const next = rooms.advance(created.code, { hostToken: created.hostToken })
+    assert.equal(next.currentSong.upvotes, 0)
+    assert.equal(next.currentSong.downvotes, 0)
+    assert.throws(() => rooms.getSongVote(created.code, credentials, songId), { code: 'SONG_NOT_CURRENT' })
+    assert.throws(() => rooms.setSongVote(created.code, credentials, songId, 'up'), { code: 'SONG_NOT_CURRENT' })
+    assert.equal(db.prepare('SELECT COUNT(*) AS total FROM song_votes WHERE song_id = ?').get(songId).total, 1)
+    assert.deepEqual({ ...db.prepare('SELECT requester_participant_id, vote FROM song_votes WHERE song_id = ?').get(songId) }, {
+      requester_participant_id: requester.participant.id,
+      vote: -1,
+    })
+
+    const replayQueued = rooms.addSong(created.code, requester.participantToken, song('vote-song-1', 'First again'))
+    const replayId = replayQueued.queue[0].id
+    assert.notEqual(replayId, songId)
+    const replay = rooms.advance(created.code, { hostToken: created.hostToken })
+    assert.equal(replay.currentSong.id, replayId)
+    assert.deepEqual([replay.currentSong.upvotes, replay.currentSong.downvotes], [0, 0])
+    assert.deepEqual(rooms.getSongVote(created.code, otherCredentials, replayId), { vote: null, canVote: true })
+    const votedReplay = rooms.setSongVote(created.code, otherCredentials, replayId, 'up')
+    assert.deepEqual([votedReplay.currentSong.upvotes, votedReplay.currentSong.downvotes], [1, 0])
+    assert.equal(db.prepare('SELECT COUNT(*) AS total FROM song_votes WHERE song_id = ?').get(songId).total, 1)
+  } finally {
+    db.close()
+  }
+})
+
+test('an account cannot vote on its request after leaving and rejoining the room', () => {
+  const db = createDatabase()
+  try {
+    insertUser(db, 'requester')
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ nickname: 'Host' })
+    const firstMembership = rooms.joinRoom(created.code, { nickname: 'Requester', userId: 'requester' })
+    const state = rooms.addSong(created.code, firstMembership.participantToken, song('account-vote-song', 'Song'), 'requester')
+    const songId = state.currentSong.id
+
+    rooms.leaveAccountRoom(created.code, 'requester')
+    const secondMembership = rooms.joinRoom(created.code, { nickname: 'Requester again', userId: 'requester' })
+    assert.notEqual(secondMembership.participant.id, firstMembership.participant.id)
+    assert.deepEqual(rooms.getSongVote(created.code, { userId: 'requester' }, songId), {
+      vote: null, canVote: false,
+    })
+    assert.throws(() => rooms.setSongVote(created.code, { userId: 'requester' }, songId, 'up'), {
+      code: 'SELF_VOTE_FORBIDDEN',
+    })
+    assert.deepEqual([rooms.getPublicRoom(created.code).currentSong.upvotes,
+      rooms.getPublicRoom(created.code).currentSong.downvotes], [0, 0])
+    rooms.addSong(created.code, secondMembership.participantToken, song('account-vote-song-2', 'Next'), 'requester')
+    rooms.advance(created.code, { hostToken: created.hostToken })
+    const requesterStats = rooms.getRoomStats(created.code, { userId: 'requester' }).participants
+      .filter(({ nickname }) => nickname === 'Requester again')
+    assert.equal(requesterStats.length, 1)
+    assert.equal(requesterStats[0].plays, 2)
+  } finally {
+    db.close()
+  }
+})
+
 test('room titles and guest access can be changed only by the owner', () => {
   const db = createDatabase()
   insertUser(db, 'owner')

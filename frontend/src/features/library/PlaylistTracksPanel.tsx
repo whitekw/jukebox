@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { Heart, ListMusic, Pencil, Trash2, X } from 'lucide-react'
+import { Heart, ListMusic, Pencil, Trash2 } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
 import { buttonStyles, panelCloseButtonStyles } from '../../shared/styles'
+import { PanelHeader } from '../../shared/ui/PanelHeader'
 import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
 import { SaveToPlaylistDialog } from './SaveToPlaylistDialog'
@@ -109,58 +110,49 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, on
   }
 
   return (
-    <section ref={panelRef} aria-labelledby={titleId} className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas p-4 text-ink sm:p-6">
-      <div className="mb-5 flex shrink-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-purple to-[#9de0cf] text-white">
-            {playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : coverUrl ? <img src={coverUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
-          </span>
-          <div className="min-w-0">
-            <h2 id={titleId} className="m-0 truncate text-xl font-bold" title={name}>{name}</h2>
-            <p className="m-0 text-xs text-muted">{t('library.trackCount', { count: loading || error ? playlist.trackCount : tracks.length })}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {playlist.kind === 'custom' && <>
+    <section ref={panelRef} aria-labelledby={titleId} className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas text-ink">
+      <PanelHeader titleId={titleId} title={name}
+        subtitle={t('library.trackCount', { count: loading || error ? playlist.trackCount : tracks.length })}
+        icon={playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : coverUrl ? <img src={coverUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
+        iconClassName={playlist.kind === 'favorites' ? 'bg-gradient-to-br from-purple to-[#9de0cf] text-white' : undefined}
+        closeLabel={t('common.close')} onClose={onClose} closeButtonRef={closeButtonRef}
+        actions={playlist.kind === 'custom' && <>
             <button type="button" className={panelCloseButtonStyles} aria-label={t('library.renamePlaylist')} title={t('library.renamePlaylist')} disabled={savingPlaylist} onClick={() => { setConfirmingDelete(false); setNameDraft(playlist.name); setEditingName(true); setMutationError('') }}>
               <Pencil size={17} aria-hidden="true" />
             </button>
             <button type="button" className={panelCloseButtonStyles} aria-label={t('library.deletePlaylist')} title={t('library.deletePlaylist')} disabled={savingPlaylist} onClick={() => { setEditingName(false); setConfirmingDelete(true); setMutationError('') }}>
               <Trash2 size={17} aria-hidden="true" />
             </button>
-          </>}
-          <button ref={closeButtonRef} type="button" className={panelCloseButtonStyles} aria-label={t('common.close')} onClick={onClose}>
-            <X size={18} aria-hidden="true" />
-          </button>
+          </>} />
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-5 sm:px-6">
+        {editingName && <form onSubmit={(event) => void renamePlaylist(event)} className="mb-5 flex shrink-0 flex-wrap gap-2">
+          <input autoFocus aria-label={t('library.newName')} maxLength={60} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-white/5 px-3 py-2 text-sm text-ink outline-none focus:border-purple-light" />
+          <button type="submit" disabled={savingPlaylist || !nameDraft.trim()} className={buttonStyles({ intent: 'primary', size: 'sm' })}>{t('library.saveName')}</button>
+          <button type="button" disabled={savingPlaylist} className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => setEditingName(false)}>{t('common.cancel')}</button>
+        </form>}
+        {confirmingDelete && <div className="mb-5 shrink-0 rounded-xl border border-danger/30 bg-danger/[0.08] p-3">
+          <p className="m-0 text-sm text-ink">{t('library.deleteConfirm', { name })}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" disabled={savingPlaylist} className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => setConfirmingDelete(false)}>{t('common.cancel')}</button>
+            <button type="button" disabled={savingPlaylist} className="min-h-9 rounded-[10px] bg-danger px-3 text-xs font-bold text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:opacity-45" onClick={() => void deletePlaylist()}>{t('library.deletePlaylist')}</button>
+          </div>
+        </div>}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {loading && !tracks.length ? <p className="py-8 text-center text-sm text-muted">{t('library.loading')}</p> :
+            error ? <div className="flex flex-col items-center gap-3 py-8"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>{t('common.retry')}</button></div> :
+              tracks.length === 0 ? <p className="py-8 text-center text-sm text-muted">{t('library.emptyPlaylist')}</p> :
+                <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} onManageSaved={(videoId) => setManagedTrack(tracks.find((track) => track.videoId === videoId) ?? null)} />}
         </div>
+        {mutationError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{mutationError}</p>}
+        {roomError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{roomError}</p>}
+        {message && !roomError && <p className="mt-3 shrink-0 text-sm text-lime" role="status">{message}</p>}
+        {managedTrack && <SaveToPlaylistDialog
+          key={managedTrack.videoId}
+          song={managedTrack}
+          onClose={() => setManagedTrack(null)}
+          onLibraryChange={onLibraryChange}
+        />}
       </div>
-      {editingName && <form onSubmit={(event) => void renamePlaylist(event)} className="mb-5 flex shrink-0 flex-wrap gap-2">
-        <input autoFocus aria-label={t('library.newName')} maxLength={60} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-white/5 px-3 py-2 text-sm text-ink outline-none focus:border-purple-light" />
-        <button type="submit" disabled={savingPlaylist || !nameDraft.trim()} className={buttonStyles({ intent: 'primary', size: 'sm' })}>{t('library.saveName')}</button>
-        <button type="button" disabled={savingPlaylist} className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => setEditingName(false)}>{t('common.cancel')}</button>
-      </form>}
-      {confirmingDelete && <div className="mb-5 shrink-0 rounded-xl border border-danger/30 bg-danger/[0.08] p-3">
-        <p className="m-0 text-sm text-ink">{t('library.deleteConfirm', { name })}</p>
-        <div className="mt-3 flex justify-end gap-2">
-          <button type="button" disabled={savingPlaylist} className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => setConfirmingDelete(false)}>{t('common.cancel')}</button>
-          <button type="button" disabled={savingPlaylist} className="min-h-9 rounded-[10px] bg-danger px-3 text-xs font-bold text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:opacity-45" onClick={() => void deletePlaylist()}>{t('library.deletePlaylist')}</button>
-        </div>
-      </div>}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {loading && !tracks.length ? <p className="py-8 text-center text-sm text-muted">{t('library.loading')}</p> :
-          error ? <div className="flex flex-col items-center gap-3 py-8"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>{t('common.retry')}</button></div> :
-            tracks.length === 0 ? <p className="py-8 text-center text-sm text-muted">{t('library.emptyPlaylist')}</p> :
-              <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} onManageSaved={(videoId) => setManagedTrack(tracks.find((track) => track.videoId === videoId) ?? null)} />}
-      </div>
-      {mutationError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{mutationError}</p>}
-      {roomError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{roomError}</p>}
-      {message && !roomError && <p className="mt-3 shrink-0 text-sm text-lime" role="status">{message}</p>}
-      {managedTrack && <SaveToPlaylistDialog
-        key={managedTrack.videoId}
-        song={managedTrack}
-        onClose={() => setManagedTrack(null)}
-        onLibraryChange={onLibraryChange}
-      />}
     </section>
   )
 }

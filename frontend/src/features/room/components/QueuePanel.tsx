@@ -30,14 +30,15 @@ export function QueuePanel({
   return (
     <section
       className={cn(
-        panelStyles({ padding: 'responsive' }),
-        'flex min-h-0 flex-col md:p-7 room:overflow-y-auto room:overscroll-contain room:px-4 room:py-5 room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden',
+        panelStyles({ padding: 'none' }),
+        'flex min-h-0 flex-col p-4 sm:overflow-hidden sm:px-0 sm:py-3 room:overflow-y-auto room:overscroll-contain room:px-4 room:py-5 room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden',
         className,
       )}
+      aria-label={t('queue.title')}
     >
-      <div className="mb-3 flex items-center gap-2 border-b border-line px-1 pb-3">
-        <h2 className="m-0 text-base font-bold text-ink">{t('queue.title')}</h2>
-        <span className="font-mono text-xs text-muted">
+      <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-line px-1 pb-3 sm:max-room:justify-center sm:max-room:border-0 sm:max-room:px-2 sm:max-room:pb-0">
+        <h2 className="m-0 text-base font-bold text-ink sm:max-room:sr-only">{t('queue.title')}</h2>
+        <span className="font-mono text-xs text-muted sm:max-room:sr-only">
           · {t('queue.countShort', { count: songs.length })}
         </span>
         {onRequestSong && (
@@ -45,16 +46,20 @@ export function QueuePanel({
             className={cn(
               buttonStyles({ intent: 'outline', size: 'sm' }),
               'ml-auto shrink-0 gap-2 rounded-md border-purple/25 bg-purple/[0.08] px-3 text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
+              'sm:max-room:ml-0 sm:max-room:size-11 sm:max-room:gap-0 sm:max-room:rounded-[4px] sm:max-room:border-purple-light/25 sm:max-room:bg-purple-light/10 sm:max-room:p-0 sm:max-room:hover:border-purple-light/50 sm:max-room:hover:bg-purple/25',
             )}
             type="button"
             aria-haspopup="dialog"
+            aria-label={t('search.requestSong')}
+            title={t('search.requestSong')}
             onClick={onRequestSong}
           >
-            <Plus size={15} strokeWidth={2} aria-hidden="true" />{t('search.requestSong')}
+            <Plus size={15} strokeWidth={2} aria-hidden="true" className="sm:max-room:size-[21px]" />
+            <span className="sm:max-room:sr-only">{t('search.requestSong')}</span>
           </button>
         )}
       </div>
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col sm:max-room:min-h-0 sm:max-room:overflow-y-auto sm:max-room:overscroll-contain sm:max-room:px-2 sm:max-room:[scrollbar-width:none] sm:max-room:[&::-webkit-scrollbar]:hidden">
         <SongList
           songs={songs}
           emptyMessage={t('host.emptyQueue')}

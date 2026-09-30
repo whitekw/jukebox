@@ -73,10 +73,40 @@ type Song = {
   addedByAvatarUrl: string | null
   otherControlAvailableAt: number | null
   position: number
+  upvotes: number
+  downvotes: number
+  voteRevision: number
 }
 ```
 
 `otherControlAvailableAt`은 신청자가 방을 나갔거나 연결이 끊긴 뒤 다른 참여자가 그 곡을 삭제·건너뛸 수 있게 되는 epoch ms 시각입니다. 신청자가 온라인이면 `null`입니다.
+
+`upvotes`와 `downvotes`는 현재 곡의 공개 추천·비추천 수입니다. `voteRevision`은 늦게 도착한 이전 투표 응답이 최신 수치를 덮어쓰지 않도록 하는 곡별 순번입니다. 투표자 정보는 `RoomState`에 포함되지 않습니다.
+
+### `RoomStats`
+
+```ts
+type RoomStats = {
+  totalPlays: number
+  totalUpvotes: number
+  totalDownvotes: number
+  hasEstimatedHistory: boolean
+  timeZone: string
+  daily: { key: string; count: number }[]
+  weekly: { key: string; count: number }[]
+  monthly: { key: string; count: number }[]
+  participants: {
+    id: string
+    nickname: string
+    avatarUrl: string | null
+    plays: number
+    upvotes: number
+    downvotes: number
+  }[]
+}
+```
+
+재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 키는 요청한 `timeZone`의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
 
 ### `VideoSearchResult`
 
@@ -142,6 +172,7 @@ type RoomEvent = {
 | GET | `/api/me/saved-videos` | 로그인 | 없음 | 내 플레이리스트 중 하나 이상에 저장한 영상 ID 목록 |
 | GET | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 없음 | 목록에 저장한 곡 |
 | POST | `/api/me/playlists` | 로그인 | 변경 | 새 플레이리스트 |
+| POST | `/api/me/playlists/:playlistId/reorder` | 로그인·목록 소유자 | 변경 | 플레이리스트 순서 변경 |
 | PATCH | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 이름 변경 |
 | DELETE | `/api/me/playlists/:playlistId` | 로그인·목록 소유자 | 변경 | 사용자 플레이리스트 삭제 |
 | PUT | `/api/me/playlists/:playlistId/tracks` | 로그인·목록 소유자 | 변경 | 방 곡을 목록에 저장 |
@@ -156,10 +187,13 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/resume` | 로그인 멤버 | 변경 | 다른 기기에서 멤버십을 재개할 참여 토큰/정보/룸 |
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
+| GET | `/api/rooms/:code/stats?timeZone=Asia/Seoul` | 참여자 | 없음 | `RoomStats` |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 분당 30회(계정 또는 참여자 토큰 기준), IP·경로당 120회 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
+| GET | `/api/rooms/:code/songs/:songId/vote` | 참여자 | 없음 | 본인의 `{ "vote": "up" \| "down" \| null, "canVote": boolean }` |
+| POST | `/api/rooms/:code/songs/:songId/vote` | 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
@@ -171,6 +205,8 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
 요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
+
+현재 재생 중인 곡의 투표 API는 참여자 토큰 또는 방에 참여한 로그인 세션을 요구합니다. `POST` 본문은 `{ "vote": "up" }`, `{ "vote": "down" }`, `{ "vote": null }` 중 하나입니다. 한 참여자가 한 신청 건에 한 표만 남길 수 있고, 반대로 바꾸거나 취소할 수 있습니다. 신청자 본인은 투표할 수 없으며, 계정으로 재입장해도 이 제한이 유지됩니다. `GET`의 `canVote`는 본인 신청 건이면 `false`입니다. 변경된 숫자는 `room:state`로 모두에게 전달됩니다. 서버는 곡 신청 건 ID, 신청자 ID, 투표자 ID와 선택을 기록하지만 공개 응답에는 참여자별 투표 내역을 싣지 않습니다. 지난 곡에는 투표할 수 없습니다.
 
 확장 프로그램 로그인 시작 요청에는 `redirect_uri=https://{등록된 확장 ID}.chromiumapp.org/bside`, 임의의 `state`, SHA-256 PKCE `code_challenge`를 전달합니다. Discord 인증 후 서버는 해당 주소로 `grant`와 `state`를 반환합니다. `POST /api/extension/auth/exchange`의 JSON 본문은 `{ "grant": "...", "codeVerifier": "..." }`입니다. 이후 확장 프로그램 API에는 `Authorization: Bearer {token}`을 보냅니다. 영상 추가 본문은 `{ "videoId": "YouTube 영상 ID" }`입니다. 확장 프로그램 토큰만으로 일반 웹사이트 API의 쿠키 로그인·호스트 제어 권한을 얻을 수 없습니다.
 
@@ -490,11 +526,13 @@ position = playbackPositionSeconds
 
 ## 10. 개인 플레이리스트
 
-개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성하고, 기본 목록을 먼저 반환합니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
+개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성합니다. 기본 순서는 `favorites` 다음으로 생성된 순서이며, 사용자가 변경한 순서가 이후 목록에 유지됩니다. 곡을 추가하거나 이름을 바꿔도 순서는 바뀌지 않습니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
 
 `GET /api/me/saved-videos`는 로그인 계정의 플레이리스트 중 하나 이상에 저장된 영상 ID를 중복 없이 `videoIds` 배열로 반환합니다. 대기열의 저장 표시를 한 번에 갱신할 때 사용합니다.
 
 `POST /api/me/playlists`는 `{ "name": "플레이리스트 이름" }`을 받으며 공백을 제거한 1~60자 이름을 요구합니다. `PUT /api/me/playlists/:playlistId/tracks`는 `{ "roomSongId": "방의 곡 ID" }` 또는 `{ "videoId": "이미 저장된 영상 ID" }` 중 하나를 받습니다. 방 곡 ID를 쓰면 서버에 저장된 곡 메타데이터를 공통 곡 테이블에 기록하고, 영상 ID를 쓰면 공통 곡 테이블에 이미 저장된 곡을 다른 목록에 추가합니다. 같은 곡을 같은 목록에 다시 추가해도 중복되지 않으며, 다른 목록에는 독립적으로 저장됩니다. `DELETE /api/me/playlists/:playlistId/tracks/:videoId`는 해당 목록에서만 곡을 제거합니다. 두 변경 API는 `{ "videoId": "...", "added": true | false }`를 반환합니다. 다른 사용자의 목록은 `PLAYLIST_NOT_FOUND`로 응답합니다.
+
+`POST /api/me/playlists/:playlistId/reorder`는 `{ "targetIndex": 0 }`처럼 0부터 시작하는 최종 위치를 받습니다. 기본 `favorites`도 이동할 수 있으며 응답은 변경된 `{ "items": Playlist[] }`입니다. 소유하지 않은 목록은 `PLAYLIST_NOT_FOUND`, 범위를 벗어난 위치는 `INVALID_PLAYLIST_POSITION`으로 거부합니다.
 
 `GET /api/me/playlists/:playlistId/tracks`는 최신 추가순으로 곡을 반환합니다. 각 항목에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있습니다.
 

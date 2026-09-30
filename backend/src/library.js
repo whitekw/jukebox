@@ -9,6 +9,7 @@ function createLibraryService(db) {
     ).get(userId)
     if (!favorites) {
       const now = Date.now()
+      db.prepare('UPDATE playlists SET position = position + 1 WHERE owner_user_id = ?').run(userId)
       db.prepare(
         `INSERT INTO playlists (id, owner_user_id, name, kind, created_at, updated_at)
          VALUES (?, ?, '', 'favorites', ?, ?)`,
@@ -58,8 +59,7 @@ function createLibraryService(db) {
        LEFT JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id
        WHERE playlists.owner_user_id = ?
        GROUP BY playlists.id
-       ORDER BY CASE playlists.kind WHEN 'favorites' THEN 0 ELSE 1 END,
-                playlists.updated_at DESC, playlists.created_at DESC`,
+       ORDER BY playlists.position ASC, playlists.created_at ASC, playlists.rowid ASC`,
     ).all(videoId, userId).map((row) => ({
       id: row.id,
       name: row.name,
@@ -95,13 +95,37 @@ function createLibraryService(db) {
 
   function create(userId, name) {
     const trimmed = validName(name)
-    const now = Date.now()
-    const id = crypto.randomUUID()
-    db.prepare(
-      `INSERT INTO playlists (id, owner_user_id, name, kind, created_at, updated_at)
-       VALUES (?, ?, ?, 'custom', ?, ?)`,
-    ).run(id, userId, trimmed, now, now)
-    return { id, name: trimmed, kind: 'custom', updatedAt: now, trackCount: 0, containsTrack: false, thumbnailUrl: null }
+    return transaction(db, () => {
+      ensureFavorites(userId)
+      const now = Date.now()
+      const id = crypto.randomUUID()
+      const position = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM playlists WHERE owner_user_id = ?').get(userId).next
+      db.prepare(
+        `INSERT INTO playlists (id, owner_user_id, name, kind, position, created_at, updated_at)
+         VALUES (?, ?, ?, 'custom', ?, ?, ?)`,
+      ).run(id, userId, trimmed, position, now, now)
+      return { id, name: trimmed, kind: 'custom', updatedAt: now, trackCount: 0, containsTrack: false, thumbnailUrl: null }
+    })
+  }
+
+  function reorder(userId, playlistId, targetIndex) {
+    if (!Number.isInteger(targetIndex) || targetIndex < 0) {
+      throw new AppError(400, '이동할 플레이리스트 위치가 올바르지 않습니다.', 'INVALID_PLAYLIST_POSITION')
+    }
+    return transaction(db, () => {
+      requireOwnedPlaylist(userId, playlistId)
+      const items = list(userId)
+      if (targetIndex >= items.length) {
+        throw new AppError(400, '이동할 플레이리스트 위치가 올바르지 않습니다.', 'INVALID_PLAYLIST_POSITION')
+      }
+      const sourceIndex = items.findIndex((item) => item.id === playlistId)
+      if (sourceIndex === targetIndex) return items
+      const [moved] = items.splice(sourceIndex, 1)
+      items.splice(targetIndex, 0, moved)
+      const updatePosition = db.prepare('UPDATE playlists SET position = ? WHERE id = ? AND owner_user_id = ?')
+      items.forEach((item, index) => updatePosition.run(index, item.id, userId))
+      return items
+    })
   }
 
   function rename(userId, playlistId, name) {
@@ -182,7 +206,7 @@ function createLibraryService(db) {
     })
   }
 
-  return { list, listTracks, listSavedVideoIds, create, rename, remove, addTrack, addExistingTrack, removeTrack }
+  return { list, listTracks, listSavedVideoIds, create, reorder, rename, remove, addTrack, addExistingTrack, removeTrack }
 }
 
 module.exports = { createLibraryService }

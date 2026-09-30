@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -18,16 +19,17 @@ import {
   formControlStyles,
   panelCloseButtonStyles,
   panelStyles,
-  sectionKickerStyles,
 } from '../../../shared/styles'
-import type { ChatMessage } from '../types'
+import type { ChatMessage, RoomParticipant } from '../types'
 import { useChatWindow } from './useChatWindow'
+import { groupChatMessages } from './groupChatMessages'
 
 type SystemChatMessage = Extract<ChatMessage, { type: 'system' }>
 
 type ChatPanelProps = {
   roomCode: string
   messages: ChatMessage[]
+  participants: RoomParticipant[]
   currentParticipantId: string
   onSend: (content: string) => Promise<void>
   triggerContainer?: HTMLElement | null
@@ -69,6 +71,7 @@ function formatSystemMessage(message: SystemChatMessage, t: Translate) {
 export function ChatPanel({
   roomCode,
   messages,
+  participants,
   currentParticipantId,
   onSend,
   triggerContainer,
@@ -81,7 +84,11 @@ export function ChatPanel({
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<unknown>(null)
   const { isDesktop, chatWindowStyle, startWindowInteraction } = useChatWindow()
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
   const messageListRef = useRef<HTMLDivElement>(null)
+  const messageGroups = useMemo(() => groupChatMessages(messages), [messages])
+  const avatars = useMemo(() => new Map(participants.map(({ id, avatarUrl }) => [id, avatarUrl])), [participants])
   const timeFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(locale, {
@@ -94,10 +101,34 @@ export function ChatPanel({
   const unreadCount = hasOpened
     ? messages.filter(
         (message) =>
+          message.type === 'message' &&
           message.sequence > lastReadSequence &&
           message.participantId !== currentParticipantId,
       ).length
     : 0
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!open || !dialog) return
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (isDesktop) dialog.show()
+    else dialog.showModal()
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (!isDesktop || event.key !== 'Escape' || event.defaultPrevented || event.isComposing ||
+        document.querySelector('dialog:modal')) return
+      event.preventDefault()
+      dialog.close()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      const restoreFocus = dialog.contains(document.activeElement)
+      document.removeEventListener('keydown', closeOnEscape)
+      dialog.close()
+      if (restoreFocus) trigger?.focus({ preventScroll: true })
+    }
+  }, [open, isDesktop])
+
   useEffect(() => {
     if (!open) return
     setLastReadSequence(latestSequence)
@@ -143,6 +174,7 @@ export function ChatPanel({
         aria-label={open ? t('chat.close') : t('chat.open')}
         title={open ? t('chat.close') : t('chat.open')}
         aria-expanded={open}
+        aria-haspopup="dialog"
         onClick={toggleChat}
       >
         {open ? <CloseIcon size={iconSize} /> : <MessageCircleIcon size={iconSize} />}
@@ -158,94 +190,122 @@ export function ChatPanel({
   return (
     <>
       {open && (
-        <section
+        <dialog
+          ref={dialogRef}
           className={cn(
             panelStyles({ padding: 'none' }),
-            'fixed right-3 bottom-[155px] z-[70] flex h-[min(560px,calc(100dvh-175px))] w-[calc(100vw-24px)] max-w-[400px] flex-col overflow-hidden bg-[#110f16]/95 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl md:right-auto md:bottom-auto md:h-auto md:w-auto md:max-w-none',
+            'fixed inset-auto z-[70] m-0 flex max-h-none max-w-none flex-col overflow-hidden rounded-t-2xl rounded-b-none bg-[#15121b] p-0 text-ink shadow-[0_16px_48px_rgba(0,0,0,.4)] backdrop:bg-black/40 backdrop:backdrop-blur-[2px] md:rounded-xl [&:not([open])]:hidden',
           )}
           style={chatWindowStyle}
-          role="dialog"
-          aria-label={t('chat.title')}
+          aria-labelledby={titleId}
+          aria-modal={!isDesktop || undefined}
+          onClose={(event) => {
+            if (!event.currentTarget.open) setOpen(false)
+          }}
+          onClick={(event) => {
+            if (isDesktop || event.target !== event.currentTarget) return
+            const bounds = event.currentTarget.getBoundingClientRect()
+            if (event.clientX < bounds.left || event.clientX > bounds.right ||
+              event.clientY < bounds.top || event.clientY > bounds.bottom) event.currentTarget.close()
+          }}
         >
+          {!isDesktop && <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-white/15" aria-hidden="true" />}
           <header
             className={cn(
-              'flex items-center justify-between gap-4 border-b border-line px-4 py-4 md:px-[18px]',
+              'flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-3',
               isDesktop && 'cursor-move touch-none select-none',
             )}
             onPointerDown={(event) => startWindowInteraction('move', event)}
           >
-            <div className="min-w-0">
-              <span className={sectionKickerStyles}>ROOM CHAT</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <MessageCircleIcon size={16} className="text-muted" aria-hidden="true" />
+              <h2 id={titleId} className="m-0 text-sm font-semibold">{t('chat.title')}</h2>
             </div>
             <button
               className={panelCloseButtonStyles}
               type="button"
               aria-label={t('chat.close')}
-              onClick={() => setOpen(false)}
+              onClick={() => dialogRef.current?.close()}
             >
               <CloseIcon size={17} />
             </button>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col px-3 pt-3 pb-3 md:px-[18px] md:pt-4 md:pb-[18px]">
+          <div className="flex min-h-0 flex-1 flex-col px-3 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
             <div
               ref={messageListRef}
-              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="log"
+              aria-label={t('chat.title')}
               aria-live="polite"
             >
               {messages.length === 0 ? (
-                <div className="grid flex-1 place-items-center text-center text-xs text-dim">
-                  {t('chat.empty')}
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-xs text-muted">
+                  <MessageCircleIcon size={28} className="text-purple-light/60" aria-hidden="true" />
+                  <p>{t('chat.empty')}</p>
                 </div>
               ) : (
-                messages.map((message) => {
-                  if (message.type === 'system') {
+                messageGroups.map((group) => {
+                  if (group.type === 'system') {
                     return (
                       <div
-                        key={message.id}
-                        className="flex w-full items-center gap-2 py-1 text-[11px] leading-4 text-dim"
+                        key={group.id}
+                        className="px-5 py-1 text-center text-[10px] leading-4 text-dim [overflow-wrap:anywhere]"
                       >
-                        <span className="h-px min-w-3 flex-1 bg-line/70" />
-                        <p className="m-0 max-w-[78%] text-center [overflow-wrap:anywhere]">
-                          {formatSystemMessage(message, t)}
+                        <p className="m-0">
+                          {formatSystemMessage(group, t)}
                           <time
-                            className="ml-1.5 whitespace-nowrap text-[9px] text-dim/70"
-                            dateTime={new Date(message.createdAt).toISOString()}
+                            className="ml-1.5 whitespace-nowrap text-[9px]"
+                            dateTime={new Date(group.createdAt).toISOString()}
                           >
-                            {timeFormatter.format(message.createdAt)}
+                            {timeFormatter.format(group.createdAt)}
                           </time>
                         </p>
-                        <span className="h-px min-w-3 flex-1 bg-line/70" />
                       </div>
                     )
                   }
+                  const message = group.messages[0]
                   const isMine = message.participantId === currentParticipantId
+                  const avatarUrl = avatars.get(message.participantId)
                   return (
                     <article
-                      key={message.id}
+                      key={group.id}
                       className={cn(
-                        'flex max-w-[88%] flex-col gap-1',
-                        isMine ? 'self-end items-end' : 'self-start items-start',
+                        'flex max-w-[92%] shrink-0 items-start gap-2',
+                        isMine ? 'self-end' : 'self-start',
                       )}
                     >
-                      <div className="flex items-center gap-2 px-1 text-[10px] text-dim">
-                        <strong className="max-w-36 truncate font-extrabold text-muted">
-                          {isMine ? t('chat.you') : message.nickname}
-                        </strong>
-                        <time dateTime={new Date(message.createdAt).toISOString()}>
-                          {timeFormatter.format(message.createdAt)}
-                        </time>
+                      {!isMine && <span className="mt-0.5 grid size-7 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
+                        {avatarUrl
+                          ? <img className="size-full object-cover" src={avatarUrl} alt="" />
+                          : message.nickname.trim().slice(0, 1).toUpperCase()}
+                      </span>}
+                      <div className={cn('flex min-w-0 flex-col gap-1', isMine ? 'items-end' : 'items-start')}>
+                        <div className="flex max-w-full items-center gap-2 px-0.5 text-[10px] text-dim">
+                          {!isMine && (
+                            <strong className="max-w-36 truncate font-extrabold text-muted">
+                              {message.nickname}
+                            </strong>
+                          )}
+                          <time className="shrink-0" dateTime={new Date(message.createdAt).toISOString()}>
+                            {timeFormatter.format(message.createdAt)}
+                          </time>
+                        </div>
+                        {group.messages.map((entry) => (
+                          <p
+                            key={entry.id}
+                            className={cn(
+                              'm-0 max-w-full whitespace-pre-wrap rounded-lg border px-2.5 py-1.5 text-[13px] leading-5 [overflow-wrap:anywhere]',
+                              isMine
+                                ? 'rounded-br-sm border-purple/20 bg-purple/20 text-ink'
+                                : 'rounded-bl-sm border-line bg-white/[0.035] text-ink',
+                            )}
+                            title={timeFormatter.format(entry.createdAt)}
+                          >
+                            {entry.content}
+                          </p>
+                        ))}
                       </div>
-                      <p
-                        className={cn(
-                          'm-0 whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]',
-                          isMine
-                            ? 'rounded-br-md bg-purple text-white'
-                            : 'rounded-bl-md border border-line bg-white/[0.055] text-ink',
-                        )}
-                      >
-                        {message.content}
-                      </p>
                     </article>
                   )
                 })
@@ -254,23 +314,26 @@ export function ChatPanel({
 
             <form className="mt-3 flex items-center gap-2" onSubmit={send}>
               <input
-                className={cn(formControlStyles(), 'min-w-0')}
+                className={cn(formControlStyles(), 'min-w-0 rounded-lg px-3 text-sm placeholder:text-muted/70')}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 maxLength={300}
                 placeholder={t('chat.placeholder')}
                 aria-label={t('chat.placeholder')}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault()
+                }}
               />
               <button
                 className={cn(
                   buttonStyles({ intent: 'outline', size: 'md' }),
-                  'size-11 min-h-11 shrink-0 rounded-md border-0 bg-transparent px-0 text-purple-light hover:bg-purple/15',
+                  'size-11 min-h-11 shrink-0 rounded-lg border-purple/25 bg-purple/20 px-0 text-purple-light enabled:hover:bg-purple/30 disabled:border-transparent disabled:bg-white/[0.035] disabled:text-dim disabled:opacity-100',
                 )}
                 type="submit"
                 disabled={sending || draft.trim().length === 0}
                 aria-label={sending ? t('chat.sending') : t('chat.send')}
               >
-                <SendIcon size={20} aria-hidden="true" />
+                <SendIcon size={18} aria-hidden="true" />
               </button>
             </form>
             {sendError !== null && (
@@ -304,7 +367,7 @@ export function ChatPanel({
               />
             </>
           )}
-        </section>
+        </dialog>
       )}
 
       {triggerContainer && createPortal(renderTrigger(cn(
@@ -312,8 +375,8 @@ export function ChatPanel({
         open ? 'bg-purple/55 text-white' : 'bg-purple-light/20',
       ), 21), triggerContainer)}
       {renderTrigger(cn(
-        'fixed right-4 bottom-[92px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light md:right-6 md:bottom-[92px]',
-        triggerContainer && 'room:hidden',
+        'fixed right-4 bottom-[128px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light sm:right-6 sm:bottom-[92px]',
+        triggerContainer && 'sm:hidden',
       ), 25)}
     </>
   )
