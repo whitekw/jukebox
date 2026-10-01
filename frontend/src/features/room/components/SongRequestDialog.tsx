@@ -4,10 +4,12 @@ import { useI18n } from '../../../shared/i18n/i18n-context'
 import { PanelHeader } from '../../../shared/ui/PanelHeader'
 import { SearchPanel } from './SearchPanel'
 
-export function SongRequestDialog({ open, onClose, onAddSong, message, error }: {
+export function SongRequestDialog({ open, onClose, onAddSong, queuedVideoIds, currentVideoId, message, error }: {
   open: boolean
   onClose: () => void
   onAddSong: (videoId: string) => Promise<void>
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   message: string
   error: string
 }) {
@@ -48,7 +50,8 @@ export function SongRequestDialog({ open, onClose, onAddSong, message, error }: 
           icon={<Search size={20} aria-hidden="true" />} closeLabel={t('common.close')}
           onClose={() => dialogRef.current?.close()} />
         <div className="flex min-h-0 flex-1 flex-col px-4 py-5 sm:px-6">
-          <SearchPanel className="min-h-0 flex-1" onAddSong={onAddSong} />
+          <SearchPanel className="min-h-0 flex-1" onAddSong={onAddSong}
+            queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId} />
           {error && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{error}</p>}
           {message && !error && <p className="mt-3 shrink-0 text-sm text-lime" role="status">{message}</p>}
         </div>

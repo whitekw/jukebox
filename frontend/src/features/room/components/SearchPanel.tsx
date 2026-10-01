@@ -8,10 +8,12 @@ import { VideoResultList } from './VideoResultList'
 
 type SearchPanelProps = {
   onAddSong: (videoId: string) => Promise<void>
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   className?: string
 }
 
-export function SearchPanel({ onAddSong, className }: SearchPanelProps) {
+export function SearchPanel({ onAddSong, queuedVideoIds, currentVideoId, className }: SearchPanelProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<VideoSearchResult[]>([])
@@ -102,6 +104,8 @@ export function SearchPanel({ onAddSong, className }: SearchPanelProps) {
           <VideoResultList
             videos={results}
             addingId={addingId}
+            queuedVideoIds={queuedVideoIds}
+            currentVideoId={currentVideoId}
             onAddSong={(videoId) => void addSong(videoId)}
           />
         </div>

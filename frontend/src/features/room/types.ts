@@ -50,6 +50,7 @@ export type RoomStats = {
   totalDownvotes: number
   hasEstimatedHistory: boolean
   timeZone: string
+  hourly: { key: string; count: number }[]
   daily: { key: string; count: number }[]
   weekly: { key: string; count: number }[]
   monthly: { key: string; count: number }[]
@@ -60,6 +61,7 @@ export type RoomStats = {
     plays: number
     upvotes: number
     downvotes: number
+    hourly: { key: string; count: number }[]
     daily: { key: string; count: number }[]
     weekly: { key: string; count: number }[]
     monthly: { key: string; count: number }[]

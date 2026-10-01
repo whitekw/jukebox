@@ -8,6 +8,8 @@ import { AddToQueueButton } from './AddToQueueButton'
 type VideoResultListProps = {
   videos: VideoSearchResult[]
   addingId: string
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   onAddSong?: (videoId: string) => void
   onManageSaved?: (videoId: string) => void
 }
@@ -15,6 +17,8 @@ type VideoResultListProps = {
 export function VideoResultList({
   videos,
   addingId,
+  queuedVideoIds,
+  currentVideoId,
   onAddSong,
   onManageSaved,
 }: VideoResultListProps) {
@@ -77,9 +81,11 @@ export function VideoResultList({
           </button>}
           {onAddSong && <AddToQueueButton
             className={cn('row-start-1 justify-self-end md:col-auto md:row-auto', onManageSaved ? 'col-start-3' : 'col-start-2')}
-            label={video.embeddable ? t('queue.addSong', { title: video.title }) : t('search.cannotAddSong', { title: video.title })}
-            title={!video.embeddable ? t('search.embedUnavailable') : undefined}
-            loading={addingId === video.videoId} disabled={!video.embeddable || Boolean(addingId)}
+            videoId={video.videoId} videoTitle={video.title}
+            queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId}
+            unavailable={!video.embeddable}
+            loading={addingId === video.videoId}
+            disabled={Boolean(addingId)}
             onClick={() => onAddSong(video.videoId)} />}
         </li>
       ))}

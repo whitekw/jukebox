@@ -99,6 +99,7 @@ export function RoomPage() {
   const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
+  const queuedVideoIds = useMemo(() => new Set(room?.queue.map(({ videoId }) => videoId) ?? []), [room?.queue])
   const activePlaylist = selectedPlaylist && user?.id === selectedPlaylist.userId ? selectedPlaylist.playlist : null
   const closePlaylist = useCallback(() => setSelectedPlaylist(null), [])
   const closeStats = useCallback(() => setStatsOpen(false), [])
@@ -465,6 +466,8 @@ export function RoomPage() {
                 open={requestSongOpen}
                 onClose={() => setRequestSongOpen(false)}
                 onAddSong={addSong}
+                queuedVideoIds={queuedVideoIds}
+                currentVideoId={room.currentSong?.videoId ?? null}
                 message={message}
                 error={error || roomError}
               />
@@ -476,6 +479,8 @@ export function RoomPage() {
                 revision={libraryRevision}
                 onClose={closePlaylist}
                 onAddSong={participant ? addSong : undefined}
+                queuedVideoIds={queuedVideoIds}
+                currentVideoId={room.currentSong?.videoId ?? null}
                 onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
                 onPlaylistRenamed={(name, updatedAt) => {
                   setSelectedPlaylist((current) => current && current.playlist.id === activePlaylist.id
@@ -494,7 +499,9 @@ export function RoomPage() {
             {statsOpen && participant && <Suspense fallback={<div className="absolute inset-0 z-20 bg-canvas p-6 text-sm text-muted" role="status">{t('library.loading')}</div>}>
               <RoomStatsPanel code={code} participantToken={participantToken}
                 revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
+                historyRevision={room.currentSong?.id ?? ''}
                 onClose={closeStats} onAddSong={addSong}
+                queuedVideoIds={queuedVideoIds} currentVideoId={room.currentSong?.videoId ?? null}
                 onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
                 libraryRevision={libraryRevision} message={message} roomError={error || roomError} />
             </Suspense>}

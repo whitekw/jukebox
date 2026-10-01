@@ -7,11 +7,13 @@ import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
 import { SaveToPlaylistDialog } from './SaveToPlaylistDialog'
 
-export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, onLibraryChange, onPlaylistRenamed, onPlaylistDeleted, message, roomError }: {
+export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, onPlaylistRenamed, onPlaylistDeleted, message, roomError }: {
   playlist: Playlist
   revision: number
   onClose: () => void
   onAddSong?: (videoId: string) => Promise<void>
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   onLibraryChange: () => void
   onPlaylistRenamed: (name: string, updatedAt: number) => void
   onPlaylistDeleted: () => void
@@ -137,11 +139,14 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, on
             <button type="button" disabled={savingPlaylist} className="min-h-9 rounded-[10px] bg-danger px-3 text-xs font-bold text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger disabled:opacity-45" onClick={() => void deletePlaylist()}>{t('library.deletePlaylist')}</button>
           </div>
         </div>}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:var(--color-dim)_transparent]">
           {loading && !tracks.length ? <p className="py-8 text-center text-sm text-muted">{t('library.loading')}</p> :
             error ? <div className="flex flex-col items-center gap-3 py-8"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={buttonStyles({ intent: 'outline', size: 'sm' })} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>{t('common.retry')}</button></div> :
               tracks.length === 0 ? <p className="py-8 text-center text-sm text-muted">{t('library.emptyPlaylist')}</p> :
-                <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId} onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined} onManageSaved={(videoId) => setManagedTrack(tracks.find((track) => track.videoId === videoId) ?? null)} />}
+                <VideoResultList videos={tracks.map((track) => ({ ...track, embeddable: true }))} addingId={addingId}
+                  queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId}
+                  onAddSong={onAddSong ? (videoId) => void addSong(videoId) : undefined}
+                  onManageSaved={(videoId) => setManagedTrack(tracks.find((track) => track.videoId === videoId) ?? null)} />}
         </div>
         {mutationError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{mutationError}</p>}
         {roomError && <p className="mt-3 shrink-0 text-sm text-danger" role="alert">{roomError}</p>}

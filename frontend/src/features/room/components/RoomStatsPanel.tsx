@@ -7,24 +7,29 @@ import { roomApi } from '../api'
 import type { RoomStats } from '../types'
 import { RoomPlaybackHistory } from './RoomPlaybackHistory'
 
-type Period = 'daily' | 'weekly' | 'monthly'
+type Period = 'hourly' | 'daily' | 'weekly' | 'monthly'
+const periods = ['hourly', 'daily', 'weekly', 'monthly'] as const
 
-function periodLabel(key: string, period: Period, locale: string, short = false) {
-  const date = new Date(`${period === 'monthly' ? `${key}-01` : key}T00:00:00Z`)
+function periodLabel(key: string, period: Period, locale: string, timeZone: string, short = false) {
+  const date = new Date(period === 'hourly' ? key : `${period === 'monthly' ? `${key}-01` : key}T00:00:00Z`)
   return new Intl.DateTimeFormat(locale, {
-    timeZone: 'UTC',
+    timeZone: period === 'hourly' ? timeZone : 'UTC',
     ...(short ? {} : { year: 'numeric' }),
-    month: short ? 'numeric' : 'short',
+    ...(period === 'hourly' && short ? {} : { month: short ? 'numeric' : 'short' }),
     ...(period === 'monthly' ? {} : { day: 'numeric' }),
+    ...(period === 'hourly' ? { hour: '2-digit', hourCycle: 'h23' as const } : {}),
   }).format(date)
 }
 
-export default function RoomStatsPanel({ code, participantToken, revision, onClose, onAddSong, onLibraryChange, libraryRevision, message, roomError }: {
+export default function RoomStatsPanel({ code, participantToken, revision, historyRevision, onClose, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
   code: string
   participantToken: string
   revision: string
+  historyRevision: string
   onClose: () => void
   onAddSong: (videoId: string) => Promise<void>
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   onLibraryChange: () => void
   libraryRevision: number
   message: string
@@ -77,15 +82,13 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
   }, [code, participantToken, revision, retry, t, tab])
 
   const points = stats?.[period] ?? []
-  const periodRange = period === 'daily' ? t('stats.dailyRange')
-    : period === 'weekly' ? t('stats.weeklyRange') : t('stats.monthlyRange')
+  const periodRange = t(`stats.${period}Range`)
   const participantPoints = stats?.[participantPeriod].map(({ key }, index) => ({
     key,
     ...Object.fromEntries(stats.participants.map((person, personIndex) =>
       [`participant_${personIndex}`, person[participantPeriod][index]?.count ?? 0])),
   })) ?? []
-  const participantPeriodRange = participantPeriod === 'daily' ? t('stats.dailyRange')
-    : participantPeriod === 'weekly' ? t('stats.weeklyRange') : t('stats.monthlyRange')
+  const participantPeriodRange = t(`stats.${participantPeriod}Range`)
   const participantMaxCount = Math.max(1, ...stats?.participants.flatMap((person) =>
     person[participantPeriod].map(({ count }) => count)) ?? [0])
   const participantTickStep = Math.max(1, Math.ceil(participantMaxCount / 4))
@@ -112,9 +115,12 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
       </button>)}
     </div>
 
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-6">
-      {tab === 'history' ? <RoomPlaybackHistory code={code} participantToken={participantToken} revision={revision}
-        onAddSong={onAddSong} onLibraryChange={onLibraryChange} libraryRevision={libraryRevision}
+    <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 ${tab === 'history'
+      ? '[scrollbar-width:thin] [scrollbar-color:var(--color-dim)_transparent]'
+      : '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}`}>
+      {tab === 'history' ? <RoomPlaybackHistory code={code} participantToken={participantToken} revision={historyRevision}
+        onAddSong={onAddSong} queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId}
+        onLibraryChange={onLibraryChange} libraryRevision={libraryRevision}
         message={message} roomError={roomError} />
         : error && !stats ? <div role="alert" className="flex items-center gap-3 text-sm text-danger">
         <span>{error}</span>
@@ -149,7 +155,7 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
               <p className="m-0 mt-1 text-xs text-muted">{periodRange} · {stats.timeZone}</p>
             </div>
             <div className="flex rounded-lg border border-line p-0.5" role="group" aria-label={t('stats.playbackTrend')}>
-              {(['daily', 'weekly', 'monthly'] as const).map((option) => <button key={option} type="button"
+              {periods.map((option) => <button key={option} type="button"
                 aria-pressed={period === option} onClick={() => setPeriod(option)}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-purple-light ${period === option
                   ? 'bg-purple/25 text-purple-light' : 'text-muted hover:text-ink'}`}>
@@ -163,17 +169,17 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
               <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
               <XAxis dataKey="key" tickLine={false} axisLine={false} minTickGap={12}
                 tick={{ fill: '#a7a2b4', fontSize: 10 }}
-                tickFormatter={(key: string) => periodLabel(key, period, locale, true)} />
+                tickFormatter={(key: string) => periodLabel(key, period, locale, stats.timeZone, true)} />
               <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36}
                 tick={{ fill: '#a7a2b4', fontSize: 10 }} />
-              <Tooltip labelFormatter={(label) => periodLabel(String(label), period, locale)}
+              <Tooltip labelFormatter={(label) => periodLabel(String(label), period, locale, stats.timeZone)}
                 formatter={(value) => [numberFormatter.format(Number(value)), t('stats.playCount')]}
                 contentStyle={{ background: '#1b1723', border: '1px solid rgba(255,255,255,.14)', borderRadius: 10, color: '#f6f4ff' }}
                 cursor={{ fill: 'rgba(194,175,255,.08)' }} />
               <Bar dataKey="count" fill="var(--color-purple-light)" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
             </BarChart>
             <ul className="sr-only" aria-label={t('stats.playbackTrend')}>
-              {points.map(({ key, count }) => <li key={key}>{periodLabel(key, period, locale)}: {numberFormatter.format(count)}</li>)}
+              {points.map(({ key, count }) => <li key={key}>{periodLabel(key, period, locale, stats.timeZone)}: {numberFormatter.format(count)}</li>)}
             </ul>
           </>}
           {stats.hasEstimatedHistory && <p className="m-0 mt-3 text-xs text-muted">{t('stats.historicalEstimate')}</p>}
@@ -191,7 +197,7 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
                 </div>
                 <div className="flex rounded-lg border border-line p-0.5" role="group"
                   aria-label={t('stats.participantTrend')}>
-                  {(['daily', 'weekly', 'monthly'] as const).map((option) => <button key={option} type="button"
+                  {periods.map((option) => <button key={option} type="button"
                     aria-pressed={participantPeriod === option} onClick={() => setParticipantPeriod(option)}
                     className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-purple-light ${participantPeriod === option
                       ? 'bg-purple/25 text-purple-light' : 'text-muted hover:text-ink'}`}>
@@ -205,11 +211,11 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
                   <XAxis dataKey="key" tickLine={false} axisLine={false} minTickGap={12}
                     tick={{ fill: '#a7a2b4', fontSize: 10 }}
-                    tickFormatter={(key: string) => periodLabel(key, participantPeriod, locale, true)} />
+                    tickFormatter={(key: string) => periodLabel(key, participantPeriod, locale, stats.timeZone, true)} />
                   <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36}
                     ticks={participantTicks} domain={[0, participantTicks.at(-1) ?? 1]}
                     tick={{ fill: '#a7a2b4', fontSize: 10 }} />
-                  <Tooltip labelFormatter={(label) => periodLabel(String(label), participantPeriod, locale)}
+                  <Tooltip labelFormatter={(label) => periodLabel(String(label), participantPeriod, locale, stats.timeZone)}
                     formatter={(value, name) => [numberFormatter.format(Number(value)), name]}
                     contentStyle={{ background: '#1b1723', border: '1px solid rgba(255,255,255,.14)', borderRadius: 10, color: '#f6f4ff' }} />
                   {stats.participants.map((person, index) => <Line key={person.id} type="linear"
@@ -225,7 +231,7 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
                 <ul className="sr-only" aria-label={t('stats.participantTrend')}>
                   {stats.participants.map((person) => <li key={person.id}>{person.nickname}: {
                     person[participantPeriod].map(({ key, count }) =>
-                      `${periodLabel(key, participantPeriod, locale)} ${numberFormatter.format(count)}`).join(', ')
+                      `${periodLabel(key, participantPeriod, locale, stats.timeZone)} ${numberFormatter.format(count)}`).join(', ')
                   }</li>)}
                 </ul>
               </>}

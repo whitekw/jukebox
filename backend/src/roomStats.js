@@ -1,4 +1,5 @@
 const DAY_MS = 86_400_000
+const HOUR_MS = 3_600_000
 
 function dateKey(date) {
   return date.toISOString().slice(0, 10)
@@ -20,11 +21,15 @@ function buildPlaybackSeries(timestamps, now, timeZone) {
   }
   const today = new Date(`${localDateKey(now)}T00:00:00Z`)
   const currentWeek = startOfWeek(today)
+  const currentHour = Math.floor(now / HOUR_MS) * HOUR_MS
+  const hourCounts = new Map()
   const dayCounts = new Map()
   const weekCounts = new Map()
   const monthCounts = new Map()
 
   for (const timestamp of timestamps) {
+    const hour = Math.floor(timestamp / HOUR_MS) * HOUR_MS
+    hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1)
     const day = localDateKey(timestamp)
     const week = dateKey(startOfWeek(new Date(`${day}T00:00:00Z`)))
     const month = day.slice(0, 7)
@@ -33,6 +38,10 @@ function buildPlaybackSeries(timestamps, now, timeZone) {
     monthCounts.set(month, (monthCounts.get(month) ?? 0) + 1)
   }
 
+  const hourly = Array.from({ length: 24 }, (_, index) => {
+    const hour = currentHour - (23 - index) * HOUR_MS
+    return { key: new Date(hour).toISOString(), count: hourCounts.get(hour) ?? 0 }
+  })
   const daily = Array.from({ length: 30 }, (_, index) => {
     const key = dateKey(new Date(today.getTime() - (29 - index) * DAY_MS))
     return { key, count: dayCounts.get(key) ?? 0 }
@@ -46,7 +55,7 @@ function buildPlaybackSeries(timestamps, now, timeZone) {
     const key = dateKey(month).slice(0, 7)
     return { key, count: monthCounts.get(key) ?? 0 }
   })
-  return { daily, weekly, monthly }
+  return { hourly, daily, weekly, monthly }
 }
 
 module.exports = { buildPlaybackSeries }

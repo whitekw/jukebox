@@ -92,6 +92,7 @@ type RoomStats = {
   totalDownvotes: number
   hasEstimatedHistory: boolean
   timeZone: string
+  hourly: { key: string; count: number }[]
   daily: { key: string; count: number }[]
   weekly: { key: string; count: number }[]
   monthly: { key: string; count: number }[]
@@ -102,6 +103,7 @@ type RoomStats = {
     plays: number
     upvotes: number
     downvotes: number
+    hourly: { key: string; count: number }[]
     daily: { key: string; count: number }[]
     weekly: { key: string; count: number }[]
     monthly: { key: string; count: number }[]
@@ -109,7 +111,7 @@ type RoomStats = {
 }
 ```
 
-재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 키는 요청한 `timeZone`의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
+재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 시간별은 현재 시간을 포함한 최근 24개 시간대, 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 시간별 키는 서머타임의 중복 시각도 구분할 수 있는 UTC ISO 시각이며, 화면에서는 요청한 `timeZone`으로 표시합니다. 다른 키는 해당 시간대의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
 
 ### `RoomHistoryPage`
 

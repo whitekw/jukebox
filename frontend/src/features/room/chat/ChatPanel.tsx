@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useMemo,
@@ -99,6 +100,14 @@ export function ChatPanel({
         hour: '2-digit',
         minute: '2-digit',
       }),
+    [locale],
+  )
+  const dateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }),
     [locale],
   )
   const latestSequence = messages.at(-1)?.sequence ?? 0
@@ -258,7 +267,7 @@ export function ChatPanel({
           <div className="flex min-h-0 flex-1 flex-col px-3 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
             <div
               ref={messageListRef}
-              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain py-1 pr-1 [scrollbar-width:thin] [scrollbar-color:var(--color-dim)_transparent]"
               role="log"
               aria-label={t(activeView === 'conversation' ? 'chat.conversation' : 'chat.logs')}
               aria-live={activeView === 'conversation' ? 'polite' : 'off'}
@@ -271,35 +280,50 @@ export function ChatPanel({
                   <p>{t(activeView === 'conversation' ? 'chat.empty' : 'chat.logsEmpty')}</p>
                 </div>
               ) : (
-                messageGroups.map((group) => {
+                messageGroups.map((group, index) => {
+                  const firstMessageAt = group.type === 'system' ? group.createdAt : group.messages[0].createdAt
+                  const previousGroup = messageGroups[index - 1]
+                  const previousMessageAt = previousGroup?.type === 'system'
+                    ? previousGroup.createdAt : previousGroup?.messages[0].createdAt
+                  const dateDivider = (previousMessageAt === undefined ||
+                    new Date(firstMessageAt).toDateString() !== new Date(previousMessageAt).toDateString()) && (
+                    <div className="my-1 flex items-center gap-2.5 text-[11px] font-medium text-muted">
+                      <span className="h-px min-w-0 flex-1 bg-line" aria-hidden="true" />
+                      <time className="shrink-0" dateTime={new Date(firstMessageAt).toISOString()}>
+                        {dateFormatter.format(firstMessageAt)}
+                      </time>
+                      <span className="h-px min-w-0 flex-1 bg-line" aria-hidden="true" />
+                    </div>
+                  )
                   if (group.type === 'system') {
                     return (
-                      <div
-                        key={group.id}
-                        className="flex items-start gap-2 rounded-lg border border-line/50 bg-white/[0.025] px-3 py-2 text-[11px] leading-4 text-muted [overflow-wrap:anywhere]"
-                      >
-                        <span className="mt-1 size-1.5 shrink-0 rounded-full bg-purple-light/55" aria-hidden="true" />
-                        <p className="m-0 min-w-0 flex-1">
-                          {formatSystemMessage(group, t)}
-                        </p>
-                        <time className="shrink-0 whitespace-nowrap text-[10px] text-dim"
-                          dateTime={new Date(group.createdAt).toISOString()}>
-                          {timeFormatter.format(group.createdAt)}
-                        </time>
-                      </div>
+                      <Fragment key={group.id}>
+                        {dateDivider}
+                        <div className="flex items-start gap-2 rounded-lg border border-line/50 bg-white/[0.025] px-3 py-2 text-[11px] leading-4 text-muted [overflow-wrap:anywhere]">
+                          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-purple-light/55" aria-hidden="true" />
+                          <p className="m-0 min-w-0 flex-1">
+                            {formatSystemMessage(group, t)}
+                          </p>
+                          <time className="shrink-0 whitespace-nowrap text-[10px] text-dim"
+                            dateTime={new Date(group.createdAt).toISOString()}>
+                            {timeFormatter.format(group.createdAt)}
+                          </time>
+                        </div>
+                      </Fragment>
                     )
                   }
                   const message = group.messages[0]
                   const isMine = message.participantId === currentParticipantId
                   const avatarUrl = avatars.get(message.participantId)
                   return (
-                    <article
-                      key={group.id}
-                      className={cn(
-                        'flex max-w-[92%] shrink-0 items-start gap-2',
-                        isMine ? 'self-end' : 'self-start',
-                      )}
-                    >
+                    <Fragment key={group.id}>
+                      {dateDivider}
+                      <article
+                        className={cn(
+                          'flex max-w-[92%] shrink-0 items-start gap-2',
+                          isMine ? 'self-end' : 'self-start',
+                        )}
+                      >
                       {!isMine && <span className="mt-0.5 grid size-7 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
                         {avatarUrl
                           ? <img className="size-full object-cover" src={avatarUrl} alt="" />
@@ -331,7 +355,8 @@ export function ChatPanel({
                           </p>
                         ))}
                       </div>
-                    </article>
+                      </article>
+                    </Fragment>
                   )
                 })
               )}

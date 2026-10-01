@@ -6,14 +6,17 @@ import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { roomApi } from '../api'
-import type { RoomHistoryEntry } from '../types'
+import type { RoomHistoryEntry, RoomHistoryPage } from '../types'
 import { AddToQueueButton } from './AddToQueueButton'
+import { mergeRoomHistory } from './mergeRoomHistory'
 
-export function RoomPlaybackHistory({ code, participantToken, revision, onAddSong, onLibraryChange, libraryRevision, message, roomError }: {
+export function RoomPlaybackHistory({ code, participantToken, revision, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
   code: string
   participantToken: string
   revision: string
   onAddSong: (videoId: string) => Promise<void>
+  queuedVideoIds: ReadonlySet<string>
+  currentVideoId: string | null
   onLibraryChange: () => void
   libraryRevision: number
   message: string
@@ -21,8 +24,7 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
 }) {
   const { locale, t } = useI18n()
   const { user } = useAuth()
-  const [items, setItems] = useState<RoomHistoryEntry[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [page, setPage] = useState<RoomHistoryPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
@@ -37,6 +39,8 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium', timeStyle: 'short',
   }), [locale])
+  const items = page?.items ?? []
+  const nextCursor = page?.nextCursor ?? null
   const savedByVideoId: Record<string, boolean> = user && savedMembership?.userId === user.id
     ? savedMembership.byVideoId : {}
 
@@ -55,10 +59,12 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
     let active = true
     setLoading(true)
     setLoadingMore(false)
-    void roomApi.getRoomHistory(code, participantToken).then((page) => {
+    void roomApi.getRoomHistory(code, participantToken).then((recent) => {
       if (!active || generation !== requestGeneration.current) return
-      setItems(page.items)
-      setNextCursor(page.nextCursor)
+      setPage((current) => current ? {
+        items: mergeRoomHistory(current.items, recent.items),
+        nextCursor: current.nextCursor,
+      } : recent)
       setError('')
     }).catch((cause: unknown) => {
       if (active && generation === requestGeneration.current) setError(getErrorMessage(cause, t))
@@ -75,9 +81,11 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
     try {
       const page = await roomApi.getRoomHistory(code, participantToken, nextCursor)
       if (generation !== requestGeneration.current) return
-      setItems((current) => [...current, ...page.items.filter((entry) =>
-        !current.some((existing) => existing.id === entry.id))])
-      setNextCursor(page.nextCursor)
+      setPage((current) => current ? {
+        items: [...current.items, ...page.items.filter((entry) =>
+          !current.items.some((existing) => existing.id === entry.id))],
+        nextCursor: page.nextCursor,
+      } : page)
       setError('')
     } catch (cause) {
       if (generation === requestGeneration.current) setError(getErrorMessage(cause, t))
@@ -140,8 +148,11 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
                   className="grid size-9 place-items-center rounded-lg border-0 bg-transparent p-0 text-muted transition-colors hover:bg-purple/10 hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light">
                   <PlaylistSaveIcon saved={Boolean(savedByVideoId[entry.videoId])} />
                 </button>
-                <AddToQueueButton label={t('queue.addSong', { title: entry.title })}
-                  loading={addingId === entry.videoId} disabled={Boolean(addingId)}
+                <AddToQueueButton
+                  videoId={entry.videoId} videoTitle={entry.title}
+                  queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId}
+                  loading={addingId === entry.videoId}
+                  disabled={Boolean(addingId)}
                   onClick={() => { void addSong(entry.videoId) }} />
               </div>
             </li>)}

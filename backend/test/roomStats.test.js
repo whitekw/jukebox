@@ -22,6 +22,20 @@ test('groups room playback by local day, Monday-start week and month', () => {
   assert.equal(series.daily.at(-1).key, '2026-10-02')
 })
 
+test('groups the last 24 hours into distinct UTC hour buckets', () => {
+  const now = Date.parse('2026-10-01T00:30:00Z')
+  const series = buildPlaybackSeries([
+    Date.parse('2026-09-30T00:59:00Z'),
+    Date.parse('2026-09-30T23:05:00Z'),
+    Date.parse('2026-09-30T23:50:00Z'),
+    Date.parse('2026-10-01T00:10:00Z'),
+  ], now, 'Asia/Seoul')
+  assert.equal(series.hourly.length, 24)
+  assert.deepEqual(series.hourly.at(-2), { key: '2026-09-30T23:00:00.000Z', count: 2 })
+  assert.deepEqual(series.hourly.at(-1), { key: '2026-10-01T00:00:00.000Z', count: 1 })
+  assert.equal(series.hourly.reduce((total, bucket) => total + bucket.count, 0), 3)
+})
+
 test('all participants can see starts and received votes without voter identities', () => {
   const db = createDatabase()
   let clock = Date.parse('2026-09-29T15:30:00Z')
@@ -38,6 +52,7 @@ test('all participants can see starts and received votes without voter identitie
     const empty = rooms.getRoomStats(created.code, { participantToken: guest.participantToken }, 'Asia/Seoul')
     assert.equal(empty.totalPlays, 0)
     assert.ok(empty.daily.every(({ count }) => count === 0))
+    assert.ok(empty.hourly.every(({ count }) => count === 0))
     const first = rooms.addSong(created.code, requester.participantToken, song('first'), 'requester')
     rooms.setSongVote(created.code, { participantToken: listener.participantToken }, first.currentSong.id, 'up')
     rooms.addSong(created.code, requester.participantToken, song('second'), 'requester')
@@ -67,6 +82,7 @@ test('all participants can see starts and received votes without voter identitie
     assert.equal(requesterStats.monthly.find(({ key }) => key === '2026-09').count, 1)
     assert.equal(requesterStats.monthly.find(({ key }) => key === '2026-10').count, 1)
     assert.equal(requesterStats.daily.length, stats.daily.length)
+    assert.equal(requesterStats.hourly.length, stats.hourly.length)
     assert.deepEqual(stats.participants.map(({ id }) => id), [requester.participant.id])
     assert.equal(stats.participants.some((participant) => 'voterId' in participant || 'votesCast' in participant), false)
     assert.throws(() => rooms.getRoomStats(created.code, {}, 'Asia/Seoul'), { code: 'PARTICIPANT_REQUIRED' })
