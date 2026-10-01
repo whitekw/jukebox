@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { adminApi } from '../api'
 import { DataState, PageHeading, Pagination } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
-import type { Page, UserSummary } from '../types'
+import type { UserSummary } from '../types'
 import { formatDate } from '../../../shared/format'
 
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
@@ -22,9 +22,8 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     const timer = window.setTimeout(() => { setQuery(search.trim()); setPage(1) }, 300)
     return () => window.clearTimeout(timer)
   }, [search])
-  const { data, error, loading, reload } = useAdminData<Page<UserSummary>>(
-    `/api/admin/users?query=${encodeURIComponent(query)}&page=${page}`,
-  )
+  const loadUsers = useCallback((signal: AbortSignal) => adminApi.users(query, page, signal), [query, page])
+  const { data, error, loading, reload } = useAdminData(loadUsers)
 
   async function revoke(user: UserSummary) {
     if (savingId) return

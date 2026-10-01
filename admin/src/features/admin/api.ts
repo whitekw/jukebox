@@ -3,10 +3,16 @@ import type { AdminUser, AuditEntry, Overview, Page, RoomDetail, RoomSummary, Us
 
 const base = '/api/admin'
 
+function localDayStarts() {
+  const today = new Date()
+  return Array.from({ length: 15 }, (_, index) =>
+    new Date(today.getFullYear(), today.getMonth(), today.getDate() - 13 + index).getTime())
+}
+
 export const adminApi = {
   session: (signal?: AbortSignal) => request<{ user: AdminUser }>(`${base}/session`, { signal }),
-  overview: (offsetMinutes: number, signal?: AbortSignal) =>
-    request<Overview>(`${base}/overview?offsetMinutes=${offsetMinutes}`, { signal }),
+  overview: (signal?: AbortSignal) =>
+    request<Overview>(`${base}/overview?dayStarts=${localDayStarts().join(',')}`, { signal }),
   rooms: (query: string, page: number, signal?: AbortSignal) =>
     request<Page<RoomSummary>>(`${base}/rooms?query=${encodeURIComponent(query)}&page=${page}`, { signal }),
   room: (code: string, signal?: AbortSignal) =>

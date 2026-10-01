@@ -75,6 +75,37 @@ test('admin queries expose operational summaries and enforce the Discord allowli
   }
 })
 
+test('admin daily activity follows local midnight across a daylight-saving change', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('admin', ?, 'operator', 1, 1, 1)`).run(adminDiscordId)
+    let clock = Date.UTC(2026, 2, 8, 4, 30) // March 7, 23:30 in New York.
+    const rooms = createRoomService(db, { now: () => clock })
+    const first = rooms.createRoom({ ownerUserId: 'admin', nickname: 'Operator', participantUserId: 'admin' })
+    rooms.addSong(first.code, first.participantToken, {
+      videoId: 'ccccccccccc', title: 'First', artist: 'Artist',
+      durationSeconds: 180, thumbnailUrl: 'https://example.com/image.jpg',
+    }, 'admin')
+    clock = Date.UTC(2026, 2, 8, 5, 30) // March 8, 00:30 in New York.
+    const second = rooms.createRoom({ ownerUserId: 'admin', nickname: 'Operator', participantUserId: 'admin' })
+    rooms.addSong(second.code, second.participantToken, {
+      videoId: 'ddddddddddd', title: 'Second', artist: 'Artist',
+      durationSeconds: 180, thumbnailUrl: 'https://example.com/image.jpg',
+    }, 'admin')
+    const service = createAdminService(db, { now: () => Date.UTC(2026, 2, 9, 12) })
+    const dayStarts = Array.from({ length: 15 }, (_, index) =>
+      Date.UTC(2026, 1, 24 + index, index >= 13 ? 4 : 5))
+    const daily = service.listOverview(dayStarts.join(',')).daily
+    assert.deepEqual(daily.slice(11, 13).map(({ plays, rooms: roomCount }) => [plays, roomCount]),
+      [[1, 1], [1, 1]])
+    assert.equal(dayStarts[13] - dayStarts[12], 23 * 60 * 60 * 1000)
+    assert.throws(() => service.listOverview('1,2'), { code: 'INVALID_DAY_RANGE' })
+  } finally {
+    db.close()
+  }
+})
+
 test('admin API gates data and changes, records pauses and revokes sessions', { timeout: 10_000 }, async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-admin-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
@@ -117,9 +148,17 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     assert.deepEqual((await forbiddenResponse.json()).error.details.user, {
       discordId: memberDiscordId, displayName: 'member',
     })
-    const overviewResponse = await fetch(`${baseUrl}/api/admin/overview`, { headers: adminHeaders })
+    const today = new Date()
+    const dayStarts = Array.from({ length: 15 }, (_, index) =>
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 13 + index))
+    const overviewResponse = await fetch(
+      `${baseUrl}/api/admin/overview?dayStarts=${dayStarts.join(',')}`,
+      { headers: adminHeaders },
+    )
     assert.equal(overviewResponse.status, 200)
-    assert.equal((await overviewResponse.json()).totals.rooms, 1)
+    const overview = await overviewResponse.json()
+    assert.equal(overview.totals.rooms, 1)
+    assert.equal(overview.daily[0].startAt, dayStarts[0])
     assert.equal((await fetch(`${baseUrl}/api/admin/rooms/${room.code}`, { headers: adminHeaders })).status, 200)
     const actionUrl = `${baseUrl}/api/admin/rooms/${room.code}/playback`
     const patch = (headers) => fetch(actionUrl, {
@@ -141,6 +180,18 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       faultDb.close()
     }
     assert.equal((await patch(actionHeaders)).status, 200)
+    const stateDb = new DatabaseSync(databasePath)
+    try {
+      const revision = stateDb.prepare('SELECT playback_revision FROM rooms WHERE code = ?')
+        .get(room.code).playback_revision
+      assert.equal((await patch(actionHeaders)).status, 200)
+      assert.equal(stateDb.prepare('SELECT playback_revision FROM rooms WHERE code = ?')
+        .get(room.code).playback_revision, revision)
+      assert.equal(stateDb.prepare("SELECT COUNT(*) AS count FROM admin_audit_entries WHERE action = 'room_paused'")
+        .get().count, 1)
+    } finally {
+      stateDb.close()
+    }
     const revoke = await fetch(`${baseUrl}/api/admin/users/member/revoke-sessions`, {
       method: 'POST', headers: actionHeaders,
     })

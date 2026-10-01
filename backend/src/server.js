@@ -271,7 +271,7 @@ app.get('/api/admin/session', (req, res) => {
 
 app.get('/api/admin/overview', (req, res) => {
   res.json({
-    ...admin.listOverview(req.query.offsetMinutes),
+    ...admin.listOverview(req.query.dayStarts),
     service: {
       uptimeSeconds: Math.floor(process.uptime()),
       discordLoginEnabled: auth.enabled,

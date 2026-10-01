@@ -30,10 +30,28 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     return typeof input === 'string' ? input.trim().slice(0, 80) : ''
   }
 
-  function listOverview(offsetInput = 0) {
-    const offset = Number(offsetInput)
-    const offsetMinutes = Number.isInteger(offset) && offset >= -720 && offset <= 840 ? offset : 0
+  function listOverview(dayStartsInput) {
     const currentTime = now()
+    let dayStarts
+    if (dayStartsInput === undefined) {
+      const date = new Date(currentTime)
+      dayStarts = Array.from({ length: 15 }, (_, index) =>
+        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - 13 + index))
+    } else {
+      dayStarts = typeof dayStartsInput === 'string'
+        ? dayStartsInput.split(',').map(Number)
+        : []
+      const valid = dayStarts.length === 15 &&
+        dayStarts.every(Number.isSafeInteger) &&
+        dayStarts[0] >= currentTime - 16 * DAY_MS &&
+        dayStarts[13] <= currentTime &&
+        dayStarts[14] > currentTime &&
+        dayStarts[14] <= currentTime + 2 * DAY_MS &&
+        dayStarts.every((start, index) => index === 0 ||
+          (start - dayStarts[index - 1] >= 20 * 60 * 60 * 1000 &&
+           start - dayStarts[index - 1] <= 28 * 60 * 60 * 1000))
+      if (!valid) throw new AppError(400, '일별 집계 범위가 올바르지 않습니다.', 'INVALID_DAY_RANGE')
+    }
     const roomCodes = db.prepare('SELECT code FROM rooms').all().map((room) => room.code)
     const onlineParticipants = roomCodes.reduce((sum, code) => sum + onlineCount(code), 0)
     const activeRooms = roomCodes.filter((code) => onlineCount(code) > 0).length
@@ -50,27 +68,18 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
         "SELECT COUNT(*) AS count FROM songs WHERE started_at IS NOT NULL AND status IN ('current', 'played')",
       ).get().count,
     }
-    const firstDay = currentTime - 13 * DAY_MS
-    const firstKey = new Date(firstDay + offsetMinutes * 60_000).toISOString().slice(0, 10)
-    const plays = db.prepare(
-      `SELECT strftime('%Y-%m-%d', started_at / 1000 + ? * 60, 'unixepoch') AS day,
-              COUNT(*) AS count
-       FROM songs
-       WHERE started_at IS NOT NULL AND status IN ('current', 'played')
-         AND started_at >= ?
-       GROUP BY day`,
-    ).all(offsetMinutes, firstDay - DAY_MS)
-    const createdRooms = db.prepare(
-      `SELECT strftime('%Y-%m-%d', created_at / 1000 + ? * 60, 'unixepoch') AS day,
-              COUNT(*) AS count
-       FROM rooms WHERE created_at >= ? GROUP BY day`,
-    ).all(offsetMinutes, firstDay - DAY_MS)
-    const playsByDay = new Map(plays.map(({ day, count }) => [day, count]))
-    const roomsByDay = new Map(createdRooms.map(({ day, count }) => [day, count]))
-    const daily = Array.from({ length: 14 }, (_, index) => {
-      const day = new Date(Date.parse(`${firstKey}T00:00:00Z`) + index * DAY_MS).toISOString().slice(0, 10)
-      return { day, plays: playsByDay.get(day) ?? 0, rooms: roomsByDay.get(day) ?? 0 }
-    })
+    const countPlays = db.prepare(
+      `SELECT COUNT(*) AS count FROM songs
+       WHERE started_at >= ? AND started_at < ? AND status IN ('current', 'played')`,
+    )
+    const countRooms = db.prepare(
+      'SELECT COUNT(*) AS count FROM rooms WHERE created_at >= ? AND created_at < ?',
+    )
+    const daily = dayStarts.slice(0, -1).map((startAt, index) => ({
+      startAt,
+      plays: countPlays.get(startAt, dayStarts[index + 1]).count,
+      rooms: countRooms.get(startAt, dayStarts[index + 1]).count,
+    }))
     return { totals, daily, generatedAt: currentTime }
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { adminApi } from '../api'
 import { DataState, PageHeading, Pagination } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
-import type { Page, RoomSummary } from '../types'
 import { formatDate } from '../../../shared/format'
 
 export function RoomsPage() {
@@ -19,9 +19,8 @@ export function RoomsPage() {
     const timer = window.setTimeout(() => { setQuery(search.trim()); setPage(1) }, 300)
     return () => window.clearTimeout(timer)
   }, [search])
-  const { data, error, loading, reload } = useAdminData<Page<RoomSummary>>(
-    `/api/admin/rooms?query=${encodeURIComponent(query)}&page=${page}`,
-  )
+  const loadRooms = useCallback((signal: AbortSignal) => adminApi.rooms(query, page, signal), [query, page])
+  const { data, error, loading, reload } = useAdminData(loadRooms)
 
   return <>
     <PageHeading title="방 관리" description="현재 방의 재생 상태, 대기열과 접속 인원을 확인합니다." />

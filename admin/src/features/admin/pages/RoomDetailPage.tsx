@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Pause, Play } from 'lucide-react'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
@@ -9,14 +9,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { adminApi } from '../api'
 import { DataState, PageHeading } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
-import type { RoomDetail } from '../types'
 import { formatDate } from '../../../shared/format'
 
 export function RoomDetailPage() {
   const { code = '' } = useParams()
-  const { data, error, loading, reload } = useAdminData<RoomDetail>(
-    `/api/admin/rooms/${encodeURIComponent(code)}`,
-  )
+  const loadRoom = useCallback((signal: AbortSignal) => adminApi.room(code, signal), [code])
+  const { data, error, loading, reload } = useAdminData(loadRoom)
   const [actionError, setActionError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 

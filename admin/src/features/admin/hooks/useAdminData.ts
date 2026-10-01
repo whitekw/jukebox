@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { request } from '../../../shared/http'
 
-export function useAdminData<T>(path: string, refreshMs = 0) {
+export function useAdminData<T>(load: (signal: AbortSignal) => Promise<T>, refreshMs = 0) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -11,7 +10,7 @@ export function useAdminData<T>(path: string, refreshMs = 0) {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    request<T>(path, { signal: controller.signal })
+    load(controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return
         setData(result)
@@ -22,7 +21,7 @@ export function useAdminData<T>(path: string, refreshMs = 0) {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [path, revision])
+  }, [load, revision])
 
   useEffect(() => {
     if (!refreshMs) return

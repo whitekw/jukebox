@@ -199,6 +199,7 @@ function createDatabase(databasePath = ':memory:') {
     CREATE INDEX IF NOT EXISTS extension_grants_by_expiry ON extension_grants(expires_at);
     CREATE INDEX IF NOT EXISTS extension_sessions_by_expiry ON extension_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS rooms_by_owner ON rooms(owner_user_id);
+    CREATE INDEX IF NOT EXISTS rooms_by_created ON rooms(created_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS active_members_by_room
@@ -261,6 +262,7 @@ function createDatabase(databasePath = ':memory:') {
     db.exec("UPDATE songs SET started_at = created_at, started_at_estimated = 1 WHERE status IN ('current', 'played')")
   }
   db.exec('CREATE INDEX IF NOT EXISTS songs_by_room_started ON songs(room_id, started_at)')
+  db.exec('CREATE INDEX IF NOT EXISTS songs_by_started_status ON songs(started_at, status)')
 
   const roomColumns = new Set(db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name))
   if (!roomColumns.has('title')) db.exec("ALTER TABLE rooms ADD COLUMN title TEXT NOT NULL DEFAULT ''")

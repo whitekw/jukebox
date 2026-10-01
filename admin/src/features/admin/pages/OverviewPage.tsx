@@ -4,9 +4,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart'
+import { adminApi } from '../api'
 import { DataState, PageHeading } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
-import type { Overview } from '../types'
 import { formatDate, formatNumber } from '../../../shared/format'
 
 const chartConfig = {
@@ -15,10 +15,12 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function OverviewPage() {
-  const offsetMinutes = -new Date().getTimezoneOffset()
-  const { data, error, loading, reload } = useAdminData<Overview>(
-    `/api/admin/overview?offsetMinutes=${offsetMinutes}`, 30_000,
-  )
+  const { data, error, loading, reload } = useAdminData(adminApi.overview, 30_000)
+  const chartData = data?.daily.map(({ startAt, ...counts }) => {
+    const date = new Date(startAt)
+    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return { day, ...counts }
+  })
   const cards = data ? [
     { label: '전체 사용자', value: data.totals.users, icon: Users },
     { label: '전체 방', value: data.totals.rooms, icon: DoorOpen },
@@ -47,7 +49,7 @@ export function OverviewPage() {
             <CardDescription>최근 14일 · 브라우저 현지 날짜 기준</CardDescription></CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-72 w-full aspect-auto">
-              <LineChart data={data.daily} margin={{ top: 8, right: 12, bottom: 8, left: -12 }}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 8, left: -12 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} tickFormatter={(day: string) => day.slice(5)} />
                 <YAxis allowDecimals={false} tickLine={false} axisLine={false} />

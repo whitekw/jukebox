@@ -195,7 +195,7 @@ type RoomEvent = {
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
 | POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 및 해당 세션의 실시간 연결 종료 |
 | GET | `/api/admin/session` | 시스템 운영자 | 없음 | 운영자 프로필 |
-| GET | `/api/admin/overview?offsetMinutes=540` | 시스템 운영자 | 없음 | 사용자·방·재생 현황, 현지 날짜 기준 14일 추이, 서비스 설정 상태 |
+| GET | `/api/admin/overview?dayStarts=<15개의 쉼표 구분 Unix ms>` | 시스템 운영자 | 없음 | 사용자·방·재생 현황, 브라우저 현지 날짜별 14일 추이 (`daily[].startAt`), 서비스 설정 상태 |
 | GET | `/api/admin/rooms?query=&page=1` | 시스템 운영자 | 없음 | 방 검색, 20건 단위 페이지 |
 | GET | `/api/admin/rooms/:code` | 시스템 운영자 | 없음 | 방 상세, 최근 참여자·곡 |
 | PATCH | `/api/admin/rooms/:code/playback` | 시스템 운영자 | 변경 | `{ "paused": true/false }`, 방 재생 상태 변경 |

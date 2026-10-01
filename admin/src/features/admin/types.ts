@@ -16,7 +16,7 @@ export type Overview = {
     playsToday: number
     totalPlays: number
   }
-  daily: { day: string; plays: number; rooms: number }[]
+  daily: { startAt: number; plays: number; rooms: number }[]
   generatedAt: number
   service: {
     uptimeSeconds: number

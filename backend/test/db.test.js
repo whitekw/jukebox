@@ -196,6 +196,7 @@ test('upgrades version 6 playback history with estimated dates for existing play
         ('queued', 'room-1', 'video-2', 'Queued', 'Artist', 90,
         'image', 'person-1', 'queued', 1, 200)`).run()
     db.exec(`DROP INDEX songs_by_room_started;
+      DROP INDEX songs_by_started_status;
       ALTER TABLE songs DROP COLUMN started_at;
       ALTER TABLE songs DROP COLUMN started_at_estimated;
       PRAGMA user_version = 6;`)

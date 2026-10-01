@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { adminApi } from '../api'
 import { DataState, PageHeading } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
 import type { AuditEntry } from '../types'
@@ -13,7 +14,7 @@ const actionLabels: Record<AuditEntry['action'], string> = {
 }
 
 export function AuditPage() {
-  const { data, error, loading, reload } = useAdminData<{ items: AuditEntry[] }>('/api/admin/audit')
+  const { data, error, loading, reload } = useAdminData(adminApi.audit)
   return <>
     <PageHeading title="운영 기록" description="운영자 변경 작업의 최근 30건을 확인합니다."
       action={<Button variant="outline" size="sm" onClick={reload}>새로고침</Button>} />
