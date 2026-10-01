@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 10
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -184,11 +184,22 @@ function createDatabase(databasePath = ':memory:') {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS admin_audit_entries (
+      id TEXT PRIMARY KEY,
+      admin_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      admin_discord_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS auth_sessions_by_user ON auth_sessions(user_id);
     CREATE INDEX IF NOT EXISTS auth_sessions_by_expiry ON auth_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS extension_grants_by_expiry ON extension_grants(expires_at);
     CREATE INDEX IF NOT EXISTS extension_sessions_by_expiry ON extension_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS rooms_by_owner ON rooms(owner_user_id);
+    CREATE INDEX IF NOT EXISTS rooms_by_created ON rooms(created_at);
     CREATE INDEX IF NOT EXISTS participants_by_room ON participants(room_id);
     CREATE INDEX IF NOT EXISTS participants_by_user ON participants(user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS active_members_by_room
@@ -211,6 +222,8 @@ function createDatabase(databasePath = ':memory:') {
       WHERE status IN ('queued', 'current');
     CREATE INDEX IF NOT EXISTS room_feed_entries_by_room_sequence
       ON room_feed_entries(room_id, sequence);
+    CREATE INDEX IF NOT EXISTS admin_audit_entries_by_created
+      ON admin_audit_entries(created_at DESC);
   `)
 
   const playlistColumns = new Set(db.prepare('PRAGMA table_info(playlists)').all().map(({ name }) => name))
@@ -249,6 +262,7 @@ function createDatabase(databasePath = ':memory:') {
     db.exec("UPDATE songs SET started_at = created_at, started_at_estimated = 1 WHERE status IN ('current', 'played')")
   }
   db.exec('CREATE INDEX IF NOT EXISTS songs_by_room_started ON songs(room_id, started_at)')
+  db.exec('CREATE INDEX IF NOT EXISTS songs_by_started_status ON songs(started_at, status)')
 
   const roomColumns = new Set(db.prepare('PRAGMA table_info(rooms)').all().map(({ name }) => name))
   if (!roomColumns.has('title')) db.exec("ALTER TABLE rooms ADD COLUMN title TEXT NOT NULL DEFAULT ''")

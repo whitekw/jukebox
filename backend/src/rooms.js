@@ -1304,7 +1304,7 @@ function createRoomService(db, options = {}) {
     return advancedRooms
   }
 
-  function setPlaybackPaused(code, credentials, paused) {
+  function changePlaybackPaused(code, paused, { authorize, onChange, skipUnchanged = false }) {
     if (typeof paused !== 'boolean') {
       throw new AppError(
         400,
@@ -1315,7 +1315,7 @@ function createRoomService(db, options = {}) {
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      requireController(room, credentials)
+      authorize(room)
       if (!room.current_song_id) {
         throw new AppError(
           409,
@@ -1323,6 +1323,7 @@ function createRoomService(db, options = {}) {
           'NO_CURRENT_SONG',
         )
       }
+      if (skipUnchanged && Boolean(room.playback_paused) === paused) return getPublicRoom(code)
       const changedAt = now()
       const position = getPlaybackPosition(room, changedAt)
       db.prepare(
@@ -1332,7 +1333,20 @@ function createRoomService(db, options = {}) {
              playback_revision = playback_revision + 1
          WHERE id = ?`,
       ).run(paused ? 1 : 0, position, changedAt, room.id)
+      if (Boolean(room.playback_paused) !== paused) onChange?.(paused)
       return getPublicRoom(code)
+    })
+  }
+
+  function setPlaybackPaused(code, credentials, paused) {
+    return changePlaybackPaused(code, paused, {
+      authorize: (room) => requireController(room, credentials),
+    })
+  }
+
+  function setPlaybackPausedAsAdmin(code, paused, onChange) {
+    return changePlaybackPaused(code, paused, {
+      authorize: () => {}, onChange, skipUnchanged: true,
     })
   }
 
@@ -1725,6 +1739,7 @@ function createRoomService(db, options = {}) {
     advance,
     advanceCompletedAllDeviceRooms,
     setPlaybackPaused,
+    setPlaybackPausedAsAdmin,
     startPlayback,
     reportPlaybackBlocked,
     removeSong,

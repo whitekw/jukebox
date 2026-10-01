@@ -194,6 +194,14 @@ type RoomEvent = {
 | GET | `/api/auth/discord` | 공개 | 인증 | Discord OAuth2 시작 |
 | GET | `/api/auth/discord/callback` | OAuth state | 인증 | 코드 교환 후 세션 쿠키 발급 |
 | POST | `/api/auth/logout` | 로그인 선택 | 변경 | 현재 세션 삭제 및 해당 세션의 실시간 연결 종료 |
+| GET | `/api/admin/session` | 시스템 운영자 | 없음 | 운영자 프로필 |
+| GET | `/api/admin/overview?dayStarts=<15개의 쉼표 구분 Unix ms>` | 시스템 운영자 | 없음 | 사용자·방·재생 현황, 브라우저 현지 날짜별 14일 추이 (`daily[].startAt`), 서비스 설정 상태 |
+| GET | `/api/admin/rooms?query=&page=1` | 시스템 운영자 | 없음 | 방 검색, 20건 단위 페이지 |
+| GET | `/api/admin/rooms/:code` | 시스템 운영자 | 없음 | 방 상세, 최근 참여자·곡 |
+| PATCH | `/api/admin/rooms/:code/playback` | 시스템 운영자 | 변경 | `{ "paused": true/false }`, 방 재생 상태 변경 |
+| GET | `/api/admin/users?query=&page=1` | 시스템 운영자 | 없음 | 계정 검색, 20건 단위 페이지 |
+| POST | `/api/admin/users/:userId/revoke-sessions` | 시스템 운영자 | 변경 | 대상 계정의 웹 로그인 세션 해제 건수 |
+| GET | `/api/admin/audit` | 시스템 운영자 | 없음 | 최근 운영 변경 기록 30건 |
 | GET | `/api/extension/auth/start` | 등록된 확장 프로그램 리디렉션 주소 | 인증 | Discord OAuth2 시작 |
 | GET | `/api/extension/auth/ready` | 등록된 확장 프로그램 출처 | 없음 | Discord 로그인 설정 여부 |
 | POST | `/api/extension/auth/exchange` | 일회용 grant + PKCE 검증값 | 인증 | 확장 프로그램 전용 Bearer 토큰 |
@@ -240,6 +248,8 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
 요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
+
+`/api/admin/*`는 `ADMIN_DISCORD_IDS`에 등록된 Discord ID와 유효한 `jukebox_session` 쿠키를 모두 요구합니다. 빈 허용 목록은 기본 거부입니다. 운영 권한이 없는 로그인 계정의 403 응답에는 본인의 Discord ID와 표시 이름이 `error.details.user`에 포함되어 설정을 확인할 수 있습니다. 변경 요청은 `X-Bside-Admin-Action: 1` 헤더가 필요하고 `Origin`이 있을 경우 현재 출처와 같아야 합니다. 재생 상태 변경과 세션 해제는 `admin_audit_entries`에 남습니다. 조회 응답은 `Cache-Control: no-store`입니다. 사용자용 방 관리자 권한으로는 이 API에 접근할 수 없습니다.
 
 현재 재생 중인 곡의 투표 API는 참여자 토큰 또는 방에 참여한 로그인 세션을 요구합니다. `POST` 본문은 `{ "vote": "up" }`, `{ "vote": "down" }`, `{ "vote": null }` 중 하나입니다. 한 참여자가 한 신청 건에 한 표만 남길 수 있고, 반대로 바꾸거나 취소할 수 있습니다. 신청자 본인은 투표할 수 없으며, 계정으로 재입장해도 이 제한이 유지됩니다. `GET`의 `canVote`는 본인 신청 건이면 `false`입니다. 변경된 숫자는 `room:state`로 모두에게 전달됩니다. 서버는 곡 신청 건 ID, 신청자 ID, 투표자 ID와 선택을 기록하지만 공개 응답에는 참여자별 투표 내역을 싣지 않습니다. 지난 곡에는 투표할 수 없습니다.
 

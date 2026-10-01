@@ -19,6 +19,7 @@ const { createRateLimiter } = require('./rate-limit')
 const { createRoomService, normalizeCode } = require('./rooms')
 const { createLibraryService } = require('./library')
 const { createYouTubeService } = require('./youtube')
+const { createAdminService } = require('./admin')
 
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
@@ -162,6 +163,13 @@ const presence = createRoomPresence({
     }
   },
 })
+const admin = createAdminService(db, {
+  discordIds: process.env.ADMIN_DISCORD_IDS,
+  onlineCount: (code, participantId) => {
+    const ids = presence.getParticipantIds(code)
+    return participantId ? Number(ids.has(participantId)) : ids.size
+  },
+})
 
 function withOnlineParticipants(state, additionalParticipantIds = []) {
   const onlineParticipantIds = presence.getParticipantIds(state.code)
@@ -237,6 +245,76 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/config', (req, res) => {
   res.json(getLocaleConfig(req))
+})
+
+app.use('/api/admin', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store')
+  try {
+    req.adminUser = admin.requireAdmin(requestAuthUser(req))
+    next()
+  } catch (error) {
+    next(error)
+  }
+})
+
+function requireAdminAction(req) {
+  const origin = req.get('origin')
+  if (req.get('x-bside-admin-action') !== '1' ||
+      (origin && origin !== `${req.protocol}://${req.get('host')}`)) {
+    throw new AppError(403, '허용되지 않은 운영 요청입니다.', 'ADMIN_ACTION_FORBIDDEN')
+  }
+}
+
+app.get('/api/admin/session', (req, res) => {
+  res.json({ user: req.adminUser })
+})
+
+app.get('/api/admin/overview', (req, res) => {
+  res.json({
+    ...admin.listOverview(req.query.dayStarts),
+    service: {
+      uptimeSeconds: Math.floor(process.uptime()),
+      discordLoginEnabled: auth.enabled,
+      youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY),
+    },
+  })
+})
+
+app.get('/api/admin/rooms', (req, res) => {
+  res.json(admin.listRooms(req.query.query, req.query.page))
+})
+
+app.get('/api/admin/rooms/:code', (req, res) => {
+  res.json(admin.getRoom(req.params.code))
+})
+
+app.patch('/api/admin/rooms/:code/playback', mutationLimiter, (req, res) => {
+  requireAdminAction(req)
+  const code = normalizeCode(req.params.code)
+  let action = null
+  const state = rooms.setPlaybackPausedAsAdmin(code, req.body?.paused, (paused) => {
+    action = paused ? 'room_paused' : 'room_resumed'
+    admin.recordAction(req.adminUser, action, 'room', code)
+  })
+  if (action) {
+    logRoomEvent(code, action === 'room_paused' ? 'playback_paused' : 'playback_resumed', {}, {})
+  }
+  res.json(emitRoom(code, state))
+})
+
+app.get('/api/admin/users', (req, res) => {
+  res.json(admin.listUsers(req.query.query, req.query.page))
+})
+
+app.post('/api/admin/users/:userId/revoke-sessions', mutationLimiter, (req, res) => {
+  requireAdminAction(req)
+  const hashes = admin.revokeUserSessions(req.adminUser, req.params.userId)
+  for (const hash of hashes) io.in(`auth-session:${hash}`).disconnectSockets(true)
+  res.json({ revoked: hashes.length })
+})
+
+app.get('/api/admin/audit', (req, res) => {
+  res.json({ items: admin.listAudit() })
 })
 
 app.get('/api/auth/session', (req, res) => {
@@ -923,6 +1001,13 @@ io.on('connection', (socket) => {
 })
 
 const frontendDist = path.resolve(__dirname, '../../frontend/dist')
+const adminDist = path.resolve(__dirname, '../../admin/dist')
+app.use('/admin', express.static(adminDist, { index: false }))
+app.get(/^\/admin(?:\/.*)?$/, (req, res, next) => {
+  res.sendFile(path.join(adminDist, 'index.html'), (error) => {
+    if (error) next()
+  })
+})
 app.use(express.static(frontendDist))
 app.get(/.*/, (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/socket.io/')) return next()

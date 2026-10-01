@@ -28,6 +28,7 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+            admin/package-lock.json
 
       - name: Set up npm
         run: npm install --global npm@11.6.2
@@ -54,6 +55,18 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        run: npm run build
+
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Lint admin
+        working-directory: admin
+        run: npm run lint
+
+      - name: Build admin
+        working-directory: admin
         run: npm run build
 
   publish:
