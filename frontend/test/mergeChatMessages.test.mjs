@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mergeChatMessages } from '../src/features/room/chat/mergeChatMessages.ts'
 
-function message(id, createdAt, sequence) {
-  return { id, createdAt, sequence }
+function message(id, createdAt, sequence, type = 'message') {
+  return { id, createdAt, sequence, type }
 }
 
 test('merges history and live messages without duplicates in timestamp order', () => {
@@ -23,4 +23,13 @@ test('keeps only the most recent hundred messages', () => {
   assert.equal(result.length, 100)
   assert.equal(result[0].id, '5')
   assert.equal(result.at(-1).id, '104')
+})
+
+test('keeps recent conversations when activity logs outnumber them', () => {
+  const incoming = [message('conversation', 0, 1), ...Array.from({ length: 105 }, (_, index) =>
+    message(`log-${index}`, index + 1, index + 2, 'system'))]
+  const result = mergeChatMessages([], incoming)
+  assert.equal(result.length, 101)
+  assert.equal(result[0].id, 'conversation')
+  assert.equal(result[1].id, 'log-5')
 })

@@ -102,11 +102,35 @@ type RoomStats = {
     plays: number
     upvotes: number
     downvotes: number
+    daily: { key: string; count: number }[]
+    weekly: { key: string; count: number }[]
+    monthly: { key: string; count: number }[]
   }[]
 }
 ```
 
-재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 키는 요청한 `timeZone`의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
+재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 키는 요청한 `timeZone`의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
+
+### `RoomHistoryPage`
+
+```ts
+type RoomHistoryPage = {
+  items: {
+    id: string
+    videoId: string
+    title: string
+    artist: string
+    thumbnailUrl: string
+    requester: string
+    requesterAvatarUrl: string | null
+    startedAt: number
+    startedAtEstimated: boolean
+  }[]
+  nextCursor: string | null
+}
+```
+
+`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 신청 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 신청 건마다 별도 항목입니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
 
 ### `VideoSearchResult`
 
@@ -188,7 +212,8 @@ type RoomEvent = {
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/stats?timeZone=Asia/Seoul` | 참여자 | 없음 | `RoomStats` |
-| GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 채팅·활동 100개 |
+| GET | `/api/rooms/:code/history?before={cursor}&limit=30` | 참여자 | 없음 | `RoomHistoryPage` |
+| GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 대화·활동 로그 각각 최대 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 분당 30회(계정 또는 참여자 토큰 기준), IP·경로당 120회 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
 | POST | `/api/rooms/:code/songs` | 참여자 | 변경 | `RoomState` |
@@ -351,7 +376,7 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 필수 헤더: `x-participant-token`
 
-방의 최근 사용자 메시지와 시스템 활동 로그를 합쳐 최대 100개까지 오래된 순으로 반환합니다.
+방의 최근 사용자 메시지와 시스템 활동 로그를 각각 최대 100개씩, 합쳐 최대 200개까지 오래된 순으로 반환합니다.
 
 ```json
 {

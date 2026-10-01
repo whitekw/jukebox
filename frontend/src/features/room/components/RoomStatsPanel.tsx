@@ -1,10 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts'
-import { BarChart3, RotateCw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts'
+import { History, RotateCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { PanelHeader } from '../../../shared/ui/PanelHeader'
 import { roomApi } from '../api'
 import type { RoomStats } from '../types'
+import { RoomPlaybackHistory } from './RoomPlaybackHistory'
 
 type Period = 'daily' | 'weekly' | 'monthly'
 
@@ -18,15 +19,22 @@ function periodLabel(key: string, period: Period, locale: string, short = false)
   }).format(date)
 }
 
-export default function RoomStatsPanel({ code, participantToken, revision, onClose }: {
+export default function RoomStatsPanel({ code, participantToken, revision, onClose, onAddSong, onLibraryChange, libraryRevision, message, roomError }: {
   code: string
   participantToken: string
   revision: string
   onClose: () => void
+  onAddSong: (videoId: string) => Promise<void>
+  onLibraryChange: () => void
+  libraryRevision: number
+  message: string
+  roomError: string
 }) {
   const { locale, t } = useI18n()
   const [stats, setStats] = useState<RoomStats | null>(null)
   const [period, setPeriod] = useState<Period>('daily')
+  const [tab, setTab] = useState<'stats' | 'history'>('stats')
+  const [participantPeriod, setParticipantPeriod] = useState<Period>('daily')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [retry, setRetry] = useState(0)
@@ -53,6 +61,7 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
   }, [onClose])
 
   useEffect(() => {
+    if (tab !== 'stats') return
     let active = true
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     void roomApi.getRoomStats(code, participantToken, timeZone).then((result) => {
@@ -65,20 +74,49 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
       if (active) setLoading(false)
     })
     return () => { active = false }
-  }, [code, participantToken, revision, retry, t])
+  }, [code, participantToken, revision, retry, t, tab])
 
   const points = stats?.[period] ?? []
   const periodRange = period === 'daily' ? t('stats.dailyRange')
     : period === 'weekly' ? t('stats.weeklyRange') : t('stats.monthlyRange')
+  const participantPoints = stats?.[participantPeriod].map(({ key }, index) => ({
+    key,
+    ...Object.fromEntries(stats.participants.map((person, personIndex) =>
+      [`participant_${personIndex}`, person[participantPeriod][index]?.count ?? 0])),
+  })) ?? []
+  const participantPeriodRange = participantPeriod === 'daily' ? t('stats.dailyRange')
+    : participantPeriod === 'weekly' ? t('stats.weeklyRange') : t('stats.monthlyRange')
+  const participantMaxCount = Math.max(1, ...stats?.participants.flatMap((person) =>
+    person[participantPeriod].map(({ count }) => count)) ?? [0])
+  const participantTickStep = Math.max(1, Math.ceil(participantMaxCount / 4))
+  const participantTicks = Array.from({ length: Math.ceil(participantMaxCount / participantTickStep) + 1 },
+    (_, index) => index * participantTickStep)
+  const colorIndexById = new Map([...stats?.participants ?? []]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((person, index) => [person.id, index]))
+  const participantColor = (id: string) =>
+    `hsl(${Math.round((260 + (colorIndexById.get(id) ?? 0) * 137.508) % 360)} 85% 72%)`
 
   return <section ref={panelRef} aria-labelledby={titleId}
     className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas text-ink">
     <PanelHeader titleId={titleId} title={t('stats.title')} subtitle={t('stats.subtitle')}
-      icon={<BarChart3 size={20} aria-hidden="true" />} closeLabel={t('stats.close')}
+      icon={<History size={20} aria-hidden="true" />} closeLabel={t('stats.close')}
       onClose={onClose} closeButtonRef={closeRef} />
 
+    <div className="flex shrink-0 gap-1 border-b border-line px-4 sm:px-6" role="group" aria-label={t('stats.title')}>
+      {(['stats', 'history'] as const).map((option) => <button key={option} type="button"
+        aria-pressed={tab === option} onClick={() => setTab(option)}
+        className={`border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-purple-light ${tab === option
+          ? 'border-purple-light text-purple-light' : 'border-transparent text-muted hover:text-ink'}`}>
+        {t(option === 'stats' ? 'stats.tab' : 'history.title')}
+      </button>)}
+    </div>
+
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-6">
-      {error && !stats ? <div role="alert" className="flex items-center gap-3 text-sm text-danger">
+      {tab === 'history' ? <RoomPlaybackHistory code={code} participantToken={participantToken} revision={revision}
+        onAddSong={onAddSong} onLibraryChange={onLibraryChange} libraryRevision={libraryRevision}
+        message={message} roomError={roomError} />
+        : error && !stats ? <div role="alert" className="flex items-center gap-3 text-sm text-danger">
         <span>{error}</span>
         <button type="button" className="rounded-lg p-2 text-purple-light hover:bg-white/10"
           aria-label={t('common.retry')} onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>
@@ -144,7 +182,55 @@ export default function RoomStatsPanel({ code, participantToken, revision, onClo
         <section className="mt-6 pb-4" aria-label={t('stats.participants')}>
           <h3 className="m-0 mb-3 text-sm font-bold">{t('stats.participants')}</h3>
           {stats.participants.length === 0 ? <p className="rounded-xl border border-line bg-panel p-4 text-sm text-muted">{t('stats.noMemberRecords')}</p> : <>
-            <div className="overflow-hidden rounded-xl border border-line bg-panel">
+            <section className="rounded-xl border border-line bg-panel p-4 sm:p-5"
+              aria-label={t('stats.participantTrend')}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="m-0 text-sm font-bold">{t('stats.participantTrend')}</h4>
+                  <p className="m-0 mt-1 text-xs text-muted">{participantPeriodRange} · {stats.timeZone}</p>
+                </div>
+                <div className="flex rounded-lg border border-line p-0.5" role="group"
+                  aria-label={t('stats.participantTrend')}>
+                  {(['daily', 'weekly', 'monthly'] as const).map((option) => <button key={option} type="button"
+                    aria-pressed={participantPeriod === option} onClick={() => setParticipantPeriod(option)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-purple-light ${participantPeriod === option
+                      ? 'bg-purple/25 text-purple-light' : 'text-muted hover:text-ink'}`}>
+                    {t(`stats.${option}`)}
+                  </button>)}
+                </div>
+              </div>
+              {stats.participants.every((person) => person.plays === 0) ? <p className="grid h-52 place-items-center text-sm text-muted">{t('stats.empty')}</p> : <>
+                <LineChart data={participantPoints} responsive style={{ width: '100%', height: 224 }}
+                  margin={{ top: 24, right: 8, bottom: 0, left: -14 }} accessibilityLayer>
+                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
+                  <XAxis dataKey="key" tickLine={false} axisLine={false} minTickGap={12}
+                    tick={{ fill: '#a7a2b4', fontSize: 10 }}
+                    tickFormatter={(key: string) => periodLabel(key, participantPeriod, locale, true)} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36}
+                    ticks={participantTicks} domain={[0, participantTicks.at(-1) ?? 1]}
+                    tick={{ fill: '#a7a2b4', fontSize: 10 }} />
+                  <Tooltip labelFormatter={(label) => periodLabel(String(label), participantPeriod, locale)}
+                    formatter={(value, name) => [numberFormatter.format(Number(value)), name]}
+                    contentStyle={{ background: '#1b1723', border: '1px solid rgba(255,255,255,.14)', borderRadius: 10, color: '#f6f4ff' }} />
+                  {stats.participants.map((person, index) => <Line key={person.id} type="linear"
+                    dataKey={`participant_${index}`} name={person.nickname} stroke={participantColor(person.id)}
+                    strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />)}
+                </LineChart>
+                <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted" aria-label={t('stats.participantTrend')}>
+                  {stats.participants.map((person) => <li key={person.id} className="flex min-w-0 items-center gap-1.5">
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: participantColor(person.id) }} aria-hidden="true" />
+                    <span className="max-w-32 truncate" title={person.nickname}>{person.nickname}</span>
+                  </li>)}
+                </ul>
+                <ul className="sr-only" aria-label={t('stats.participantTrend')}>
+                  {stats.participants.map((person) => <li key={person.id}>{person.nickname}: {
+                    person[participantPeriod].map(({ key, count }) =>
+                      `${periodLabel(key, participantPeriod, locale)} ${numberFormatter.format(count)}`).join(', ')
+                  }</li>)}
+                </ul>
+              </>}
+            </section>
+            <div className="mt-4 overflow-hidden rounded-xl border border-line bg-panel">
               <table className="w-full table-fixed text-xs tabular-nums">
                 <colgroup>
                   <col /><col className="w-11 sm:w-[76px]" /><col className="w-11 sm:w-[76px]" /><col className="w-11 sm:w-[76px]" />

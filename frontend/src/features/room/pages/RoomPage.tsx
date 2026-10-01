@@ -9,7 +9,7 @@ import {
   type FormEvent,
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { BarChart3, WifiOff } from 'lucide-react'
+import { History, WifiOff } from 'lucide-react'
 import { roomApi } from '../api'
 import { Brand } from '../../../shared/ui/Brand'
 import { AccountMenu } from '../../auth/components/AccountMenu'
@@ -494,7 +494,9 @@ export function RoomPage() {
             {statsOpen && participant && <Suspense fallback={<div className="absolute inset-0 z-20 bg-canvas p-6 text-sm text-muted" role="status">{t('library.loading')}</div>}>
               <RoomStatsPanel code={code} participantToken={participantToken}
                 revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
-                onClose={closeStats} />
+                onClose={closeStats} onAddSong={addSong}
+                onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
+                libraryRevision={libraryRevision} message={message} roomError={error || roomError} />
             </Suspense>}
           </div>
             <QueuePanel
@@ -591,7 +593,7 @@ export function RoomPage() {
           statsOpen ? 'bg-purple/55 text-white' : 'bg-purple/25',
         )}
         aria-label={t('stats.open')} title={t('stats.open')} aria-pressed={statsOpen}
-        onClick={toggleStats}><BarChart3 size={25} aria-hidden="true" /></button>}
+        onClick={toggleStats}><History size={25} aria-hidden="true" /></button>}
       {participant && (
         <ChatPanel
           roomCode={code}

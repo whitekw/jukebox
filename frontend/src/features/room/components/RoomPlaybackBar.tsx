@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, CirclePlus, Music2, Pause, Play, SkipForward, ThumbsDown, ThumbsUp, Volume2, VolumeX } from 'lucide-react'
+import { Music2, Pause, Play, SkipForward, ThumbsDown, ThumbsUp, Volume2, VolumeX } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
@@ -9,6 +9,7 @@ import type { PlayerAudioSettings } from '../playback/playerAudioSettings'
 import type { Song } from '../types'
 import type { SongVote } from '../hooks/useSongVote'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
+import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 
 type RoomPlaybackBarProps = {
   song: Song | null
@@ -135,9 +136,7 @@ export function RoomPlaybackBar({
               title={isSaved ? t('library.savedInPlaylist') : t('library.addToPlaylist')}
               onClick={() => setSaveSongId(song.id)}
             >
-              {isSaved
-                ? <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
-                : <CirclePlus size={21} aria-hidden="true" />}
+              <PlaylistSaveIcon saved={isSaved} />
             </button>
           )}
         </div>

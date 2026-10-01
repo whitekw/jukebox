@@ -5,6 +5,7 @@ import type {
   RoomSession,
   RoomState,
   RoomStats,
+  RoomHistoryPage,
   VideoSearchResult,
 } from './types'
 import { request } from '../../shared/http'
@@ -31,6 +32,13 @@ function controlHeaders(credentials: ControlCredentials) {
 }
 
 export const roomApi = {
+  getRoomHistory(code: string, participantToken: string, before?: string) {
+    const query = before ? `?${new URLSearchParams({ before })}` : ''
+    return request<RoomHistoryPage>(`/api/rooms/${encodeURIComponent(code)}/history${query}`, {
+      headers: participantToken ? { 'x-participant-token': participantToken } : {},
+    })
+  },
+
   getRoomStats(code: string, participantToken: string, timeZone: string) {
     const query = new URLSearchParams({ timeZone })
     return request<RoomStats>(`/api/rooms/${encodeURIComponent(code)}/stats?${query}`, {
