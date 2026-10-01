@@ -4,7 +4,7 @@ import { Copy as CopyIcon, Share2 as ShareIcon, X as CloseIcon } from 'lucide-re
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, chromeIconButtonStyles, cn, panelCloseButtonStyles } from '../../../shared/styles'
 
-export function InviteRoomButton({ code, joinUrl, allowGuests }: { code: string; joinUrl: string; allowGuests: boolean }) {
+export function InviteRoomButton({ code, joinUrl, allowGuests, triggerClassName }: { code: string; joinUrl: string; allowGuests: boolean; triggerClassName?: string }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -44,7 +44,7 @@ export function InviteRoomButton({ code, joinUrl, allowGuests }: { code: string;
   return (
     <>
       <button
-        className={chromeIconButtonStyles}
+        className={cn(chromeIconButtonStyles, triggerClassName)}
         type="button"
         aria-label={t('room.invite')}
         title={t('room.invite')}

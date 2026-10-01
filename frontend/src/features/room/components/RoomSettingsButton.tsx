@@ -4,9 +4,10 @@ import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, chromeIconButtonStyles, cn, formControlStyles, panelCloseButtonStyles } from '../../../shared/styles'
 import type { RoomState } from '../types'
 
-export function RoomSettingsButton({ room, onSave }: {
+export function RoomSettingsButton({ room, onSave, triggerClassName }: {
   room: RoomState
   onSave: (title: string, allowGuests: boolean, historyAutoplay: boolean) => Promise<void>
+  triggerClassName?: string
 }) {
   const { t } = useI18n()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -50,7 +51,7 @@ export function RoomSettingsButton({ room, onSave }: {
     <>
       <button
         ref={triggerRef}
-        className={chromeIconButtonStyles}
+        className={cn(chromeIconButtonStyles, triggerClassName)}
         type="button"
         aria-label={t('roomSettings.open')}
         aria-haspopup="dialog"

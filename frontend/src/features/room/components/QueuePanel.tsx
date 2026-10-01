@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { SongList } from './SongList'
-import { Plus, RefreshCw } from 'lucide-react'
+import { ChevronRight, Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn, panelStyles } from '../../../shared/styles'
 import type { AutoplaySuggestion, Song } from '../types'
@@ -14,9 +14,11 @@ type QueuePanelProps = {
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
   onRequestSong?: () => void
+  onClose?: () => void
   onRefreshAutoplay?: () => Promise<void>
   onLibraryChange: () => void
   libraryRevision: number
+  footer?: ReactNode
 }
 
 export function QueuePanel({
@@ -28,9 +30,11 @@ export function QueuePanel({
   onRemove,
   canRemove,
   onRequestSong,
+  onClose,
   onRefreshAutoplay,
   onLibraryChange,
   libraryRevision,
+  footer,
 }: QueuePanelProps) {
   const { t } = useI18n()
   const [refreshingAutoplay, setRefreshingAutoplay] = useState(false)
@@ -49,12 +53,18 @@ export function QueuePanel({
     <section
       className={cn(
         panelStyles({ padding: 'none' }),
-        'flex min-h-0 flex-col p-4 sm:overflow-hidden sm:px-4 sm:py-5',
+        'flex min-h-0 flex-col overflow-hidden p-4 sm:px-4 sm:py-5',
         className,
       )}
       aria-label={t('queue.title')}
+      id="room-queue-panel"
     >
       <div className="mb-3 flex shrink-0 items-center gap-2 px-1">
+        {onClose && <button type="button" onClick={onClose}
+          className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted transition-colors hover:bg-white/[0.07] hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
+          aria-label={t('queue.hide')} title={t('queue.hide')}>
+          <ChevronRight size={17} aria-hidden="true" />
+        </button>}
         <h2 className="m-0 text-xs font-semibold text-muted">
           {t('queue.title')} <span className="font-mono font-normal">· {t('queue.countShort', { count: songs.length })}</span>
         </h2>
@@ -72,7 +82,7 @@ export function QueuePanel({
           </button>
         )}
       </div>
-      <div className="flex flex-1 flex-col sm:min-h-0 sm:overflow-y-auto sm:overscroll-contain sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(!historyAutoplay || songs.length > 0) && <>
             <SongList
               songs={songs}
@@ -110,6 +120,7 @@ export function QueuePanel({
           </ol>
         </div>}
       </div>
+      {footer}
     </section>
   )
 }
