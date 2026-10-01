@@ -53,10 +53,20 @@ test('all participants can see starts and received votes without voter identitie
     assert.equal(stats.hasEstimatedHistory, false)
     assert.equal(stats.daily.find(({ key }) => key === '2026-09-30').count, 1)
     assert.equal(stats.daily.find(({ key }) => key === '2026-10-01').count, 2)
-    assert.deepEqual(stats.participants.find(({ id }) => id === requester.participant.id), {
+    const requesterStats = stats.participants.find(({ id }) => id === requester.participant.id)
+    assert.deepEqual({
+      id: requesterStats.id, nickname: requesterStats.nickname, avatarUrl: requesterStats.avatarUrl,
+      plays: requesterStats.plays, upvotes: requesterStats.upvotes, downvotes: requesterStats.downvotes,
+    }, {
       id: requester.participant.id, nickname: 'Requester', avatarUrl: null,
       plays: 2, upvotes: 1, downvotes: 1,
     })
+    assert.equal(requesterStats.daily.find(({ key }) => key === '2026-09-30').count, 1)
+    assert.equal(requesterStats.daily.find(({ key }) => key === '2026-10-01').count, 1)
+    assert.equal(requesterStats.weekly.find(({ key }) => key === '2026-09-28').count, 2)
+    assert.equal(requesterStats.monthly.find(({ key }) => key === '2026-09').count, 1)
+    assert.equal(requesterStats.monthly.find(({ key }) => key === '2026-10').count, 1)
+    assert.equal(requesterStats.daily.length, stats.daily.length)
     assert.deepEqual(stats.participants.map(({ id }) => id), [requester.participant.id])
     assert.equal(stats.participants.some((participant) => 'voterId' in participant || 'votesCast' in participant), false)
     assert.throws(() => rooms.getRoomStats(created.code, {}, 'Asia/Seoul'), { code: 'PARTICIPANT_REQUIRED' })

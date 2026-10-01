@@ -558,6 +558,12 @@ app.get('/api/rooms/:code/stats', (req, res) => {
   res.json(rooms.getRoomStats(req.params.code, controlCredentials(req), req.query.timeZone ?? 'UTC'))
 })
 
+app.get('/api/rooms/:code/history', (req, res) => {
+  res.json(rooms.getRoomHistory(
+    req.params.code, controlCredentials(req), req.query.before, req.query.limit ?? 30,
+  ))
+})
+
 app.get('/api/rooms/:code/session', (req, res) => {
   const session = rooms.getRoomSession(
     req.params.code,

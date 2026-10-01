@@ -1,8 +1,9 @@
-import { Check } from 'lucide-react'
 import { formatDuration } from '../../../shared/format'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
+import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 import type { VideoSearchResult } from '../types'
+import { AddToQueueButton } from './AddToQueueButton'
 
 type VideoResultListProps = {
   videos: VideoSearchResult[]
@@ -72,25 +73,14 @@ export function VideoResultList({
             title={t('library.savedInPlaylist')}
             onClick={() => onManageSaved(video.videoId)}
           >
-            <span className="grid size-5 place-items-center rounded-full bg-lime text-canvas"><Check size={14} strokeWidth={3} aria-hidden="true" /></span>
+            <PlaylistSaveIcon saved />
           </button>}
-          {onAddSong && <button
-            className={cn(
-              'row-start-1 grid size-9 shrink-0 place-items-center justify-self-end rounded-[9px] border border-lime/25 bg-lime/[0.05] text-[22px] text-lime transition-colors duration-150 enabled:group-hover:border-lime/60 enabled:group-hover:bg-lime/15 enabled:group-focus-within:border-lime/60 enabled:group-focus-within:bg-lime/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime disabled:cursor-not-allowed disabled:opacity-45 md:col-auto md:row-auto',
-              onManageSaved ? 'col-start-3' : 'col-start-2',
-            )}
-            type="button"
-            aria-label={
-              video.embeddable
-                ? t('search.addSong', { title: video.title })
-                : t('search.cannotAddSong', { title: video.title })
-            }
+          {onAddSong && <AddToQueueButton
+            className={cn('row-start-1 justify-self-end md:col-auto md:row-auto', onManageSaved ? 'col-start-3' : 'col-start-2')}
+            label={video.embeddable ? t('queue.addSong', { title: video.title }) : t('search.cannotAddSong', { title: video.title })}
             title={!video.embeddable ? t('search.embedUnavailable') : undefined}
-            disabled={!video.embeddable || Boolean(addingId)}
-            onClick={() => onAddSong(video.videoId)}
-          >
-            {addingId === video.videoId ? '…' : '+'}
-          </button>}
+            loading={addingId === video.videoId} disabled={!video.embeddable || Boolean(addingId)}
+            onClick={() => onAddSong(video.videoId)} />}
         </li>
       ))}
     </ol>

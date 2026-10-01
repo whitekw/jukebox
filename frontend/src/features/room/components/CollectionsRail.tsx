@@ -1,5 +1,5 @@
 import { useId, useState, type DragEvent, type KeyboardEvent, type Ref } from 'react'
-import { BarChart3, Heart, ListMusic, Plus, RotateCw } from 'lucide-react'
+import { Heart, History, ListMusic, Plus, RotateCw } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import type { Playlist } from '../../library/api'
 import { usePlaylistOrder } from '../../library/usePlaylistOrder'
@@ -199,7 +199,7 @@ export function CollectionsRail({ chatTriggerRef, statsOpen = false, onToggleSta
             )}
             aria-label={t('stats.open')} title={t('stats.open')} aria-pressed={statsOpen}
             onClick={onToggleStats}>
-            <BarChart3 size={21} aria-hidden="true" />
+            <History size={21} aria-hidden="true" />
           </button>}
           {chatTriggerRef && <div className="flex w-full justify-center" ref={chatTriggerRef} />}
         </div>

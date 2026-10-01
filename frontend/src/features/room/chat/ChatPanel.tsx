@@ -7,7 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageCircleMore as MessageCircleIcon, Send as SendIcon, X as CloseIcon } from 'lucide-react'
+import { History, MessageCircleMore as MessageCircleIcon, Send as SendIcon, X as CloseIcon } from 'lucide-react'
 import {
   getErrorMessage,
   useI18n,
@@ -78,6 +78,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const { locale, t } = useI18n()
   const [open, setOpen] = useState(false)
+  const [activeView, setActiveView] = useState<'conversation' | 'logs'>('conversation')
   const [hasOpened, setHasOpened] = useState(false)
   const [lastReadSequence, setLastReadSequence] = useState(0)
   const [draft, setDraft] = useState('')
@@ -87,7 +88,10 @@ export function ChatPanel({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const messageListRef = useRef<HTMLDivElement>(null)
-  const messageGroups = useMemo(() => groupChatMessages(messages), [messages])
+  const visibleMessages = useMemo(() => messages.filter((message) =>
+    activeView === 'conversation' ? message.type === 'message' : message.type === 'system'),
+  [messages, activeView])
+  const messageGroups = useMemo(() => groupChatMessages(visibleMessages), [visibleMessages])
   const avatars = useMemo(() => new Map(participants.map(({ id, avatarUrl }) => [id, avatarUrl])), [participants])
   const timeFormatter = useMemo(
     () =>
@@ -98,6 +102,7 @@ export function ChatPanel({
     [locale],
   )
   const latestSequence = messages.at(-1)?.sequence ?? 0
+  const latestVisibleSequence = visibleMessages.at(-1)?.sequence ?? 0
   const unreadCount = hasOpened
     ? messages.filter(
         (message) =>
@@ -130,14 +135,18 @@ export function ChatPanel({
   }, [open, isDesktop])
 
   useEffect(() => {
+    if (open && activeView === 'conversation') setLastReadSequence(latestSequence)
+  }, [latestSequence, open, activeView])
+
+  useEffect(() => {
     if (!open) return
-    setLastReadSequence(latestSequence)
     const messageList = messageListRef.current
     if (messageList) messageList.scrollTop = messageList.scrollHeight
-  }, [latestSequence, open])
+  }, [latestVisibleSequence, open, activeView])
 
   useEffect(() => window.bsideDesktop?.onOpenChat((code) => {
     if (code !== roomCode) return
+    setActiveView('conversation')
     setOpen(true)
     setHasOpened(true)
   }), [roomCode])
@@ -145,7 +154,10 @@ export function ChatPanel({
   function toggleChat() {
     setOpen((current) => {
       const next = !current
-      if (next) setHasOpened(true)
+      if (next) {
+        setHasOpened(true)
+        setActiveView('conversation')
+      }
       return next
     })
   }
@@ -221,6 +233,18 @@ export function ChatPanel({
               <MessageCircleIcon size={16} className="text-muted" aria-hidden="true" />
               <h2 id={titleId} className="m-0 text-sm font-semibold">{t('chat.title')}</h2>
             </div>
+            <div role="group" aria-label={t('chat.view')} className="flex shrink-0 items-center rounded-lg border border-line bg-white/[0.035] p-0.5">
+              {(['conversation', 'logs'] as const).map((view) => <button key={view} type="button"
+                aria-pressed={activeView === view} onClick={() => setActiveView(view)}
+                className={cn(
+                  'relative rounded-md px-3 py-1 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-purple-light',
+                  activeView === view ? 'bg-purple/25 text-purple-light' : 'text-muted hover:text-ink',
+                )}>
+                {t(view === 'conversation' ? 'chat.conversation' : 'chat.logs')}
+                {view === 'conversation' && activeView === 'logs' && unreadCount > 0 &&
+                  <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-lime" aria-hidden="true" />}
+              </button>)}
+            </div>
             <button
               className={panelCloseButtonStyles}
               type="button"
@@ -236,13 +260,15 @@ export function ChatPanel({
               ref={messageListRef}
               className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               role="log"
-              aria-label={t('chat.title')}
-              aria-live="polite"
+              aria-label={t(activeView === 'conversation' ? 'chat.conversation' : 'chat.logs')}
+              aria-live={activeView === 'conversation' ? 'polite' : 'off'}
             >
-              {messages.length === 0 ? (
+              {visibleMessages.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-xs text-muted">
-                  <MessageCircleIcon size={28} className="text-purple-light/60" aria-hidden="true" />
-                  <p>{t('chat.empty')}</p>
+                  {activeView === 'conversation'
+                    ? <MessageCircleIcon size={28} className="text-purple-light/60" aria-hidden="true" />
+                    : <History size={28} className="text-purple-light/60" aria-hidden="true" />}
+                  <p>{t(activeView === 'conversation' ? 'chat.empty' : 'chat.logsEmpty')}</p>
                 </div>
               ) : (
                 messageGroups.map((group) => {
@@ -250,17 +276,16 @@ export function ChatPanel({
                     return (
                       <div
                         key={group.id}
-                        className="px-5 py-1 text-center text-[10px] leading-4 text-dim [overflow-wrap:anywhere]"
+                        className="flex items-start gap-2 rounded-lg border border-line/50 bg-white/[0.025] px-3 py-2 text-[11px] leading-4 text-muted [overflow-wrap:anywhere]"
                       >
-                        <p className="m-0">
+                        <span className="mt-1 size-1.5 shrink-0 rounded-full bg-purple-light/55" aria-hidden="true" />
+                        <p className="m-0 min-w-0 flex-1">
                           {formatSystemMessage(group, t)}
-                          <time
-                            className="ml-1.5 whitespace-nowrap text-[9px]"
-                            dateTime={new Date(group.createdAt).toISOString()}
-                          >
-                            {timeFormatter.format(group.createdAt)}
-                          </time>
                         </p>
+                        <time className="shrink-0 whitespace-nowrap text-[10px] text-dim"
+                          dateTime={new Date(group.createdAt).toISOString()}>
+                          {timeFormatter.format(group.createdAt)}
+                        </time>
                       </div>
                     )
                   }
@@ -312,7 +337,7 @@ export function ChatPanel({
               )}
             </div>
 
-            <form className="mt-3 flex items-center gap-2" onSubmit={send}>
+            {activeView === 'conversation' && <form className="mt-3 flex items-center gap-2" onSubmit={send}>
               <input
                 className={cn(formControlStyles(), 'min-w-0 rounded-lg px-3 text-sm placeholder:text-muted/70')}
                 value={draft}
@@ -335,8 +360,8 @@ export function ChatPanel({
               >
                 <SendIcon size={18} aria-hidden="true" />
               </button>
-            </form>
-            {sendError !== null && (
+            </form>}
+            {activeView === 'conversation' && sendError !== null && (
               <p className="mt-2 px-1 text-xs text-[#ff9cab]" role="alert">
                 {getErrorMessage(sendError, t)}
               </p>

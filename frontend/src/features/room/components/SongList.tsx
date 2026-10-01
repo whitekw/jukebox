@@ -1,10 +1,11 @@
 import { useEffect, useState, type DragEvent } from 'react'
-import { Check, CirclePlus, Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
+import { Music2 as MusicIcon, Trash2 as TrashIcon } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { cn } from '../../../shared/styles'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
+import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 import type { Song } from '../types'
 
 export function SongList({
@@ -174,9 +175,7 @@ export function SongList({
               title={t(savedByVideoId[song.videoId] ? 'library.savedInPlaylist' : 'library.addToPlaylist')}
               onClick={() => setSaveSong(song)}
             >
-              {savedByVideoId[song.videoId]
-                ? <span className="grid size-4 place-items-center rounded-full bg-lime text-canvas"><Check size={11} strokeWidth={3} aria-hidden="true" /></span>
-                : <CirclePlus size={18} aria-hidden="true" />}
+              <PlaylistSaveIcon saved={Boolean(savedByVideoId[song.videoId])} />
             </button>
             {onRemove && (canRemove?.(song) ?? true) && (
               <button

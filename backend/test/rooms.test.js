@@ -143,6 +143,8 @@ test('an account cannot vote on its request after leaving and rejoining the room
       .filter(({ nickname }) => nickname === 'Requester again')
     assert.equal(requesterStats.length, 1)
     assert.equal(requesterStats[0].plays, 2)
+    assert.equal(requesterStats[0].daily.reduce((total, point) => total + point.count, 0), 2)
+    assert.equal(requesterStats[0].weekly.reduce((total, point) => total + point.count, 0), 2)
   } finally {
     db.close()
   }
@@ -327,6 +329,15 @@ test('stores and returns the latest room chat messages for participants', () => 
   assert.equal(latestMessages.length, 100)
   assert.equal(latestMessages[0].content, 'message-1')
   assert.equal(latestMessages.at(-1).content, 'message-100')
+
+  for (let index = 0; index < 101; index += 1) {
+    rooms.addRoomEvent(created.code, 'playback_paused', { hostToken: created.hostToken })
+  }
+  const mixedHistory = rooms.listChatMessages(created.code, alice.participantToken)
+  assert.equal(mixedHistory.filter((entry) => entry.type === 'message').length, 100)
+  assert.equal(mixedHistory.filter((entry) => entry.type === 'system').length, 100)
+  assert.equal(mixedHistory[0].content, 'message-1')
+  assert.equal(mixedHistory.at(-1).type, 'system')
 
   db.close()
 })

@@ -60,7 +60,27 @@ export type RoomStats = {
     plays: number
     upvotes: number
     downvotes: number
+    daily: { key: string; count: number }[]
+    weekly: { key: string; count: number }[]
+    monthly: { key: string; count: number }[]
   }[]
+}
+
+export type RoomHistoryEntry = {
+  id: string
+  videoId: string
+  title: string
+  artist: string
+  thumbnailUrl: string
+  requester: string
+  requesterAvatarUrl: string | null
+  startedAt: number
+  startedAtEstimated: boolean
+}
+
+export type RoomHistoryPage = {
+  items: RoomHistoryEntry[]
+  nextCursor: string | null
 }
 
 export type Participant = {

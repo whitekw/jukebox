@@ -9,6 +9,7 @@ const PROFILE_SOURCES = new Set(['account', 'custom'])
 const CHAT_MESSAGE_MAX_LENGTH = 300
 const ROOM_TITLE_MAX_LENGTH = 60
 const CHAT_HISTORY_LIMIT = 100
+const ROOM_HISTORY_PAGE_SIZE = 30
 const ABANDONED_SONG_GRACE_MS = 60_000
 const ROOM_EVENT_TYPES = new Set([
   'song_added',
@@ -259,19 +260,18 @@ function createRoomService(db, options = {}) {
   function listChatMessages(code, participantToken, userId) {
     const room = getRoomRecord(code)
     requireParticipant(room, participantToken, userId)
-    return db
-      .prepare(
-        `SELECT * FROM (
-           SELECT *
-           FROM room_feed_entries
-           WHERE room_id = ?
-             AND (event_type IS NULL OR event_type NOT IN ('participant_joined', 'participant_left'))
-           ORDER BY sequence DESC
-           LIMIT ?
-         )
-         ORDER BY sequence ASC`,
-      )
-      .all(room.id, CHAT_HISTORY_LIMIT)
+    const recentEntries = db.prepare(
+      `SELECT * FROM room_feed_entries
+       WHERE room_id = ? AND entry_type = ?
+         AND (event_type IS NULL OR event_type NOT IN ('participant_joined', 'participant_left'))
+       ORDER BY sequence DESC
+       LIMIT ?`,
+    )
+    return [
+      ...recentEntries.all(room.id, 'message', CHAT_HISTORY_LIMIT),
+      ...recentEntries.all(room.id, 'system', CHAT_HISTORY_LIMIT),
+    ]
+      .sort((left, right) => left.sequence - right.sequence)
       .map(serializeFeedEntry)
   }
 
@@ -485,8 +485,9 @@ function createRoomService(db, options = {}) {
       'SELECT started_at, started_at_estimated, added_by FROM songs WHERE room_id = ? AND started_at IS NOT NULL',
     ).all(room.id)
     let series
+    const statsNow = now()
     try {
-      series = buildPlaybackSeries(plays.map(({ started_at }) => Number(started_at)), now(), timeZone)
+      series = buildPlaybackSeries(plays.map(({ started_at }) => Number(started_at)), statsNow, timeZone)
     } catch (error) {
       if (!(error instanceof RangeError)) throw error
       throw new AppError(400, '시간대가 올바르지 않습니다.', 'INVALID_TIME_ZONE')
@@ -499,12 +500,15 @@ function createRoomService(db, options = {}) {
     ).all(room.id)
     const byParticipant = new Map()
     for (const play of plays) {
-      const totals = byParticipant.get(play.added_by) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      const totals = byParticipant.get(play.added_by) ?? { plays: 0, upvotes: 0, downvotes: 0, timestamps: [] }
       totals.plays += 1
+      totals.timestamps.push(Number(play.started_at))
       byParticipant.set(play.added_by, totals)
     }
     for (const voter of voters) {
-      const totals = byParticipant.get(voter.requester_participant_id) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      const totals = byParticipant.get(voter.requester_participant_id) ?? {
+        plays: 0, upvotes: 0, downvotes: 0, timestamps: [],
+      }
       totals.upvotes += Number(voter.upvotes)
       totals.downvotes += Number(voter.downvotes)
       byParticipant.set(voter.requester_participant_id, totals)
@@ -515,7 +519,7 @@ function createRoomService(db, options = {}) {
     const grouped = new Map()
     for (const record of participantRecords) {
       const key = record.user_id ? `account:${record.user_id}` : `guest:${record.id}`
-      const totals = byParticipant.get(record.id) ?? { plays: 0, upvotes: 0, downvotes: 0 }
+      const totals = byParticipant.get(record.id) ?? { plays: 0, upvotes: 0, downvotes: 0, timestamps: [] }
       const existing = grouped.get(key)
       grouped.set(key, {
         id: record.id,
@@ -525,13 +529,17 @@ function createRoomService(db, options = {}) {
         plays: (existing?.plays ?? 0) + totals.plays,
         upvotes: (existing?.upvotes ?? 0) + totals.upvotes,
         downvotes: (existing?.downvotes ?? 0) + totals.downvotes,
+        timestamps: [...(existing?.timestamps ?? []), ...totals.timestamps],
       })
     }
     const participants = [...grouped.values()]
       .filter((participant) => participant.active || participant.plays > 0)
       .sort((left, right) => right.plays - left.plays || right.upvotes - left.upvotes ||
         left.nickname.localeCompare(right.nickname))
-      .map(({ active, ...participant }) => participant)
+      .map(({ active, timestamps, ...participant }) => ({
+        ...participant,
+        ...buildPlaybackSeries(timestamps, statsNow, timeZone),
+      }))
     return {
       totalPlays: plays.length,
       totalUpvotes: voters.reduce((total, row) => total + Number(row.upvotes), 0),
@@ -540,6 +548,55 @@ function createRoomService(db, options = {}) {
       timeZone,
       ...series,
       participants,
+    }
+  }
+
+  function getRoomHistory(code, credentials, before = null, limit = ROOM_HISTORY_PAGE_SIZE) {
+    const room = getRoomRecord(code)
+    requireParticipant(room, credentials?.participantToken, credentials?.userId)
+    const pageSize = Number(limit)
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50) {
+      throw new AppError(400, '조회할 기록 수가 올바르지 않습니다.', 'INVALID_HISTORY_LIMIT')
+    }
+    let cursor = null
+    if (before !== null && before !== undefined) {
+      if (typeof before !== 'string' || !before || before.length > 100) {
+        throw new AppError(400, '재생 기록 위치가 올바르지 않습니다.', 'INVALID_HISTORY_CURSOR')
+      }
+      cursor = db.prepare(
+        `SELECT started_at, rowid FROM songs
+         WHERE room_id = ? AND id = ? AND status = 'played' AND started_at IS NOT NULL`,
+      ).get(room.id, before)
+      if (!cursor) {
+        throw new AppError(400, '재생 기록 위치가 올바르지 않습니다.', 'INVALID_HISTORY_CURSOR')
+      }
+    }
+    const rows = db.prepare(
+      `SELECT songs.id, songs.video_id, songs.title, songs.artist, songs.thumbnail_url,
+              songs.started_at, songs.started_at_estimated,
+              participants.nickname AS requester, participants.avatar_url AS requester_avatar_url
+       FROM songs JOIN participants ON participants.id = songs.added_by
+       WHERE songs.room_id = ? AND songs.status = 'played' AND songs.started_at IS NOT NULL
+         AND (? IS NULL OR songs.started_at < ?
+           OR (songs.started_at = ? AND songs.rowid < ?))
+       ORDER BY songs.started_at DESC, songs.rowid DESC
+       LIMIT ?`,
+    ).all(room.id, cursor?.started_at ?? null, cursor?.started_at ?? null,
+      cursor?.started_at ?? null, cursor?.rowid ?? null, pageSize + 1)
+    const page = rows.slice(0, pageSize)
+    return {
+      items: page.map((row) => ({
+        id: row.id,
+        videoId: row.video_id,
+        title: row.title,
+        artist: row.artist,
+        thumbnailUrl: row.thumbnail_url,
+        requester: row.requester,
+        requesterAvatarUrl: row.requester_avatar_url ?? null,
+        startedAt: Number(row.started_at),
+        startedAtEstimated: Boolean(row.started_at_estimated),
+      })),
+      nextCursor: rows.length > pageSize ? page.at(-1).id : null,
     }
   }
 
@@ -1510,6 +1567,7 @@ function createRoomService(db, options = {}) {
     leaveAccountRoom,
     getPublicRoom,
     getRoomStats,
+    getRoomHistory,
     getSongVote,
     setSongVote,
     getParticipantStatus,
