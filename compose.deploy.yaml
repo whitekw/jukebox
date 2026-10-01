@@ -1,6 +1,6 @@
 services:
   jukebox:
-    image: "ghcr.io/whitekw/jukebox:sha-c1ae06bd2fc4b786e834c4602afed8e3c936fb15"
+    image: "ghcr.io/whitekw/jukebox:sha-498b5390b0f72f99fb32b142b2da930e7857e09b"
     restart: unless-stopped
     init: true
     environment:
@@ -16,6 +16,7 @@ services:
       BROWSER_EXTENSION_IDS: "${BROWSER_EXTENSION_IDS:-}"
       AUTH_SESSION_TTL_DAYS: "${AUTH_SESSION_TTL_DAYS:-30}"
       AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
+      ADMIN_DISCORD_IDS: "${ADMIN_DISCORD_IDS:-}"
     ports:
       - "${JUKEBOX_PORT:-3001}:3001"
     volumes:
