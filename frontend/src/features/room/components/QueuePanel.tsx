@@ -1,76 +1,126 @@
+import { useState, type ReactNode } from 'react'
 import { SongList } from './SongList'
-import { Plus } from 'lucide-react'
+import { ChevronRight, Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn, panelStyles } from '../../../shared/styles'
-import type { Song } from '../types'
+import { cn, panelStyles } from '../../../shared/styles'
+import type { AutoplaySuggestion, Song } from '../types'
 
 type QueuePanelProps = {
   songs: Song[]
+  autoplaySuggestions: AutoplaySuggestion[]
+  historyAutoplay: boolean
   className?: string
   onReorder?: (songId: string, targetIndex: number) => void
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
   onRequestSong?: () => void
+  onClose?: () => void
+  onRefreshAutoplay?: () => Promise<void>
   onLibraryChange: () => void
   libraryRevision: number
+  footer?: ReactNode
 }
 
 export function QueuePanel({
   songs,
+  autoplaySuggestions,
+  historyAutoplay,
   className,
   onReorder,
   onRemove,
   canRemove,
   onRequestSong,
+  onClose,
+  onRefreshAutoplay,
   onLibraryChange,
   libraryRevision,
+  footer,
 }: QueuePanelProps) {
   const { t } = useI18n()
+  const [refreshingAutoplay, setRefreshingAutoplay] = useState(false)
+
+  async function refreshAutoplay() {
+    if (!onRefreshAutoplay || refreshingAutoplay) return
+    setRefreshingAutoplay(true)
+    try {
+      await onRefreshAutoplay()
+    } finally {
+      setRefreshingAutoplay(false)
+    }
+  }
 
   return (
     <section
       className={cn(
         panelStyles({ padding: 'none' }),
-        'flex min-h-0 flex-col p-4 sm:overflow-hidden sm:px-0 sm:py-3 room:overflow-y-auto room:overscroll-contain room:px-4 room:py-5 room:[scrollbar-width:none] room:[&::-webkit-scrollbar]:hidden',
+        'flex min-h-0 flex-col overflow-hidden p-4 sm:px-4 sm:py-5',
         className,
       )}
       aria-label={t('queue.title')}
+      id="room-queue-panel"
     >
-      <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-line px-1 pb-3 sm:max-room:justify-center sm:max-room:border-0 sm:max-room:px-2 sm:max-room:pb-0">
-        <h2 className="m-0 text-base font-bold text-ink sm:max-room:sr-only">{t('queue.title')}</h2>
-        <span className="font-mono text-xs text-muted sm:max-room:sr-only">
-          · {t('queue.countShort', { count: songs.length })}
-        </span>
+      <div className="mb-3 flex shrink-0 items-center gap-2 px-1">
+        {onClose && <button type="button" onClick={onClose}
+          className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted transition-colors hover:bg-white/[0.07] hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
+          aria-label={t('queue.hide')} title={t('queue.hide')}>
+          <ChevronRight size={17} aria-hidden="true" />
+        </button>}
+        <h2 className="m-0 text-xs font-semibold text-muted">
+          {t('queue.title')} <span className="font-mono font-normal">· {t('queue.countShort', { count: songs.length })}</span>
+        </h2>
         {onRequestSong && (
           <button
-            className={cn(
-              buttonStyles({ intent: 'outline', size: 'sm' }),
-              'ml-auto shrink-0 gap-2 rounded-md border-purple/25 bg-purple/[0.08] px-3 text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
-              'sm:max-room:ml-0 sm:max-room:size-11 sm:max-room:gap-0 sm:max-room:rounded-[4px] sm:max-room:border-purple-light/25 sm:max-room:bg-purple-light/10 sm:max-room:p-0 sm:max-room:hover:border-purple-light/50 sm:max-room:hover:bg-purple/25',
-            )}
+            className="ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-[4px] px-1 text-xs font-bold text-purple-light transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light"
             type="button"
             aria-haspopup="dialog"
             aria-label={t('search.requestSong')}
             title={t('search.requestSong')}
             onClick={onRequestSong}
           >
-            <Plus size={15} strokeWidth={2} aria-hidden="true" className="sm:max-room:size-[21px]" />
-            <span className="sm:max-room:sr-only">{t('search.requestSong')}</span>
+            <Plus size={15} strokeWidth={2} aria-hidden="true" />
+            <span>{t('search.requestSong')}</span>
           </button>
         )}
       </div>
-      <div className="flex flex-1 flex-col sm:max-room:min-h-0 sm:max-room:overflow-y-auto sm:max-room:overscroll-contain sm:max-room:px-2 sm:max-room:[scrollbar-width:none] sm:max-room:[&::-webkit-scrollbar]:hidden">
-        <SongList
-          songs={songs}
-          emptyMessage={t('host.emptyQueue')}
-          emptyDescription={t('queue.emptyDescription')}
-          onReorder={onReorder}
-          onRemove={onRemove}
-          canRemove={canRemove}
-          onLibraryChange={onLibraryChange}
-          libraryRevision={libraryRevision}
-        />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {(!historyAutoplay || songs.length > 0) && <>
+            <SongList
+              songs={songs}
+              emptyMessage={t('host.emptyQueue')}
+              emptyDescription={t('queue.emptyDescription')}
+              onReorder={onReorder}
+              onRemove={onRemove}
+              canRemove={canRemove}
+              onLibraryChange={onLibraryChange}
+              libraryRevision={libraryRevision}
+            />
+          </>}
+        {historyAutoplay && <div className={songs.length > 0 ? 'mt-5 border-t border-line pt-4' : ''}>
+          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+            <h3 className="text-xs font-semibold text-muted">{t('queue.autoplayNext')}</h3>
+            {onRefreshAutoplay && <button type="button" onClick={() => { void refreshAutoplay() }}
+              disabled={refreshingAutoplay} aria-label={t('queue.refreshAutoplay')}
+              title={t('queue.refreshAutoplay')}
+              className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted transition-colors hover:bg-white/[0.07] hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light disabled:opacity-50">
+              <RefreshCw size={15} className={refreshingAutoplay ? 'animate-spin' : ''} aria-hidden="true" />
+            </button>}
+          </div>
+          {autoplaySuggestions.length === 0 && <p className="px-1 text-xs leading-5 text-muted">{t('queue.autoplayUnavailable')}</p>}
+          <ol className="m-0 flex list-none flex-col gap-[7px] p-0">
+            {autoplaySuggestions.map((song) => <li key={song.id}
+              title={`${song.title} · ${song.artist}`}
+              className="flex min-h-[68px] items-center gap-[11px] rounded-[4px] border border-transparent bg-white/[0.035] p-2">
+              <img src={song.thumbnailUrl} alt="" loading="lazy"
+                className="size-14 shrink-0 rounded-[4px] bg-[#17151c] object-cover" />
+              <div className="flex min-w-0 flex-col">
+                <strong className="truncate text-[13px]">{song.title}</strong>
+                <span className="truncate text-[11px] text-muted">{song.artist}</span>
+              </div>
+            </li>)}
+          </ol>
+        </div>}
       </div>
+      {footer}
     </section>
   )
 }

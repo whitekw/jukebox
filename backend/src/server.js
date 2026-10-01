@@ -781,6 +781,11 @@ app.patch('/api/rooms/:code/settings', mutationLimiter, (req, res) => {
   res.json(emitRoom(req.params.code, state))
 })
 
+app.post('/api/rooms/:code/autoplay/refresh', mutationLimiter, (req, res) => {
+  const state = rooms.refreshAutoplaySuggestions(req.params.code, controlCredentials(req))
+  res.json(emitRoom(req.params.code, state))
+})
+
 app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res) => {
   const normalizedCode = normalizeCode(req.params.code)
   const target = rooms

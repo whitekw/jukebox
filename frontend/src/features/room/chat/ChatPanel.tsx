@@ -16,6 +16,7 @@ import {
 } from '../../../shared/i18n/i18n-context'
 import {
   buttonStyles,
+  chromeIconButtonStyles,
   cn,
   formControlStyles,
   panelCloseButtonStyles,
@@ -34,6 +35,9 @@ type ChatPanelProps = {
   currentParticipantId: string
   onSend: (content: string) => Promise<void>
   triggerContainer?: HTMLElement | null
+  mobileTriggerContainer?: HTMLElement | null
+  hideMobileFloatingTrigger?: boolean
+  onMobileTriggerClick?: () => void
 }
 
 function formatSystemMessage(message: SystemChatMessage, t: Translate) {
@@ -76,6 +80,9 @@ export function ChatPanel({
   currentParticipantId,
   onSend,
   triggerContainer,
+  mobileTriggerContainer,
+  hideMobileFloatingTrigger = false,
+  onMobileTriggerClick,
 }: ChatPanelProps) {
   const { locale, t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -187,7 +194,7 @@ export function ChatPanel({
     }
   }
 
-  function renderTrigger(className: string, iconSize: number) {
+  function renderTrigger(className: string, iconSize: number, beforeToggle?: () => void) {
     return (
       <button
         className={className}
@@ -196,7 +203,7 @@ export function ChatPanel({
         title={open ? t('chat.close') : t('chat.open')}
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={toggleChat}
+        onClick={() => { beforeToggle?.(); toggleChat() }}
       >
         {open ? <CloseIcon size={iconSize} /> : <MessageCircleIcon size={iconSize} />}
         {!open && unreadCount > 0 && (
@@ -424,9 +431,15 @@ export function ChatPanel({
         'relative grid size-11 shrink-0 place-items-center rounded-[4px] border border-purple-light/25 text-purple-light transition-colors hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light',
         open ? 'bg-purple/55 text-white' : 'bg-purple-light/20',
       ), 21), triggerContainer)}
+      {mobileTriggerContainer && createPortal(renderTrigger(
+        cn(chromeIconButtonStyles, 'relative text-white'),
+        19,
+        onMobileTriggerClick,
+      ), mobileTriggerContainer)}
       {renderTrigger(cn(
         'fixed right-4 bottom-[128px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 bg-purple/25 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48),0_0_28px_rgba(155,123,255,.16),inset_0_1px_0_rgba(255,255,255,.16)] backdrop-blur-xl transition-[transform,background-color,border-color] hover:scale-105 hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light sm:right-6 sm:bottom-[92px]',
         triggerContainer && 'sm:hidden',
+        hideMobileFloatingTrigger && 'max-[639px]:hidden',
       ), 25)}
     </>
   )

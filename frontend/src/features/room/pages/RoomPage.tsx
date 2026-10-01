@@ -9,7 +9,7 @@ import {
   type FormEvent,
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { History, WifiOff } from 'lucide-react'
+import { ChevronLeft, History, Menu, WifiOff } from 'lucide-react'
 import { roomApi } from '../api'
 import { Brand } from '../../../shared/ui/Brand'
 import { AccountMenu } from '../../auth/components/AccountMenu'
@@ -19,6 +19,7 @@ import { clampVolume, readPlayerAudioSettings, type PlayerAudioSettings } from '
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import {
   buttonStyles,
+  chromeIconButtonStyles,
   cn,
   noticeStyles,
   pageMessageStyles,
@@ -87,6 +88,8 @@ export function RoomPage() {
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
+  const [queueOpen, setQueueOpen] = useState(() => window.matchMedia('(min-width: 640px)').matches)
+  const [queuePeek, setQueuePeek] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<{ userId: string; playlist: Playlist } | null>(null)
   const [libraryRevision, setLibraryRevision] = useState(0)
   const [songControlTick, setSongControlTick] = useState(0)
@@ -97,6 +100,7 @@ export function RoomPage() {
   const [audioSettings, setAudioSettings] = useState<PlayerAudioSettings | null>(null)
   const lastAudibleVolume = useRef(50)
   const [chatTriggerContainer, setChatTriggerContainer] = useState<HTMLDivElement | null>(null)
+  const [mobileChatTriggerContainer, setMobileChatTriggerContainer] = useState<HTMLDivElement | null>(null)
   const wasAuthenticated = useRef(false)
   const joinUrl = useMemo(() => `${window.location.origin}/room/${code}`, [code])
   const queuedVideoIds = useMemo(() => new Set(room?.queue.map(({ videoId }) => videoId) ?? []), [room?.queue])
@@ -106,6 +110,10 @@ export function RoomPage() {
   function openSongRequest() {
     setSelectedPlaylist(null)
     setStatsOpen(false)
+    if (window.matchMedia('(max-width: 639px)').matches) {
+      setQueueOpen(false)
+      setQueuePeek(false)
+    }
     setRequestSongOpen(true)
   }
   function openPlaylist(playlist: Playlist) {
@@ -117,6 +125,10 @@ export function RoomPage() {
   function toggleStats() {
     setRequestSongOpen(false)
     setSelectedPlaylist(null)
+    if (window.matchMedia('(max-width: 639px)').matches) {
+      setQueueOpen(false)
+      setQueuePeek(false)
+    }
     setStatsOpen((current) => !current)
   }
   const serverNow = Date.now() + serverTimeOffsetMs
@@ -301,6 +313,9 @@ export function RoomPage() {
     serverTimeOffsetMs,
     pending: room.playbackPending,
   }
+  const saveRoomSettings = async (title: string, allowGuests: boolean, historyAutoplay: boolean) => {
+    setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests, historyAutoplay }))
+  }
 
   return (
     <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas bg-[radial-gradient(circle_at_15%_20%,rgba(96,72,163,.17),transparent_30%)]">
@@ -367,24 +382,32 @@ export function RoomPage() {
                 : undefined}
             />
           )}
-          <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests} />
+          <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests}
+            triggerClassName="hidden sm:inline-flex" />
           {isOwner && (
-            <RoomSettingsButton room={room} onSave={async (title, allowGuests) => {
-              setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests }))
-            }} />
+            <RoomSettingsButton room={room} onSave={saveRoomSettings}
+              triggerClassName="hidden sm:inline-flex" />
           )}
-          <AccountMenu
-            compact
-            logoutConfirmMessage={isHost && room.playbackMode === 'host_only'
-              ? t('auth.logoutHostConfirm')
-              : undefined}
-          />
+          <div className="hidden sm:block">
+            <AccountMenu
+              compact
+              logoutConfirmMessage={isHost && room.playbackMode === 'host_only'
+                ? t('auth.logoutHostConfirm')
+                : undefined}
+            />
+          </div>
+          <button type="button" className={cn(chromeIconButtonStyles, 'text-white sm:hidden')}
+            aria-label={t('room.openMenu')} title={t('room.openMenu')}
+            aria-controls="room-queue-panel" aria-expanded={queueOpen}
+            onClick={() => { setQueueOpen(true); setQueuePeek(false) }}>
+            <Menu size={22} aria-hidden="true" />
+          </button>
         </div>
       </header>
 
       <section className={cn(
         'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 sm:auto-rows-auto sm:gap-0 sm:overflow-hidden sm:p-0',
-        'sm:grid-cols-[72px_minmax(0,1fr)_72px] room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+        'sm:grid-cols-[72px_minmax(0,1fr)_auto]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined}
             statsOpen={statsOpen} onToggleStats={participant ? toggleStats : undefined}
@@ -506,44 +529,117 @@ export function RoomPage() {
                 libraryRevision={libraryRevision} message={message} roomError={error || roomError} />
             </Suspense>}
           </div>
-            <QueuePanel
-              className="min-h-[280px] sm:h-full sm:min-h-0 sm:rounded-none sm:border-y-0 sm:border-r-0 sm:bg-panel"
-              songs={room.queue}
-              onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
-              libraryRevision={libraryRevision}
-              onRequestSong={participant ? openSongRequest : undefined}
-              onReorder={
-                controlCredentials
-                  ? (songId, targetIndex) =>
-                      runQueueAction(() =>
-                        roomApi.reorderSong(
-                          code,
-                          controlCredentials,
-                          songId,
-                          targetIndex,
-                        ),
-                      )
-                  : undefined
-              }
-              onRemove={
-                songActionCredentials
-                  ? (songId) =>
-                      runQueueAction(() =>
-                        roomApi.removeSong(
-                          code,
-                          songActionCredentials,
-                          songId,
-                        ),
-                      )
-                  : undefined
-              }
-              canRemove={(song) => canControlSong(
-                song,
-                participant?.id,
-                isController,
-                serverNow,
+            {queueOpen && <button type="button"
+              className="fixed inset-0 z-[75] bg-black/60 sm:hidden"
+              aria-label={t('queue.hide')}
+              onClick={() => { setQueueOpen(false); setQueuePeek(false) }} />}
+            <div
+              className={cn(
+                'fixed inset-y-0 right-0 h-dvh transition-[width] duration-300 ease-out motion-reduce:transition-none sm:relative sm:inset-auto sm:z-30 sm:h-full',
+                queueOpen || queuePeek ? 'z-[80]' : 'z-[65]',
+                queueOpen
+                  ? 'w-[calc(100vw-24px)] max-w-[360px] sm:w-[360px] 2xl:w-[400px] 2xl:max-w-[400px]'
+                  : 'w-0',
               )}
-            />
+              onPointerEnter={(event) => {
+                if (!queueOpen && event.pointerType === 'mouse' && window.matchMedia('(min-width: 640px)').matches) {
+                  setQueuePeek(true)
+                }
+              }}
+              onPointerLeave={() => { if (!queueOpen) setQueuePeek(false) }}
+              onClick={() => {
+                if (!queueOpen && window.matchMedia('(min-width: 640px)').matches) {
+                  setQueueOpen(true)
+                  setQueuePeek(false)
+                }
+              }}
+            >
+              <div className={cn(
+                'absolute inset-y-0 right-0 overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none',
+                queueOpen
+                  ? 'w-[calc(100vw-24px)] max-w-[360px] sm:w-[360px] 2xl:w-[400px] 2xl:max-w-[400px]'
+                  : queuePeek ? 'w-0 sm:w-12' : 'w-0 sm:w-3',
+              )}>
+                <div className="relative h-full w-[calc(100vw-24px)] max-w-[360px] bg-canvas sm:w-[360px] 2xl:w-[400px] 2xl:max-w-[400px]"
+                  inert={!queueOpen} aria-hidden={!queueOpen}>
+                  <QueuePanel
+                    className="h-full min-h-0 rounded-none border-y-0 border-r-0 bg-canvas sm:bg-panel"
+                    onClose={queueOpen ? () => { setQueueOpen(false); setQueuePeek(false) } : undefined}
+                    songs={room.queue}
+                    autoplaySuggestions={room.autoplaySuggestions}
+                    historyAutoplay={room.historyAutoplay}
+                    onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
+                    libraryRevision={libraryRevision}
+                    onRequestSong={participant ? openSongRequest : undefined}
+                    onRefreshAutoplay={controlCredentials
+                      ? () => runQueueAction(() => roomApi.refreshAutoplaySuggestions(code, controlCredentials))
+                      : undefined}
+                    onReorder={
+                      controlCredentials
+                        ? (songId, targetIndex) =>
+                            runQueueAction(() =>
+                              roomApi.reorderSong(
+                                code,
+                                controlCredentials,
+                                songId,
+                                targetIndex,
+                              ),
+                            )
+                        : undefined
+                    }
+                    onRemove={
+                      songActionCredentials
+                        ? (songId) =>
+                            runQueueAction(() =>
+                              roomApi.removeSong(
+                                code,
+                                songActionCredentials,
+                                songId,
+                              ),
+                            )
+                        : undefined
+                    }
+                    canRemove={(song) => canControlSong(
+                      song,
+                      participant?.id,
+                      isController,
+                      serverNow,
+                    )}
+                    footer={queueOpen && <nav
+                      className="mt-3 flex shrink-0 items-center justify-between gap-1 border-t border-line px-1 pt-3 sm:hidden"
+                      aria-label={t('room.mobileMenu')}>
+                      {participant && <div ref={setMobileChatTriggerContainer} className="size-10 shrink-0" />}
+                      {participant && <button type="button"
+                        className={cn(chromeIconButtonStyles, 'text-white')}
+                        aria-label={t('stats.open')} title={t('stats.open')}
+                        aria-pressed={statsOpen} onClick={toggleStats}>
+                        <History size={19} aria-hidden="true" />
+                      </button>}
+                      {isOwner && <RoomSettingsButton room={room} onSave={saveRoomSettings}
+                        triggerClassName="text-white" />}
+                      <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests}
+                        triggerClassName="text-white" />
+                      <AccountMenu compact menuPlacement="above"
+                        logoutConfirmMessage={isHost && room.playbackMode === 'host_only'
+                          ? t('auth.logoutHostConfirm')
+                          : undefined} />
+                    </nav>}
+                  />
+                  {!queueOpen && <div aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 bg-black/25" />}
+                </div>
+              </div>
+              {!queueOpen && <button type="button"
+                className="absolute top-1/2 right-0 z-10 hidden h-full w-11 -translate-y-1/2 items-center justify-center bg-transparent text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-purple-light sm:flex"
+                aria-label={t('queue.show')}
+                title={t('queue.show')}
+                aria-controls="room-queue-panel"
+                aria-expanded={false}
+                onClick={() => { setQueueOpen(true); setQueuePeek(false) }}>
+                <ChevronLeft size={18} aria-hidden="true"
+                  className={cn('shrink-0 drop-shadow-[0_1px_4px_rgba(0,0,0,.9)] transition-opacity', queuePeek ? 'opacity-100' : 'opacity-0')} />
+              </button>}
+            </div>
       </section>
 
       <RoomPlaybackBar
@@ -594,13 +690,6 @@ export function RoomPage() {
             : undefined
         }
       />
-      {participant && <button type="button"
-        className={cn(
-          'fixed right-4 bottom-[196px] z-[70] grid size-14 place-items-center rounded-[4px] border border-purple-light/30 text-purple-light shadow-[0_12px_38px_rgba(0,0,0,.48)] backdrop-blur-xl transition-colors hover:border-purple-light/45 hover:bg-purple/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-light sm:hidden',
-          statsOpen ? 'bg-purple/55 text-white' : 'bg-purple/25',
-        )}
-        aria-label={t('stats.open')} title={t('stats.open')} aria-pressed={statsOpen}
-        onClick={toggleStats}><History size={25} aria-hidden="true" /></button>}
       {participant && (
         <ChatPanel
           roomCode={code}
@@ -608,6 +697,9 @@ export function RoomPage() {
           participants={room.participants}
           currentParticipantId={participant.id}
           triggerContainer={chatTriggerContainer}
+          mobileTriggerContainer={mobileChatTriggerContainer}
+          hideMobileFloatingTrigger
+          onMobileTriggerClick={() => { setQueueOpen(false); setQueuePeek(false) }}
           onSend={sendChatMessage}
         />
       )}

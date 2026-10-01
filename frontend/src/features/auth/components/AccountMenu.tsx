@@ -8,9 +8,11 @@ import { buttonStyles, chromeIconButtonStyles, cn } from '../../../shared/styles
 export function AccountMenu({
   compact = false,
   logoutConfirmMessage,
+  menuPlacement = 'header',
 }: {
   compact?: boolean
   logoutConfirmMessage?: string
+  menuPlacement?: 'header' | 'above'
 }) {
   const { enabled, loading, user, loginUrl, logout } = useAuth()
   const { t } = useI18n()
@@ -133,7 +135,10 @@ export function AccountMenu({
           id={menuId}
           ref={menuRef}
           className={cn(
-            'fixed top-[72px] right-5 z-[80] w-[min(240px,calc(100vw-40px))] overflow-hidden rounded-2xl sm:absolute sm:top-[calc(100%+10px)] sm:right-0',
+            'w-[min(240px,calc(100vw-40px))] overflow-hidden rounded-2xl',
+            menuPlacement === 'above'
+              ? 'absolute right-0 bottom-[calc(100%+10px)] z-[90]'
+              : 'fixed top-[72px] right-5 z-[80] sm:absolute sm:top-[calc(100%+10px)] sm:right-0',
             'border border-white/[0.12] bg-[#17141e] p-1.5 shadow-[0_12px_36px_rgba(0,0,0,.35)]',
           )}
           role="menu"

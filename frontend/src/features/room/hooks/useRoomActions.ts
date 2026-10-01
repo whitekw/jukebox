@@ -46,11 +46,13 @@ export function useRoomActions({
     await runRoomAction(action)
   }
 
-  function runQueueAction(action: RoomAction) {
+  async function runQueueAction(action: RoomAction) {
     setError('')
-    void runRoomAction(action).catch((requestError) => {
+    try {
+      await runRoomAction(action)
+    } catch (requestError) {
       setError(getErrorMessage(requestError, t))
-    })
+    }
   }
 
   async function addSong(videoId: string) {

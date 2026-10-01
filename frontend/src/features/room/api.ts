@@ -274,6 +274,7 @@ export const roomApi = {
       hostVolume?: number
       title?: string
       allowGuests?: boolean
+      historyAutoplay?: boolean
     },
   ) {
     return request<RoomState>(
@@ -284,6 +285,14 @@ export const roomApi = {
         body: JSON.stringify(settings),
       },
     )
+  },
+
+  refreshAutoplaySuggestions(code: string, credentials: ControlCredentials) {
+    return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/autoplay/refresh`, {
+      method: 'POST',
+      headers: controlHeaders(credentials),
+      body: '{}',
+    })
   },
 
   setManager(

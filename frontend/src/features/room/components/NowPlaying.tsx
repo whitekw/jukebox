@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Music2 as MusicIcon, Play as PlayIcon, Plus } from 'lucide-react'
+import { Music2 as MusicIcon, Play as PlayIcon, Plus, Shuffle } from 'lucide-react'
 import type { Song } from '../types'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn, vinylStyles } from '../../../shared/styles'
@@ -46,14 +46,14 @@ export const NowPlaying = ({
             </div>
             <div className="flex max-w-full min-w-0 items-center gap-2 text-sm text-muted">
               <span className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full border border-purple/30 bg-purple/20 text-xs font-bold text-purple-light">
-                {song.addedByAvatarUrl ? (
+                {song.isAutoplay ? <Shuffle size={14} aria-hidden="true" /> : song.addedByAvatarUrl ? (
                   <img className="size-full object-cover" src={song.addedByAvatarUrl} alt="" />
                 ) : (
                   song.addedBy.trim().slice(0, 1).toUpperCase()
                 )}
               </span>
-              <span className="truncate" title={t('song.requestedBy', { nickname: song.addedBy })}>
-                {t('song.requestedBy', { nickname: song.addedBy })}
+              <span className="truncate" title={song.isAutoplay ? t('queue.autoplay') : t('song.requestedBy', { nickname: song.addedBy })}>
+                {song.isAutoplay ? t('queue.autoplay') : t('song.requestedBy', { nickname: song.addedBy })}
               </span>
             </div>
             {!player && onClaimPlaybackHost && (
