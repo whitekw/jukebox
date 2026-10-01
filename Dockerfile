@@ -11,6 +11,14 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+FROM build-base AS admin-build
+
+WORKDIR /app/admin
+COPY admin/package.json admin/package-lock.json ./
+RUN npm ci
+COPY admin/ ./
+RUN npm run build
+
 FROM build-base AS backend-dependencies
 
 WORKDIR /app/backend
@@ -29,6 +37,7 @@ COPY --from=backend-dependencies --chown=node:node /app/backend/node_modules ./n
 COPY --chown=node:node backend/package.json ./package.json
 COPY --chown=node:node backend/src ./src
 COPY --from=frontend-build --chown=node:node /app/frontend/dist /app/frontend/dist
+COPY --from=admin-build --chown=node:node /app/admin/dist /app/admin/dist
 
 RUN mkdir -p /app/data && chown node:node /app/data
 

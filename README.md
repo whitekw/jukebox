@@ -20,6 +20,7 @@
 - 참여자 전용 실시간 방 채팅과 대기열 제어·재생·관리자 활동 로그
 - SQLite 영속 저장과 사용자가 직접 삭제하기 전까지 유지되는 계정 소유 방
 - 호스트·참여자 토큰 해시 검증과 기본 요청 제한
+- 별도 React 운영 대시보드와 운영자 감사 기록
 
 ## 구조
 
@@ -32,6 +33,9 @@ backend (Express)
        ├─ Socket.IO: 룸 상태·채팅 브로드캐스트
        ├─ Discord OAuth2: 계정 로그인
        └─ YouTube Data API: 검색 및 영상 검증
+
+admin (React + Vite + Tailwind CSS + shadcn/ui)
+       └─ 같은 출처의 /admin/ 및 /api/admin/* 사용
 ```
 
 영상 스트림은 백엔드를 거치지 않습니다. 호스트 전용 모드에서는 호스트 브라우저만, 모든 기기 모드에서는 각 브라우저가 YouTube 공식 플레이어에서 직접 재생합니다.
@@ -59,11 +63,14 @@ DISCORD_CLIENT_SECRET=your_discord_client_secret
 DISCORD_REDIRECT_URI=http://localhost:5173/api/auth/discord/callback
 AUTH_SESSION_TTL_DAYS=30
 AUTH_COOKIE_SECURE=false
+ADMIN_DISCORD_IDS=123456789012345678
 ```
 
 리버스 프록시 뒤에서 운영한다면 실제 클라이언트 IP를 요청 제한에 사용하도록 `TRUST_PROXY=true`로 설정합니다.
 
 Discord Developer Portal에서 OAuth2 Redirect URI를 `DISCORD_REDIRECT_URI`와 완전히 동일하게 등록해야 합니다. 운영 주소가 HTTPS라면 `AUTH_COOKIE_SECURE=true`를 사용합니다. 방 생성은 로그인이 필수이므로 세 Discord 환경 변수를 모두 설정해야 합니다. 로그인하지 않은 사용자도 기존 방에는 참여할 수 있습니다.
+
+운영 화면은 `ADMIN_DISCORD_IDS`에 Discord 사용자 ID를 쉼표로 나열한 계정만 접근할 수 있습니다. 비어 있으면 모든 계정의 운영 API 접근이 거부됩니다. 방 관리자 권한과 시스템 운영자 권한은 별개입니다. 운영 화면은 전체 현황, 방·사용자 검색, 긴급 재생 일시정지/재개, 사용자 웹 로그인 세션 해제, 감사 기록을 제공합니다. YouTube API 할당량 사용량은 현재 저장하지 않아 표시하지 않습니다.
 
 ## 개발 실행
 
@@ -85,10 +92,22 @@ npm run dev
 
 브라우저에서 `http://localhost:5173`을 엽니다. Vite가 API와 WebSocket 요청을 `localhost:3001`로 프록시합니다.
 
+운영 화면은 별도 터미널에서 실행합니다. Discord 로그인을 먼저 `http://localhost:5173`에서 완료한 뒤 동일한 `localhost` 호스트의 `http://localhost:5174/admin/`에 접속하세요. 개발 서버 포트가 달라도 쿠키의 호스트가 같아 로그인 세션을 공유합니다.
+
+```powershell
+cd admin
+npm install
+npm run dev
+```
+
 ## 프로덕션 실행
 
 ```powershell
 cd frontend
+npm ci
+npm run build
+
+cd ..\admin
 npm ci
 npm run build
 
@@ -97,7 +116,7 @@ npm ci
 npm start
 ```
 
-Express가 `frontend/dist`를 정적 파일로 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 운영 환경에서는 Nginx Proxy Manager에서 HTTPS를 종료하고 Express로 프록시합니다. Discord Developer Portal과 `DISCORD_REDIRECT_URI`에 동일한 HTTPS callback을 등록하고 `AUTH_COOKIE_SECURE=true`를 사용하세요. WebSocket 업그레이드도 허용해야 합니다.
+Express가 `frontend/dist`와 `admin/dist`를 각각 `/`와 `/admin/`에서 제공하므로 외부에는 백엔드 포트 하나만 노출하면 됩니다. 운영 환경에서는 Nginx Proxy Manager에서 HTTPS를 종료하고 Express로 프록시합니다. Discord Developer Portal과 `DISCORD_REDIRECT_URI`에 동일한 HTTPS callback을 등록하고 `AUTH_COOKIE_SECURE=true`를 사용하세요. WebSocket 업그레이드도 허용해야 합니다.
 
 Windows용 Electron 앱의 실행과 설치 파일 빌드는 [`desktop/README.md`](./desktop/README.md)를 참고하세요. Chrome 확장 프로그램의 로컬 설치·Discord 연결은 [`extension/README.md`](./extension/README.md)를 참고하세요.
 

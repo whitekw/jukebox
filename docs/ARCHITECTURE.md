@@ -139,6 +139,8 @@ flowchart TB
 
 코드는 `app`, `features/auth`, `features/home`, `features/room`, `shared`로 나눕니다. `app`은 라우트와 Provider를 조립하고, 각 feature가 화면·상태·API·타입을 소유합니다. `shared`는 HTTP 클라이언트, 번역, 스타일, 공통 UI처럼 기능에 종속되지 않는 코드만 둡니다. 인증 API와 번역 설정 API는 방 API와 분리되어 있습니다. `auth`의 UI는 `components`에 두고, `room`은 `pages`, `hooks`, `components`, `chat`, `playback`으로 나눕니다. 파일이 적은 `home`은 평평한 구조를 유지합니다.
 
+시스템 운영용 `admin/`은 별도 Vite React 빌드입니다. 기본 shadcn/ui·Tailwind 디자인을 쓰며 `/admin/`에 배포됩니다. 같은 Express 인스턴스의 `/api/admin/*`만 조회·변경에 사용하고, Discord ID 허용 목록으로 서버에서 권한을 검사합니다. 방 호스트·관리자는 운영 권한을 얻지 않습니다. 운영 변경은 `admin_audit_entries`에 기록됩니다.
+
 ### 라우트
 
 | 경로 | 화면 | 역할 |

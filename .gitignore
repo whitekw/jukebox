@@ -3,6 +3,7 @@
 
 # Build and test output
 frontend/dist/
+admin/dist/
 frontend/dist-ssr/
 backend/dist/
 desktop/release/
