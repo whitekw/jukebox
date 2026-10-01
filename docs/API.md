@@ -39,7 +39,7 @@ type RoomState = {
   allowGuests: boolean
   historyAutoplay: boolean
   autoplayHistoryCount: number
-  autoplaySuggestions: Array<{ videoId: string; title: string; artist: string; durationSeconds: number; thumbnailUrl: string }>
+  autoplaySuggestions: Array<{ id: string; videoId: string; title: string; artist: string; durationSeconds: number; thumbnailUrl: string }>
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -85,7 +85,7 @@ type Song = {
 
 `otherControlAvailableAt`은 신청자가 방을 나갔거나 연결이 끊긴 뒤 다른 참여자가 그 곡을 삭제·건너뛸 수 있게 되는 epoch ms 시각입니다. 신청자가 온라인이면 `null`입니다.
 
-`historyAutoplay`은 방 소유자가 설정한 재생기록 자동 재생 상태입니다. `autoplayHistoryCount`는 직접 신청되어 완료된 이전 재생 기록의 건수이며, 10건 이상일 때만 자동 재생을 켤 수 있습니다. `autoplaySuggestions`는 직접 추가한 대기열 뒤에 재생될 수 있는 10분 이하의 이전 곡 최대 5개입니다. 같은 영상은 한 번만 후보가 되고 직접 추가한 대기열의 영상은 제외됩니다. 현재 곡과 최근 재생 곡은 다른 후보가 있을 때 우선 제외됩니다. 예정 목록은 곡이 바뀌면 다시 선정될 수 있으며, 재생되기 전에는 별도 신청 건으로 저장되지 않습니다.
+`historyAutoplay`은 방 소유자가 설정한 재생기록 자동 재생 상태입니다. `autoplayHistoryCount`는 직접 신청되어 완료된 이전 재생 기록의 건수이며, 10건 이상일 때만 자동 재생을 켤 수 있습니다. `autoplaySuggestions`는 직접 추가한 대기열 뒤에 재생될 10분 이하의 이전 곡 최대 20개입니다. 같은 영상은 한 번만 표시하므로 가능한 후보가 20곡보다 적으면 있는 곡만 보여주고, 직접 추가한 대기열의 영상은 제외합니다. 현재 곡과 최근 재생 곡은 다른 후보가 있을 때 우선 제외합니다. 예정 순서는 저장되며, 자동 재생이 시작되면 첫 곡이 빠지고 중복되지 않는 다른 후보가 있을 때만 맨 아래에 새 곡이 추가됩니다. 예정 곡은 재생되기 전에는 별도 신청 건으로 저장되지 않습니다.
 
 `upvotes`와 `downvotes`는 현재 곡의 공개 추천·비추천 수입니다. `voteRevision`은 늦게 도착한 이전 투표 응답이 최신 수치를 덮어쓰지 않도록 하는 곡별 순번입니다. 투표자 정보는 `RoomState`에 포함되지 않습니다.
 

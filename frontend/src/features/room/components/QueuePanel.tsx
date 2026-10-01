@@ -64,9 +64,7 @@ export function QueuePanel({
         )}
       </div>
       <div className="flex flex-1 flex-col sm:max-room:min-h-0 sm:max-room:overflow-y-auto sm:max-room:overscroll-contain sm:max-room:px-2 sm:max-room:[scrollbar-width:none] sm:max-room:[&::-webkit-scrollbar]:hidden">
-        {historyAutoplay && songs.length === 0
-          ? <p className="mb-4 px-2 text-xs text-muted sm:max-room:sr-only">{t('host.emptyQueue')}</p>
-          : <>
+        {(!historyAutoplay || songs.length > 0) && <>
             {historyAutoplay && songs.length > 0 && <h3 className="mb-3 px-1 text-xs font-semibold text-muted sm:max-room:sr-only">{t('queue.requestedNext')}</h3>}
             <SongList
               songs={songs}
@@ -79,11 +77,11 @@ export function QueuePanel({
               libraryRevision={libraryRevision}
             />
           </>}
-        {historyAutoplay && <div className="mt-5 border-t border-line pt-4 sm:max-room:mt-2 sm:max-room:pt-2">
+        {historyAutoplay && <div className={songs.length > 0 ? 'mt-5 border-t border-line pt-4 sm:max-room:mt-2 sm:max-room:pt-2' : ''}>
           <h3 className="mb-3 px-1 text-xs font-semibold text-muted sm:max-room:sr-only">{t('queue.autoplayNext')}</h3>
           {autoplaySuggestions.length === 0 && <p className="px-1 text-xs leading-5 text-muted sm:max-room:sr-only">{t('queue.autoplayUnavailable')}</p>}
           <ol className="m-0 flex list-none flex-col gap-[7px] p-0 sm:max-room:items-center sm:max-room:gap-2">
-            {autoplaySuggestions.map((song) => <li key={song.videoId}
+            {autoplaySuggestions.map((song) => <li key={song.id}
               title={`${song.title} · ${song.artist}`}
               className="flex min-h-[68px] items-center gap-[11px] rounded-[4px] border border-transparent bg-white/[0.035] p-2 sm:max-room:size-11 sm:max-room:min-h-0 sm:max-room:shrink-0 sm:max-room:gap-0 sm:max-room:border-0 sm:max-room:p-0">
               <img src={song.thumbnailUrl} alt="" loading="lazy"

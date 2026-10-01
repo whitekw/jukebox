@@ -39,6 +39,7 @@ export type RoomState = {
 }
 
 export type AutoplaySuggestion = {
+  id: string
   videoId: string
   title: string
   artist: string

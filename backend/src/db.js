@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 8
+const SCHEMA_VERSION = 9
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -131,6 +131,18 @@ function createDatabase(databasePath = ':memory:') {
       PRIMARY KEY (song_id, voter_participant_id)
     );
 
+    CREATE TABLE IF NOT EXISTS room_autoplay_suggestions (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      video_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      thumbnail_url TEXT NOT NULL,
+      UNIQUE(room_id, position)
+    );
+
     CREATE TABLE IF NOT EXISTS library_tracks (
       video_id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -188,6 +200,8 @@ function createDatabase(databasePath = ':memory:') {
       ON song_votes(song_id, vote);
     CREATE INDEX IF NOT EXISTS song_votes_by_room_requester
       ON song_votes(room_id, requester_participant_id, vote);
+    CREATE INDEX IF NOT EXISTS room_autoplay_suggestions_by_room_position
+      ON room_autoplay_suggestions(room_id, position);
     CREATE UNIQUE INDEX IF NOT EXISTS one_favorites_playlist_per_user
       ON playlists(owner_user_id) WHERE kind = 'favorites';
     CREATE INDEX IF NOT EXISTS playlist_tracks_by_playlist_added

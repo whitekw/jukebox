@@ -42,8 +42,26 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     assert.equal(enabled.historyAutoplay, true)
     assert.equal(enabled.currentSong.isAutoplay, true)
     assert.ok(enabled.currentSong.durationSeconds <= 600)
+    assert.equal(enabled.autoplaySuggestions.length, 8)
+    assert.equal(new Set(enabled.autoplaySuggestions.map(({ videoId }) => videoId)).size,
+      enabled.autoplaySuggestions.length)
     assert.ok(enabled.autoplaySuggestions.every(({ durationSeconds }) => durationSeconds <= 600))
+    assert.ok(enabled.autoplaySuggestions.every(({ videoId }) => videoId !== 'video-9'))
+    assert.deepEqual(createRoomService(db).getPublicRoom(created.code).autoplaySuggestions,
+      enabled.autoplaySuggestions)
     assert.equal(enabled.participants.some(({ nickname }) => nickname === '자동 재생'), false)
+
+    const roomId = db.prepare('SELECT id FROM rooms WHERE code = ?').get(created.code).id
+    const duplicate = enabled.autoplaySuggestions[0]
+    db.prepare(`INSERT INTO room_autoplay_suggestions
+      (id, room_id, position, video_id, title, artist, duration_seconds, thumbnail_url)
+      VALUES ('stale-duplicate', ?, 1000, ?, ?, ?, ?, ?)`).run(
+      roomId, duplicate.videoId, duplicate.title, duplicate.artist,
+      duplicate.durationSeconds, duplicate.thumbnailUrl,
+    )
+    assert.deepEqual(rooms.getPublicRoom(created.code).autoplaySuggestions,
+      enabled.autoplaySuggestions)
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM room_autoplay_suggestions WHERE id = 'stale-duplicate'").get().count, 0)
 
     const firstAutoplayId = enabled.currentSong.id
     const manual = rooms.addSong(created.code, requester.participantToken, song(10), 'requester')
@@ -52,10 +70,17 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     assert.equal(next.currentSong.videoId, 'video-10')
     assert.equal(next.currentSong.isAutoplay, false)
     assert.equal(next.autoplayHistoryCount, 10)
+    assert.deepEqual(next.autoplaySuggestions.slice(0, manual.autoplaySuggestions.length),
+      manual.autoplaySuggestions)
     const afterManual = rooms.advance(created.code, { hostToken: created.hostToken })
     assert.equal(afterManual.currentSong.isAutoplay, true)
     assert.notEqual(afterManual.currentSong.id, firstAutoplayId)
     assert.equal(afterManual.currentSong.videoId, next.autoplaySuggestions[0].videoId)
+    assert.ok(afterManual.autoplaySuggestions.length <= 20)
+    assert.deepEqual(afterManual.autoplaySuggestions.slice(0, next.autoplaySuggestions.length - 1),
+      next.autoplaySuggestions.slice(1))
+    assert.equal(new Set(afterManual.autoplaySuggestions.map(({ videoId }) => videoId)).size,
+      afterManual.autoplaySuggestions.length)
 
     const requesterCredentials = { participantToken: requester.participantToken, userId: 'requester' }
     assert.equal(rooms.getSongVote(created.code, requesterCredentials, afterManual.currentSong.id).canVote, true)
@@ -73,6 +98,33 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     const stopped = rooms.advance(created.code, { hostToken: created.hostToken })
     assert.equal(stopped.currentSong, null)
     assert.deepEqual(stopped.autoplaySuggestions, [])
+  } finally {
+    db.close()
+  }
+})
+
+test('autoplay previews at most twenty distinct videos and drops a newly queued video', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
+    for (let index = 0; index < 22; index += 1) {
+      rooms.addSong(created.code, created.participantToken, song(index), 'owner')
+      rooms.advance(created.code, { hostToken: created.hostToken })
+    }
+    const enabled = rooms.updateRoomSettings(created.code, { userId: 'owner' }, { historyAutoplay: true })
+    assert.equal(enabled.autoplaySuggestions.length, 20)
+    assert.equal(new Set(enabled.autoplaySuggestions.map(({ videoId }) => videoId)).size, 20)
+
+    const queuedVideoId = enabled.autoplaySuggestions[5].videoId
+    const queued = rooms.addSong(created.code, created.participantToken,
+      { ...song(100), videoId: queuedVideoId }, 'owner')
+    assert.equal(queued.queue[0].videoId, queuedVideoId)
+    assert.equal(queued.autoplaySuggestions.length, 20)
+    assert.ok(queued.autoplaySuggestions.every(({ videoId }) => videoId !== queuedVideoId))
+    assert.equal(new Set(queued.autoplaySuggestions.map(({ videoId }) => videoId)).size, 20)
   } finally {
     db.close()
   }

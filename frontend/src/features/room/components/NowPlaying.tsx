@@ -52,8 +52,8 @@ export const NowPlaying = ({
                   song.addedBy.trim().slice(0, 1).toUpperCase()
                 )}
               </span>
-              <span className="truncate" title={song.isAutoplay ? t('queue.autoplayNext') : t('song.requestedBy', { nickname: song.addedBy })}>
-                {song.isAutoplay ? t('queue.autoplayNext') : t('song.requestedBy', { nickname: song.addedBy })}
+              <span className="truncate" title={song.isAutoplay ? t('queue.autoplay') : t('song.requestedBy', { nickname: song.addedBy })}>
+                {song.isAutoplay ? t('queue.autoplay') : t('song.requestedBy', { nickname: song.addedBy })}
               </span>
             </div>
             {!player && onClaimPlaybackHost && (

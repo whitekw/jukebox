@@ -12,7 +12,7 @@ const CHAT_HISTORY_LIMIT = 100
 const ROOM_HISTORY_PAGE_SIZE = 30
 const AUTOPLAY_MIN_HISTORY = 10
 const AUTOPLAY_MAX_DURATION_SECONDS = 600
-const AUTOPLAY_PREVIEW_SIZE = 5
+const AUTOPLAY_PREVIEW_SIZE = 20
 const ABANDONED_SONG_GRACE_MS = 60_000
 const ROOM_EVENT_TYPES = new Set([
   'song_added',
@@ -246,9 +246,23 @@ function createRoomService(db, options = {}) {
 
   function getAutoplaySuggestions(room) {
     if (!room.history_autoplay || getAutoplayHistoryCount(room.id) < AUTOPLAY_MIN_HISTORY) return []
+    // Keep the order in the database so starting a song only shifts the preview by one.
     const queuedVideos = new Set(db.prepare(
       "SELECT video_id FROM songs WHERE room_id = ? AND status = 'queued'",
     ).all(room.id).map(({ video_id }) => video_id))
+    const pending = db.prepare(
+      'SELECT * FROM room_autoplay_suggestions WHERE room_id = ? ORDER BY position',
+    ).all(room.id)
+    const removeSuggestion = db.prepare('DELETE FROM room_autoplay_suggestions WHERE id = ?')
+    const seenVideos = new Set()
+    const suggestions = pending.filter((suggestion) => {
+      if (queuedVideos.has(suggestion.video_id) || seenVideos.has(suggestion.video_id)) {
+        removeSuggestion.run(suggestion.id)
+        return false
+      }
+      seenVideos.add(suggestion.video_id)
+      return true
+    })
     const currentVideoId = room.current_song_id
       ? db.prepare('SELECT video_id FROM songs WHERE id = ?').get(room.current_song_id)?.video_id
       : null
@@ -268,23 +282,32 @@ function createRoomService(db, options = {}) {
       `SELECT video_id FROM songs WHERE room_id = ? AND status = 'played'
        ORDER BY started_at DESC, rowid DESC LIMIT ?`,
     ).all(room.id, room.current_song_id ? 4 : 5).map(({ video_id }) => video_id))
-    const pool = choices.filter(({ video_id }) => !recentVideos.has(video_id))
-    const available = pool.length ? pool : choices
-    const seed = `${room.id}:${room.current_song_id ?? 'idle'}`
-    return available
-      .map((song) => ({
-        ...song,
-        order: crypto.createHash('sha256').update(`${seed}:${song.video_id}`).digest('hex'),
-      }))
-      .sort((left, right) => left.order.localeCompare(right.order))
-      .slice(0, AUTOPLAY_PREVIEW_SIZE)
-      .map((song) => ({
-        videoId: song.video_id,
-        title: song.title,
-        artist: song.artist,
-        durationSeconds: song.duration_seconds,
-        thumbnailUrl: song.thumbnail_url,
-      }))
+    const insertSuggestion = db.prepare(
+      `INSERT INTO room_autoplay_suggestions
+       (id, room_id, position, video_id, title, artist, duration_seconds, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    let position = suggestions.at(-1)?.position ?? 0
+    while (suggestions.length < AUTOPLAY_PREVIEW_SIZE) {
+      let pool = choices.filter(({ video_id }) => !seenVideos.has(video_id))
+      if (!pool.length) break
+      const nonRecent = pool.filter(({ video_id }) => !recentVideos.has(video_id))
+      if (nonRecent.length) pool = nonRecent
+      const candidate = pool[crypto.randomInt(pool.length)]
+      const suggestion = { id: crypto.randomUUID(), position: ++position, ...candidate }
+      insertSuggestion.run(suggestion.id, room.id, suggestion.position, candidate.video_id,
+        candidate.title, candidate.artist, candidate.duration_seconds, candidate.thumbnail_url)
+      suggestions.push(suggestion)
+      seenVideos.add(candidate.video_id)
+    }
+    return suggestions.map((suggestion) => ({
+      id: suggestion.id,
+      videoId: suggestion.video_id,
+      title: suggestion.title,
+      artist: suggestion.artist,
+      durationSeconds: suggestion.duration_seconds,
+      thumbnailUrl: suggestion.thumbnail_url,
+    }))
   }
 
   function ensureAutoplayParticipant(room, createdAt) {
@@ -1186,6 +1209,7 @@ function createRoomService(db, options = {}) {
       ).run(id, room.id, suggestion.videoId, suggestion.title, suggestion.artist,
         suggestion.durationSeconds, suggestion.thumbnailUrl,
         ensureAutoplayParticipant(room, changedAt), changedAt, changedAt)
+      db.prepare('DELETE FROM room_autoplay_suggestions WHERE id = ?').run(suggestion.id)
       next = { id }
     }
     db.prepare(
@@ -1526,6 +1550,9 @@ function createRoomService(db, options = {}) {
         }
         db.prepare('UPDATE rooms SET history_autoplay = ? WHERE id = ?')
           .run(settings.historyAutoplay ? 1 : 0, room.id)
+        if (!settings.historyAutoplay) {
+          db.prepare('DELETE FROM room_autoplay_suggestions WHERE room_id = ?').run(room.id)
+        }
       }
 
       if (hasVolume) {

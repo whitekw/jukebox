@@ -135,7 +135,7 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
                         : entry.requester.trim().slice(0, 1).toUpperCase()}
                     </span>
                   </span>
-                  <span className="truncate">{entry.isAutoplay ? t('queue.autoplayNext') : entry.requester}</span>
+                  <span className="truncate">{entry.isAutoplay ? t('queue.autoplay') : entry.requester}</span>
                   <time dateTime={new Date(entry.startedAt).toISOString()} className="whitespace-nowrap">
                     {dateFormatter.format(new Date(entry.startedAt))}
                   </time>
