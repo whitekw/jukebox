@@ -514,6 +514,9 @@ export function RoomPage() {
               onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
               libraryRevision={libraryRevision}
               onRequestSong={participant ? openSongRequest : undefined}
+              onRefreshAutoplay={controlCredentials
+                ? () => runQueueAction(() => roomApi.refreshAutoplaySuggestions(code, controlCredentials))
+                : undefined}
               onReorder={
                 controlCredentials
                   ? (songId, targetIndex) =>

@@ -244,7 +244,7 @@ function createRoomService(db, options = {}) {
     ).get(roomId).count)
   }
 
-  function getAutoplaySuggestions(room) {
+  function getAutoplaySuggestions(room, avoidFirstVideoId = null) {
     if (!room.history_autoplay || getAutoplayHistoryCount(room.id) < AUTOPLAY_MIN_HISTORY) return []
     // Keep the order in the database so starting a song only shifts the preview by one.
     const queuedVideos = new Set(db.prepare(
@@ -291,6 +291,10 @@ function createRoomService(db, options = {}) {
     while (suggestions.length < AUTOPLAY_PREVIEW_SIZE) {
       let pool = choices.filter(({ video_id }) => !seenVideos.has(video_id))
       if (!pool.length) break
+      if (suggestions.length === 0 && avoidFirstVideoId) {
+        const alternatives = pool.filter(({ video_id }) => video_id !== avoidFirstVideoId)
+        if (alternatives.length) pool = alternatives
+      }
       const nonRecent = pool.filter(({ video_id }) => !recentVideos.has(video_id))
       if (nonRecent.length) pool = nonRecent
       const candidate = pool[crypto.randomInt(pool.length)]
@@ -1577,6 +1581,20 @@ function createRoomService(db, options = {}) {
     })
   }
 
+  function refreshAutoplaySuggestions(code, credentials) {
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      requireController(room, credentials)
+      if (!room.history_autoplay) {
+        throw new AppError(409, '자동 재생이 꺼져 있습니다.', 'HISTORY_AUTOPLAY_DISABLED')
+      }
+      const firstVideoId = getAutoplaySuggestions(room)[0]?.videoId ?? null
+      db.prepare('DELETE FROM room_autoplay_suggestions WHERE room_id = ?').run(room.id)
+      getAutoplaySuggestions(room, firstVideoId)
+      return getPublicRoom(code)
+    })
+  }
+
   function setManager(code, credentials, targetParticipantId, isManager) {
     if (typeof isManager !== 'boolean') {
       throw new AppError(
@@ -1712,6 +1730,7 @@ function createRoomService(db, options = {}) {
     removeSong,
     reorderSong,
     updateRoomSettings,
+    refreshAutoplaySuggestions,
     setManager,
     disconnectParticipant,
     markAllParticipantsOffline,

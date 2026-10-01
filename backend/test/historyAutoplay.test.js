@@ -129,3 +129,37 @@ test('autoplay previews at most twenty distinct videos and drops a newly queued 
     db.close()
   }
 })
+
+test('controllers can redraw autoplay suggestions without changing the current song or requested queue', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
+    const credentials = { userId: 'owner' }
+    assert.throws(() => rooms.refreshAutoplaySuggestions(created.code, credentials),
+      { code: 'HISTORY_AUTOPLAY_DISABLED' })
+    for (let index = 0; index < 12; index += 1) {
+      rooms.addSong(created.code, created.participantToken, song(index), 'owner')
+      rooms.advance(created.code, { hostToken: created.hostToken })
+    }
+    const enabled = rooms.updateRoomSettings(created.code, credentials, { historyAutoplay: true })
+    const queued = rooms.addSong(created.code, created.participantToken, song(99), 'owner')
+    assert.throws(() => rooms.refreshAutoplaySuggestions(created.code, {}),
+      { code: 'CONTROL_FORBIDDEN' })
+
+    const refreshed = rooms.refreshAutoplaySuggestions(created.code, credentials)
+    assert.equal(refreshed.currentSong.id, enabled.currentSong.id)
+    assert.equal(refreshed.playbackRevision, queued.playbackRevision)
+    assert.deepEqual(refreshed.queue, queued.queue)
+    assert.notEqual(refreshed.autoplaySuggestions[0].videoId, queued.autoplaySuggestions[0].videoId)
+    assert.equal(new Set(refreshed.autoplaySuggestions.map(({ videoId }) => videoId)).size,
+      refreshed.autoplaySuggestions.length)
+    assert.ok(refreshed.autoplaySuggestions.every(({ videoId }) => videoId !== 'video-99'))
+    assert.deepEqual(createRoomService(db).getPublicRoom(created.code).autoplaySuggestions,
+      refreshed.autoplaySuggestions)
+  } finally {
+    db.close()
+  }
+})

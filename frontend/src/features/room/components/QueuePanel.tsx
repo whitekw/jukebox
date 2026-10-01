@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { SongList } from './SongList'
-import { Plus } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, cn, panelStyles } from '../../../shared/styles'
 import type { AutoplaySuggestion, Song } from '../types'
@@ -13,6 +14,7 @@ type QueuePanelProps = {
   onRemove?: (songId: string) => void
   canRemove?: (song: Song) => boolean
   onRequestSong?: () => void
+  onRefreshAutoplay?: () => Promise<void>
   onLibraryChange: () => void
   libraryRevision: number
 }
@@ -26,10 +28,22 @@ export function QueuePanel({
   onRemove,
   canRemove,
   onRequestSong,
+  onRefreshAutoplay,
   onLibraryChange,
   libraryRevision,
 }: QueuePanelProps) {
   const { t } = useI18n()
+  const [refreshingAutoplay, setRefreshingAutoplay] = useState(false)
+
+  async function refreshAutoplay() {
+    if (!onRefreshAutoplay || refreshingAutoplay) return
+    setRefreshingAutoplay(true)
+    try {
+      await onRefreshAutoplay()
+    } finally {
+      setRefreshingAutoplay(false)
+    }
+  }
 
   return (
     <section
@@ -78,7 +92,15 @@ export function QueuePanel({
             />
           </>}
         {historyAutoplay && <div className={songs.length > 0 ? 'mt-5 border-t border-line pt-4 sm:max-room:mt-2 sm:max-room:pt-2' : ''}>
-          <h3 className="mb-3 px-1 text-xs font-semibold text-muted sm:max-room:sr-only">{t('queue.autoplayNext')}</h3>
+          <div className="mb-3 flex items-center justify-between gap-2 px-1 sm:max-room:justify-center">
+            <h3 className="text-xs font-semibold text-muted sm:max-room:sr-only">{t('queue.autoplayNext')}</h3>
+            {onRefreshAutoplay && <button type="button" onClick={() => { void refreshAutoplay() }}
+              disabled={refreshingAutoplay} aria-label={t('queue.refreshAutoplay')}
+              title={t('queue.refreshAutoplay')}
+              className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted transition-colors hover:bg-white/[0.07] hover:text-purple-light focus-visible:outline-2 focus-visible:outline-purple-light disabled:opacity-50 sm:max-room:size-11">
+              <RefreshCw size={15} className={refreshingAutoplay ? 'animate-spin' : ''} aria-hidden="true" />
+            </button>}
+          </div>
           {autoplaySuggestions.length === 0 && <p className="px-1 text-xs leading-5 text-muted sm:max-room:sr-only">{t('queue.autoplayUnavailable')}</p>}
           <ol className="m-0 flex list-none flex-col gap-[7px] p-0 sm:max-room:items-center sm:max-room:gap-2">
             {autoplaySuggestions.map((song) => <li key={song.id}

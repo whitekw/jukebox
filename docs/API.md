@@ -234,6 +234,7 @@ type RoomEvent = {
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/autoplay/refresh` | controller | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여·기록 자동 재생: 방 소유자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
@@ -529,6 +530,10 @@ position = playbackPositionSeconds
 ```
 
 `targetIndex`는 0부터 시작하는 대기열의 최종 위치입니다. `queued` 곡의 위치를 다시 배치합니다.
+
+### `POST /api/rooms/:code/autoplay/refresh`
+
+필수 권한: controller. 자동 재생이 켜진 방의 예정 목록을 다시 무작위로 뽑아 모든 참여자에게 `room:state`로 전달합니다. 현재 재생 곡과 직접 추가한 대기열은 유지합니다. 후보는 영상별로 중복 없이 최대 20곡이며, 선택지가 둘 이상이면 이전 목록의 첫 곡과 다른 곡을 맨 앞에 둡니다. 자동 재생이 꺼져 있으면 `409 HISTORY_AUTOPLAY_DISABLED`입니다.
 
 ### `PATCH /api/rooms/:code/settings`
 

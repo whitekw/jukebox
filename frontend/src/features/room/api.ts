@@ -287,6 +287,14 @@ export const roomApi = {
     )
   },
 
+  refreshAutoplaySuggestions(code: string, credentials: ControlCredentials) {
+    return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/autoplay/refresh`, {
+      method: 'POST',
+      headers: controlHeaders(credentials),
+      body: '{}',
+    })
+  },
+
   setManager(
     code: string,
     credentials: ControlCredentials,
