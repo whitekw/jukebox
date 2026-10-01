@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { SongList } from './SongList'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../../shared/i18n/i18n-context'
-import { buttonStyles, cn, panelStyles } from '../../../shared/styles'
+import { cn, panelStyles } from '../../../shared/styles'
 import type { AutoplaySuggestion, Song } from '../types'
 
 type QueuePanelProps = {
@@ -54,17 +54,15 @@ export function QueuePanel({
       )}
       aria-label={t('queue.title')}
     >
-      <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-line px-1 pb-3 sm:max-room:justify-center sm:max-room:border-0 sm:max-room:px-2 sm:max-room:pb-0">
-        <h2 className="m-0 text-base font-bold text-ink sm:max-room:sr-only">{t('queue.title')}</h2>
-        <span className="font-mono text-xs text-muted sm:max-room:sr-only">
-          · {t('queue.countShort', { count: songs.length })}
-        </span>
+      <div className="mb-3 flex shrink-0 items-center gap-2 px-1 sm:max-room:justify-center sm:max-room:px-2">
+        <h2 className="m-0 text-xs font-semibold text-muted sm:max-room:sr-only">
+          {t('queue.title')} <span className="font-mono font-normal">· {t('queue.countShort', { count: songs.length })}</span>
+        </h2>
         {onRequestSong && (
           <button
             className={cn(
-              buttonStyles({ intent: 'outline', size: 'sm' }),
-              'ml-auto shrink-0 gap-2 rounded-md border-purple/25 bg-purple/[0.08] px-3 text-[13px] font-semibold text-purple-light hover:border-purple/50 hover:bg-purple/15',
-              'sm:max-room:ml-0 sm:max-room:size-11 sm:max-room:gap-0 sm:max-room:rounded-[4px] sm:max-room:border-purple-light/25 sm:max-room:bg-purple-light/10 sm:max-room:p-0 sm:max-room:hover:border-purple-light/50 sm:max-room:hover:bg-purple/25',
+              'ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-[4px] px-1 text-xs font-bold text-purple-light transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light',
+              'sm:max-room:ml-0 sm:max-room:size-11 sm:max-room:justify-center sm:max-room:p-0',
             )}
             type="button"
             aria-haspopup="dialog"
@@ -79,7 +77,6 @@ export function QueuePanel({
       </div>
       <div className="flex flex-1 flex-col sm:max-room:min-h-0 sm:max-room:overflow-y-auto sm:max-room:overscroll-contain sm:max-room:px-2 sm:max-room:[scrollbar-width:none] sm:max-room:[&::-webkit-scrollbar]:hidden">
         {(!historyAutoplay || songs.length > 0) && <>
-            {historyAutoplay && songs.length > 0 && <h3 className="mb-3 px-1 text-xs font-semibold text-muted sm:max-room:sr-only">{t('queue.requestedNext')}</h3>}
             <SongList
               songs={songs}
               emptyMessage={t('host.emptyQueue')}
