@@ -92,7 +92,7 @@ npm run dev
 
 브라우저에서 `http://localhost:5173`을 엽니다. Vite가 API와 WebSocket 요청을 `localhost:3001`로 프록시합니다.
 
-운영 화면은 별도 터미널에서 실행합니다. Discord 로그인을 먼저 `http://localhost:5173`에서 완료한 뒤 동일한 `localhost` 호스트의 `http://localhost:5174/admin/`에 접속하세요. 개발 서버 포트가 달라도 쿠키의 호스트가 같아 로그인 세션을 공유합니다.
+운영 화면은 별도 터미널에서 `http://localhost:5174/admin/`에 접속합니다. 여기서 Discord 로그인을 시작해도 인증 후 운영 화면으로 돌아옵니다. 개발 서버 포트가 달라도 쿠키의 호스트가 같아 로그인 세션을 공유합니다.
 
 ```powershell
 cd admin

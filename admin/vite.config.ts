@@ -10,5 +10,9 @@ export default defineConfig({
   base: '/admin/',
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(directory, './src') } },
-  server: { proxy: { '/api': 'http://localhost:3001' } },
+  server: {
+    port: 5174,
+    strictPort: true,
+    proxy: { '/api': 'http://localhost:3001' },
+  },
 })

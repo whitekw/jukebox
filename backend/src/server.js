@@ -291,11 +291,13 @@ app.get('/api/admin/rooms/:code', (req, res) => {
 app.patch('/api/admin/rooms/:code/playback', mutationLimiter, (req, res) => {
   requireAdminAction(req)
   const code = normalizeCode(req.params.code)
-  const previous = rooms.getPublicRoom(code)
-  const state = rooms.setPlaybackPausedAsAdmin(code, req.body?.paused)
-  if (previous.playbackPaused !== state.playbackPaused) {
-    admin.recordAction(req.adminUser, state.playbackPaused ? 'room_paused' : 'room_resumed', 'room', code)
-    logRoomEvent(code, state.playbackPaused ? 'playback_paused' : 'playback_resumed', {}, {})
+  let action = null
+  const state = rooms.setPlaybackPausedAsAdmin(code, req.body?.paused, (paused) => {
+    action = paused ? 'room_paused' : 'room_resumed'
+    admin.recordAction(req.adminUser, action, 'room', code)
+  })
+  if (action) {
+    logRoomEvent(code, action === 'room_paused' ? 'playback_paused' : 'playback_resumed', {}, {})
   }
   res.json(emitRoom(code, state))
 })

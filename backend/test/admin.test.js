@@ -6,6 +6,7 @@ const net = require('node:net')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
+const { DatabaseSync } = require('node:sqlite')
 const { createDatabase } = require('../src/db')
 const { createAdminService } = require('../src/admin')
 const { createRoomService } = require('../src/rooms')
@@ -128,6 +129,17 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     assert.equal((await patch(adminHeaders)).status, 403)
     assert.equal((await patch({ ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: 'https://evil.example' })).status, 403)
     const actionHeaders = { ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: baseUrl }
+    const faultDb = new DatabaseSync(databasePath)
+    try {
+      faultDb.exec(`CREATE TRIGGER reject_admin_audit BEFORE INSERT ON admin_audit_entries
+        BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`)
+      assert.equal((await patch(actionHeaders)).status, 500)
+      const unchanged = await fetch(`${baseUrl}/api/admin/rooms/${room.code}`, { headers: adminHeaders })
+      assert.equal((await unchanged.json()).playbackPaused, false)
+    } finally {
+      faultDb.exec('DROP TRIGGER IF EXISTS reject_admin_audit')
+      faultDb.close()
+    }
     assert.equal((await patch(actionHeaders)).status, 200)
     const revoke = await fetch(`${baseUrl}/api/admin/users/member/revoke-sessions`, {
       method: 'POST', headers: actionHeaders,

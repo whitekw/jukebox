@@ -10,7 +10,18 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
+      '/api': {
+        target: 'http://localhost:3001',
+        configure(proxy) {
+          proxy.on('proxyRes', (proxyRes, request) => {
+            const location = proxyRes.headers.location
+            if (request.url?.startsWith('/api/auth/discord/callback') &&
+                typeof location === 'string' && location.startsWith('/admin/')) {
+              proxyRes.headers.location = `http://localhost:5174${location}`
+            }
+          })
+        },
+      },
       '/socket.io': {
         target: 'http://localhost:3001',
         changeOrigin: true,
