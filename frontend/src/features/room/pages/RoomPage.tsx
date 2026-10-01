@@ -384,7 +384,7 @@ export function RoomPage() {
 
       <section className={cn(
         'grid min-h-0 w-full flex-1 auto-rows-max grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 sm:auto-rows-auto sm:gap-0 sm:overflow-hidden sm:p-0',
-        'sm:grid-cols-[72px_minmax(0,1fr)_72px] room:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
+        'sm:grid-cols-[72px_minmax(0,1fr)_minmax(300px,360px)] 2xl:grid-cols-[72px_minmax(0,1fr)_400px]',
       )}>
           <CollectionsRail chatTriggerRef={participant ? setChatTriggerContainer : undefined}
             statsOpen={statsOpen} onToggleStats={participant ? toggleStats : undefined}

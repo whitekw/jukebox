@@ -77,8 +77,6 @@ html[data-bside-desktop] .desktop-entry-shell.flex .desktop-entry-content {
 }
 
 @theme {
-  --breakpoint-room: 56.25rem;
-
   --font-sans: Inter, Pretendard, "Noto Sans KR", system-ui, sans-serif;
 
   --color-canvas: #0b0a10;
