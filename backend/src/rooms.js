@@ -10,6 +10,9 @@ const CHAT_MESSAGE_MAX_LENGTH = 300
 const ROOM_TITLE_MAX_LENGTH = 60
 const CHAT_HISTORY_LIMIT = 100
 const ROOM_HISTORY_PAGE_SIZE = 30
+const AUTOPLAY_MIN_HISTORY = 10
+const AUTOPLAY_MAX_DURATION_SECONDS = 600
+const AUTOPLAY_PREVIEW_SIZE = 5
 const ABANDONED_SONG_GRACE_MS = 60_000
 const ROOM_EVENT_TYPES = new Set([
   'song_added',
@@ -226,12 +229,72 @@ function createRoomService(db, options = {}) {
       addedBy: row.nickname,
       addedById: row.added_by,
       addedByAvatarUrl: row.avatar_url ?? null,
+      isAutoplay: Boolean(row.is_autoplay),
       otherControlAvailableAt: otherControlAvailableAt(row),
       position: row.position,
       upvotes: Number(row.upvotes ?? 0),
       downvotes: Number(row.downvotes ?? 0),
       voteRevision: Number(row.vote_revision ?? 0),
     }
+  }
+
+  function getAutoplayHistoryCount(roomId) {
+    return Number(db.prepare(
+      "SELECT COUNT(*) AS count FROM songs WHERE room_id = ? AND status = 'played' AND is_autoplay = 0",
+    ).get(roomId).count)
+  }
+
+  function getAutoplaySuggestions(room) {
+    if (!room.history_autoplay || getAutoplayHistoryCount(room.id) < AUTOPLAY_MIN_HISTORY) return []
+    const queuedVideos = new Set(db.prepare(
+      "SELECT video_id FROM songs WHERE room_id = ? AND status = 'queued'",
+    ).all(room.id).map(({ video_id }) => video_id))
+    const currentVideoId = room.current_song_id
+      ? db.prepare('SELECT video_id FROM songs WHERE id = ?').get(room.current_song_id)?.video_id
+      : null
+    const candidates = db.prepare(
+      `SELECT video_id, title, artist, duration_seconds, thumbnail_url FROM (
+         SELECT video_id, title, artist, duration_seconds, thumbnail_url,
+                ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY started_at DESC, rowid DESC) AS rank
+         FROM songs
+         WHERE room_id = ? AND status = 'played' AND is_autoplay = 0
+           AND duration_seconds BETWEEN 1 AND ?
+       ) WHERE rank = 1`,
+    ).all(room.id, AUTOPLAY_MAX_DURATION_SECONDS)
+      .filter(({ video_id }) => !queuedVideos.has(video_id))
+    const alternatives = candidates.filter(({ video_id }) => video_id !== currentVideoId)
+    const choices = alternatives.length ? alternatives : candidates
+    const recentVideos = new Set(db.prepare(
+      `SELECT video_id FROM songs WHERE room_id = ? AND status = 'played'
+       ORDER BY started_at DESC, rowid DESC LIMIT ?`,
+    ).all(room.id, room.current_song_id ? 4 : 5).map(({ video_id }) => video_id))
+    const pool = choices.filter(({ video_id }) => !recentVideos.has(video_id))
+    const available = pool.length ? pool : choices
+    const seed = `${room.id}:${room.current_song_id ?? 'idle'}`
+    return available
+      .map((song) => ({
+        ...song,
+        order: crypto.createHash('sha256').update(`${seed}:${song.video_id}`).digest('hex'),
+      }))
+      .sort((left, right) => left.order.localeCompare(right.order))
+      .slice(0, AUTOPLAY_PREVIEW_SIZE)
+      .map((song) => ({
+        videoId: song.video_id,
+        title: song.title,
+        artist: song.artist,
+        durationSeconds: song.duration_seconds,
+        thumbnailUrl: song.thumbnail_url,
+      }))
+  }
+
+  function ensureAutoplayParticipant(room, createdAt) {
+    const id = `autoplay:${room.id}`
+    db.prepare(
+      `INSERT OR IGNORE INTO participants
+       (id, room_id, token_hash, nickname, left_at, created_at)
+       VALUES (?, ?, ?, '자동 재생', ?, ?)`,
+    ).run(id, room.id, crypto.randomBytes(32).toString('hex'), createdAt, createdAt)
+    return id
   }
 
   function serializeFeedEntry(row) {
@@ -431,6 +494,9 @@ function createRoomService(db, options = {}) {
       code: room.code,
       title: room.title,
       allowGuests: Boolean(room.allow_guests),
+      historyAutoplay: Boolean(room.history_autoplay),
+      autoplayHistoryCount: getAutoplayHistoryCount(room.id),
+      autoplaySuggestions: getAutoplaySuggestions(room),
       hostVolume: room.host_volume,
       playbackMode: room.playback_mode,
       playbackPaused: Boolean(room.playback_paused),
@@ -482,7 +548,7 @@ function createRoomService(db, options = {}) {
       throw new AppError(400, '시간대가 올바르지 않습니다.', 'INVALID_TIME_ZONE')
     }
     const plays = db.prepare(
-      'SELECT started_at, started_at_estimated, added_by FROM songs WHERE room_id = ? AND started_at IS NOT NULL',
+      'SELECT started_at, started_at_estimated, added_by, is_autoplay FROM songs WHERE room_id = ? AND started_at IS NOT NULL',
     ).all(room.id)
     let series
     const statsNow = now()
@@ -500,6 +566,7 @@ function createRoomService(db, options = {}) {
     ).all(room.id)
     const byParticipant = new Map()
     for (const play of plays) {
+      if (play.is_autoplay) continue
       const totals = byParticipant.get(play.added_by) ?? { plays: 0, upvotes: 0, downvotes: 0, timestamps: [] }
       totals.plays += 1
       totals.timestamps.push(Number(play.started_at))
@@ -573,7 +640,7 @@ function createRoomService(db, options = {}) {
     }
     const rows = db.prepare(
       `SELECT songs.id, songs.video_id, songs.title, songs.artist, songs.thumbnail_url,
-              songs.started_at, songs.started_at_estimated,
+              songs.started_at, songs.started_at_estimated, songs.is_autoplay,
               participants.nickname AS requester, participants.avatar_url AS requester_avatar_url
        FROM songs JOIN participants ON participants.id = songs.added_by
        WHERE songs.room_id = ? AND songs.status = 'played' AND songs.started_at IS NOT NULL
@@ -593,6 +660,7 @@ function createRoomService(db, options = {}) {
         thumbnailUrl: row.thumbnail_url,
         requester: row.requester,
         requesterAvatarUrl: row.requester_avatar_url ?? null,
+        isAutoplay: Boolean(row.is_autoplay),
         startedAt: Number(row.started_at),
         startedAtEstimated: Boolean(row.started_at_estimated),
       })),
@@ -1092,21 +1160,33 @@ function createRoomService(db, options = {}) {
   }
 
   function advanceRoom(room, code, changedAt = now()) {
-    if (room.current_song_id) {
-      db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
-        room.current_song_id,
-      )
-    }
-    const next = db
+    let next = db
       .prepare(
         `SELECT id FROM songs
          WHERE room_id = ? AND status = 'queued'
          ORDER BY position ASC, created_at ASC LIMIT 1`,
       )
       .get(room.id)
+    const suggestion = next ? null : getAutoplaySuggestions(room)[0]
+    if (room.current_song_id) {
+      db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
+        room.current_song_id,
+      )
+    }
     if (next) {
       db.prepare("UPDATE songs SET status = 'current', started_at = ? WHERE id = ?")
         .run(changedAt, next.id)
+    } else if (suggestion) {
+      const id = crypto.randomUUID()
+      db.prepare(
+        `INSERT INTO songs (
+          id, room_id, video_id, title, artist, duration_seconds, thumbnail_url,
+          added_by, status, position, is_autoplay, started_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'current', 0, 1, ?, ?)`,
+      ).run(id, room.id, suggestion.videoId, suggestion.title, suggestion.artist,
+        suggestion.durationSeconds, suggestion.thumbnailUrl,
+        ensureAutoplayParticipant(room, changedAt), changedAt, changedAt)
+      next = { id }
     }
     db.prepare(
       `UPDATE rooms
@@ -1410,13 +1490,14 @@ function createRoomService(db, options = {}) {
     const hasVolume = settings.hostVolume !== undefined
     const hasTitle = settings.title !== undefined
     const hasAllowGuests = settings.allowGuests !== undefined
-    if (!hasVolume && !hasTitle && !hasAllowGuests) {
+    const hasHistoryAutoplay = settings.historyAutoplay !== undefined
+    if (!hasVolume && !hasTitle && !hasAllowGuests && !hasHistoryAutoplay) {
       throw new AppError(400, '변경할 설정이 없습니다.', 'EMPTY_SETTINGS')
     }
 
     return transaction(db, () => {
       const room = getRoomRecord(code)
-      if (hasTitle || hasAllowGuests) {
+      if (hasTitle || hasAllowGuests || hasHistoryAutoplay) {
         if (!hasOwnerAccess(room, credentials?.userId)) {
           throw new AppError(403, '방 소유자만 이 설정을 변경할 수 있습니다.', 'OWNER_FORBIDDEN')
         }
@@ -1436,6 +1517,16 @@ function createRoomService(db, options = {}) {
           settings.allowGuests ? 1 : 0, room.id,
         )
       }
+      if (hasHistoryAutoplay) {
+        if (typeof settings.historyAutoplay !== 'boolean') {
+          throw new AppError(400, '자동 재생 설정이 올바르지 않습니다.', 'INVALID_HISTORY_AUTOPLAY')
+        }
+        if (settings.historyAutoplay && getAutoplayHistoryCount(room.id) < AUTOPLAY_MIN_HISTORY) {
+          throw new AppError(409, '자동 재생에는 이전 재생 기록이 10건 이상 필요합니다.', 'AUTOPLAY_HISTORY_REQUIRED')
+        }
+        db.prepare('UPDATE rooms SET history_autoplay = ? WHERE id = ?')
+          .run(settings.historyAutoplay ? 1 : 0, room.id)
+      }
 
       if (hasVolume) {
         const volume = Number(settings.hostVolume)
@@ -1452,6 +1543,9 @@ function createRoomService(db, options = {}) {
         )
       }
 
+      if (hasHistoryAutoplay && settings.historyAutoplay && !room.current_song_id) {
+        return advanceRoom(getRoomRecord(code), code)
+      }
       return getPublicRoom(code)
     })
   }

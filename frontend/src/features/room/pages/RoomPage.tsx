@@ -369,8 +369,8 @@ export function RoomPage() {
           )}
           <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests} />
           {isOwner && (
-            <RoomSettingsButton room={room} onSave={async (title, allowGuests) => {
-              setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests }))
+            <RoomSettingsButton room={room} onSave={async (title, allowGuests, historyAutoplay) => {
+              setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests, historyAutoplay }))
             }} />
           )}
           <AccountMenu
@@ -509,6 +509,8 @@ export function RoomPage() {
             <QueuePanel
               className="min-h-[280px] sm:h-full sm:min-h-0 sm:rounded-none sm:border-y-0 sm:border-r-0 sm:bg-panel"
               songs={room.queue}
+              autoplaySuggestions={room.autoplaySuggestions}
+              historyAutoplay={room.historyAutoplay}
               onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
               libraryRevision={libraryRevision}
               onRequestSong={participant ? openSongRequest : undefined}

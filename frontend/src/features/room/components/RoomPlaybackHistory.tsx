@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RotateCw } from 'lucide-react'
+import { RotateCw, Shuffle } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
@@ -130,11 +130,12 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="grid size-[18px] shrink-0 place-items-center overflow-hidden rounded-full border border-purple/25 bg-purple/[0.08] text-[10px] font-bold text-purple-light" aria-hidden="true">
-                      {entry.requesterAvatarUrl ? <img src={entry.requesterAvatarUrl} alt="" className="size-full object-cover" />
+                      {entry.isAutoplay ? <Shuffle size={11} aria-hidden="true" />
+                        : entry.requesterAvatarUrl ? <img src={entry.requesterAvatarUrl} alt="" className="size-full object-cover" />
                         : entry.requester.trim().slice(0, 1).toUpperCase()}
                     </span>
                   </span>
-                  <span className="truncate">{entry.requester}</span>
+                  <span className="truncate">{entry.isAutoplay ? t('queue.autoplayNext') : entry.requester}</span>
                   <time dateTime={new Date(entry.startedAt).toISOString()} className="whitespace-nowrap">
                     {dateFormatter.format(new Date(entry.startedAt))}
                   </time>

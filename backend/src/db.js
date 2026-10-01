@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -75,6 +75,7 @@ function createDatabase(databasePath = ':memory:') {
       playback_anchor_at INTEGER NOT NULL DEFAULT 0,
       playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1)),
       playback_revision INTEGER NOT NULL DEFAULT 0,
+      history_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(history_autoplay IN (0, 1)),
       current_song_id TEXT,
       created_at INTEGER NOT NULL
     );
@@ -113,6 +114,7 @@ function createDatabase(databasePath = ':memory:') {
       status TEXT NOT NULL CHECK(status IN ('queued', 'current', 'played', 'removed')),
       position INTEGER NOT NULL,
       vote_revision INTEGER NOT NULL DEFAULT 0,
+      is_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(is_autoplay IN (0, 1)),
       started_at INTEGER,
       started_at_estimated INTEGER NOT NULL DEFAULT 0 CHECK(started_at_estimated IN (0, 1)),
       created_at INTEGER NOT NULL
@@ -226,6 +228,9 @@ function createDatabase(databasePath = ':memory:') {
   if (!songColumns.has('started_at_estimated')) {
     db.exec('ALTER TABLE songs ADD COLUMN started_at_estimated INTEGER NOT NULL DEFAULT 0 CHECK(started_at_estimated IN (0, 1))')
   }
+  if (!songColumns.has('is_autoplay')) {
+    db.exec('ALTER TABLE songs ADD COLUMN is_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(is_autoplay IN (0, 1))')
+  }
   if (!songColumns.has('started_at')) {
     db.exec("UPDATE songs SET started_at = created_at, started_at_estimated = 1 WHERE status IN ('current', 'played')")
   }
@@ -235,6 +240,9 @@ function createDatabase(databasePath = ':memory:') {
   if (!roomColumns.has('title')) db.exec("ALTER TABLE rooms ADD COLUMN title TEXT NOT NULL DEFAULT ''")
   if (!roomColumns.has('allow_guests')) {
     db.exec('ALTER TABLE rooms ADD COLUMN allow_guests INTEGER NOT NULL DEFAULT 1 CHECK(allow_guests IN (0, 1))')
+  }
+  if (!roomColumns.has('history_autoplay')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN history_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(history_autoplay IN (0, 1))')
   }
   db.exec("UPDATE rooms SET title = code WHERE title = ''")
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)

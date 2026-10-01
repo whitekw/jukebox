@@ -37,6 +37,9 @@ type RoomState = {
   code: string
   title: string
   allowGuests: boolean
+  historyAutoplay: boolean
+  autoplayHistoryCount: number
+  autoplaySuggestions: Array<{ videoId: string; title: string; artist: string; durationSeconds: number; thumbnailUrl: string }>
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
   playbackPaused: boolean
@@ -71,6 +74,7 @@ type Song = {
   addedBy: string
   addedById: string
   addedByAvatarUrl: string | null
+  isAutoplay: boolean
   otherControlAvailableAt: number | null
   position: number
   upvotes: number
@@ -80,6 +84,8 @@ type Song = {
 ```
 
 `otherControlAvailableAt`은 신청자가 방을 나갔거나 연결이 끊긴 뒤 다른 참여자가 그 곡을 삭제·건너뛸 수 있게 되는 epoch ms 시각입니다. 신청자가 온라인이면 `null`입니다.
+
+`historyAutoplay`은 방 소유자가 설정한 재생기록 자동 재생 상태입니다. `autoplayHistoryCount`는 직접 신청되어 완료된 이전 재생 기록의 건수이며, 10건 이상일 때만 자동 재생을 켤 수 있습니다. `autoplaySuggestions`는 직접 추가한 대기열 뒤에 재생될 수 있는 10분 이하의 이전 곡 최대 5개입니다. 같은 영상은 한 번만 후보가 되고 직접 추가한 대기열의 영상은 제외됩니다. 현재 곡과 최근 재생 곡은 다른 후보가 있을 때 우선 제외됩니다. 예정 목록은 곡이 바뀌면 다시 선정될 수 있으며, 재생되기 전에는 별도 신청 건으로 저장되지 않습니다.
 
 `upvotes`와 `downvotes`는 현재 곡의 공개 추천·비추천 수입니다. `voteRevision`은 늦게 도착한 이전 투표 응답이 최신 수치를 덮어쓰지 않도록 하는 곡별 순번입니다. 투표자 정보는 `RoomState`에 포함되지 않습니다.
 
@@ -111,7 +117,7 @@ type RoomStats = {
 }
 ```
 
-재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 시간별은 현재 시간을 포함한 최근 24개 시간대, 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 시간별 키는 서머타임의 중복 시각도 구분할 수 있는 UTC ISO 시각이며, 화면에서는 요청한 `timeZone`으로 표시합니다. 다른 키는 해당 시간대의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
+재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 시간별은 현재 시간을 포함한 최근 24개 시간대, 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 시간별 키는 서머타임의 중복 시각도 구분할 수 있는 UTC ISO 시각이며, 화면에서는 요청한 `timeZone`으로 표시합니다. 다른 키는 해당 시간대의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자와 자동 재생의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자의 직접 신청 건만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
 
 ### `RoomHistoryPage`
 
@@ -125,6 +131,7 @@ type RoomHistoryPage = {
     thumbnailUrl: string
     requester: string
     requesterAvatarUrl: string | null
+    isAutoplay: boolean
     startedAt: number
     startedAtEstimated: boolean
   }[]
@@ -132,7 +139,7 @@ type RoomHistoryPage = {
 }
 ```
 
-`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 신청 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 신청 건마다 별도 항목입니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
+`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 재생 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 건마다 별도 항목입니다. 자동 재생 건은 `isAutoplay: true`이며 신청자는 자동 재생으로 표시됩니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
 
 ### `VideoSearchResult`
 
@@ -227,7 +234,7 @@ type RoomEvent = {
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
-| PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여: 방 소유자 | 변경 | `RoomState` |
+| PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여·기록 자동 재생: 방 소유자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
 
@@ -525,7 +532,7 @@ position = playbackPositionSeconds
 
 ### `PATCH /api/rooms/:code/settings`
 
-`hostVolume`은 controller 권한, `title`과 `allowGuests`는 방 소유자의 로그인 세션이 필요합니다.
+`hostVolume`은 controller 권한, `title`, `allowGuests`, `historyAutoplay`는 방 소유자의 로그인 세션이 필요합니다.
 
 ```json
 {
@@ -536,6 +543,7 @@ position = playbackPositionSeconds
 - `hostVolume`: 정수 `0..100`
 - `title`: 공백을 제거한 최대 60자 문자열. 빈 문자열로 변경하면 방 코드를 사용합니다.
 - `allowGuests`: boolean. `false`로 변경해도 이미 참여한 익명 사용자는 자동으로 연결 해제되지 않습니다.
+- `historyAutoplay`: boolean. 켜려면 직접 신청된 이전 재생 기록이 최소 10건 필요하며, 부족하면 `409 AUTOPLAY_HISTORY_REQUIRED`입니다. 직접 추가한 대기열이 비면 저장된 10분 이하 곡 중 하나를 새 재생 건으로 만들며, 이전 추천·비추천과 신청자별 통계는 이어받지 않습니다. 방이 비어 있을 때 켜면 즉시 한 곡을 시작합니다. 끄더라도 이미 재생 중인 자동 재생 곡은 유지합니다.
 
 ### `PATCH /api/rooms/:code/managers/:participantId`
 

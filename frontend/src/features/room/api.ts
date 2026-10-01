@@ -274,6 +274,7 @@ export const roomApi = {
       hostVolume?: number
       title?: string
       allowGuests?: boolean
+      historyAutoplay?: boolean
     },
   ) {
     return request<RoomState>(

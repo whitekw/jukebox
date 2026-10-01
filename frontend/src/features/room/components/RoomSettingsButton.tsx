@@ -6,7 +6,7 @@ import type { RoomState } from '../types'
 
 export function RoomSettingsButton({ room, onSave }: {
   room: RoomState
-  onSave: (title: string, allowGuests: boolean) => Promise<void>
+  onSave: (title: string, allowGuests: boolean, historyAutoplay: boolean) => Promise<void>
 }) {
   const { t } = useI18n()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -15,6 +15,7 @@ export function RoomSettingsButton({ room, onSave }: {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState(room.title)
   const [allowGuests, setAllowGuests] = useState(room.allowGuests)
+  const [historyAutoplay, setHistoryAutoplay] = useState(room.historyAutoplay)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -36,7 +37,7 @@ export function RoomSettingsButton({ room, onSave }: {
     setSaving(true)
     setError('')
     try {
-      await onSave(title, allowGuests)
+      await onSave(title, allowGuests, historyAutoplay)
       dialogRef.current?.close()
     } catch (requestError) {
       setError(getErrorMessage(requestError, t))
@@ -56,6 +57,7 @@ export function RoomSettingsButton({ room, onSave }: {
         onClick={() => {
           setTitle(room.title)
           setAllowGuests(room.allowGuests)
+          setHistoryAutoplay(room.historyAutoplay)
           setError('')
           setOpen(true)
         }}
@@ -87,6 +89,17 @@ export function RoomSettingsButton({ room, onSave }: {
           <label className="mt-6 flex cursor-pointer items-start gap-3 border-t border-line pt-5">
             <input className="mt-0.5 size-[18px] shrink-0 accent-purple-light" type="checkbox" checked={allowGuests} onChange={(event) => setAllowGuests(event.target.checked)} disabled={saving} />
             <span><strong className="block text-sm">{t('roomSettings.allowGuestsLabel')}</strong><span className="mt-1 block text-xs leading-5 text-muted">{t('roomSettings.allowGuestsHint')}</span></span>
+          </label>
+          <label className={cn('mt-5 flex items-start gap-3 border-t border-line pt-5', room.autoplayHistoryCount < 10 ? 'text-muted' : 'cursor-pointer')}>
+            <input className="mt-0.5 size-[18px] shrink-0 accent-purple-light" type="checkbox"
+              checked={historyAutoplay} onChange={(event) => setHistoryAutoplay(event.target.checked)}
+              disabled={saving || room.autoplayHistoryCount < 10} />
+            <span>
+              <strong className="block text-sm">{t('roomSettings.historyAutoplayLabel')}</strong>
+              <span className="mt-1 block text-xs leading-5 text-muted">{room.autoplayHistoryCount < 10
+                ? t('roomSettings.historyAutoplayLocked', { count: room.autoplayHistoryCount })
+                : t('roomSettings.historyAutoplayHint')}</span>
+            </span>
           </label>
           {error && <p className="mt-5 text-sm text-danger" role="alert">{error}</p>}
           <button className={cn(buttonStyles({ intent: 'primary', size: 'md', fullWidth: true }), 'mt-7')} type="submit" disabled={saving}>

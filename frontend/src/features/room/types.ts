@@ -9,6 +9,7 @@ export type Song = {
   addedBy: string
   addedById: string
   addedByAvatarUrl: string | null
+  isAutoplay: boolean
   otherControlAvailableAt: number | null
   position: number
   upvotes: number
@@ -20,6 +21,9 @@ export type RoomState = {
   code: string
   title: string
   allowGuests: boolean
+  historyAutoplay: boolean
+  autoplayHistoryCount: number
+  autoplaySuggestions: AutoplaySuggestion[]
   hostVolume: number
   playbackMode: PlaybackMode
   playbackPaused: boolean
@@ -32,6 +36,14 @@ export type RoomState = {
   participants: RoomParticipant[]
   currentSong: Song | null
   queue: Song[]
+}
+
+export type AutoplaySuggestion = {
+  videoId: string
+  title: string
+  artist: string
+  durationSeconds: number
+  thumbnailUrl: string
 }
 
 export type RoomParticipant = {
@@ -76,6 +88,7 @@ export type RoomHistoryEntry = {
   thumbnailUrl: string
   requester: string
   requesterAvatarUrl: string | null
+  isAutoplay: boolean
   startedAt: number
   startedAtEstimated: boolean
 }
