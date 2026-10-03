@@ -48,3 +48,45 @@ test('room history keeps each played request and pages equal-time starts without
     db.close()
   }
 })
+
+test('room history filters by participant identity across pages and excludes autoplay records', () => {
+  const db = createDatabase()
+  const clock = Date.parse('2026-10-01T00:00:00Z')
+  try {
+    const rooms = createRoomService(db, { now: () => clock })
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const owner = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Host' })
+    const firstGuest = rooms.joinRoom(owner.code, { nickname: 'Guest' })
+    const secondGuest = rooms.joinRoom(owner.code, { nickname: 'Guest' })
+    const plays = []
+    for (const [index, guest] of [firstGuest, secondGuest, firstGuest, secondGuest].entries()) {
+      const result = rooms.addSong(owner.code, guest.participantToken, song(`history-${index}`))
+      plays.push(result.currentSong.id)
+      rooms.advance(owner.code, { hostToken: owner.hostToken })
+    }
+    db.prepare('UPDATE songs SET is_autoplay = 1 WHERE id = ?').run(plays[3])
+    const credentials = { participantToken: firstGuest.participantToken }
+    const firstPage = rooms.getRoomHistory(owner.code, credentials, null, 1, firstGuest.participant.id)
+    assert.deepEqual(firstPage.items.map(({ id }) => id), [plays[2]])
+    assert.equal(firstPage.nextCursor, plays[2])
+    assert.deepEqual(rooms.getRoomHistory(owner.code, credentials, firstPage.nextCursor, 1,
+      firstGuest.participant.id).items.map(({ id }) => id), [plays[0]])
+    assert.deepEqual(rooms.getRoomHistory(owner.code, credentials, null, 10,
+      secondGuest.participant.id).items.map(({ id }) => id), [plays[1]])
+    const combined = rooms.getRoomHistory(owner.code, credentials, null, 2,
+      [firstGuest.participant.id, secondGuest.participant.id])
+    assert.deepEqual(combined.items.map(({ id }) => id), [plays[2], plays[1]])
+    assert.deepEqual(rooms.getRoomHistory(owner.code, credentials, combined.nextCursor, 2,
+      [firstGuest.participant.id, secondGuest.participant.id]).items.map(({ id }) => id), [plays[0]])
+    assert.deepEqual(firstPage.requesters.map(({ id }) => id).sort(),
+      [firstGuest.participant.id, secondGuest.participant.id].sort())
+    assert.ok(firstPage.requesters.every(({ nickname }) => nickname === 'Guest'))
+    assert.throws(() => rooms.getRoomHistory(owner.code, credentials, null, 10, 'missing'),
+      { code: 'INVALID_HISTORY_REQUESTER' })
+    assert.throws(() => rooms.getRoomHistory(owner.code, credentials, null, 10,
+      [firstGuest.participant.id, 'missing']), { code: 'INVALID_HISTORY_REQUESTER' })
+  } finally {
+    db.close()
+  }
+})

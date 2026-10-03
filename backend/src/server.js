@@ -600,7 +600,7 @@ app.get('/api/rooms/joined', (req, res) => {
 app.delete('/api/rooms/:code', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
   const normalizedCode = normalizeCode(req.params.code)
-  rooms.deleteOwnedRoom(normalizedCode, user?.id)
+  rooms.deleteOwnedRoom(normalizedCode, user?.id, req.body?.confirmationName)
   io.to(roomChannel(normalizedCode)).emit('room:deleted', {
     code: normalizedCode,
   })
@@ -639,6 +639,14 @@ app.get('/api/rooms/:code/stats', (req, res) => {
 app.get('/api/rooms/:code/history', (req, res) => {
   res.json(rooms.getRoomHistory(
     req.params.code, controlCredentials(req), req.query.before, req.query.limit ?? 30,
+    req.query.requesterId ?? [],
+  ))
+})
+
+app.get('/api/rooms/:code/autoplay/history-videos', (req, res) => {
+  const user = requireAuthUser(req)
+  res.json(rooms.listAutoplayHistoryVideos(
+    req.params.code, user.id, req.query.q ?? '', req.query.offset ?? 0,
   ))
 })
 

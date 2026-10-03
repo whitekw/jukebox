@@ -39,6 +39,8 @@ type RoomState = {
   allowGuests: boolean
   historyAutoplay: boolean
   autoplayHistoryCount: number
+  autoplayPoolCount: number
+  autoplayFilters: { excludedWords: string[]; excludedVideoIds: string[]; minDurationSeconds: number; maxDurationSeconds: number }
   autoplaySuggestions: Array<{ id: string; videoId: string; title: string; artist: string; durationSeconds: number; thumbnailUrl: string }>
   hostVolume: number
   playbackMode: 'host_only' | 'all_devices'
@@ -85,7 +87,9 @@ type Song = {
 
 `otherControlAvailableAt`은 신청자가 방을 나갔거나 연결이 끊긴 뒤 다른 참여자가 그 곡을 삭제·건너뛸 수 있게 되는 epoch ms 시각입니다. 신청자가 온라인이면 `null`입니다.
 
-`historyAutoplay`은 방 소유자가 설정한 재생기록 자동 재생 상태입니다. `autoplayHistoryCount`는 직접 신청되어 완료된 이전 재생 기록의 건수이며, 10건 이상일 때만 자동 재생을 켤 수 있습니다. `autoplaySuggestions`는 직접 추가한 대기열 뒤에 재생될 10분 이하의 이전 곡 최대 20개입니다. 같은 영상은 한 번만 표시하므로 가능한 후보가 20곡보다 적으면 있는 곡만 보여주고, 직접 추가한 대기열의 영상은 제외합니다. 현재 곡과 최근 재생 곡은 다른 후보가 있을 때 우선 제외합니다. 예정 순서는 저장되며, 자동 재생이 시작되면 첫 곡이 빠지고 중복되지 않는 다른 후보가 있을 때만 맨 아래에 새 곡이 추가됩니다. 예정 곡은 재생되기 전에는 별도 신청 건으로 저장되지 않습니다.
+`historyAutoplay`은 방 소유자가 설정한 재생기록 자동 재생 상태입니다. `autoplayHistoryCount`는 직접 신청되어 완료된 이전 재생 기록의 건수이며, 10건 이상일 때만 자동 재생을 켤 수 있습니다. `autoplaySuggestions`는 직접 추가한 대기열 뒤에 재생될 저장된 길이 범위의 이전 곡 최대 20개입니다. 같은 영상은 한 번만 표시하므로 가능한 후보가 20곡보다 적으면 있는 곡만 보여주고, 직접 추가한 대기열의 영상은 제외합니다. 현재 곡과 최근 재생 곡은 다른 후보가 있을 때 우선 제외합니다. 예정 순서는 저장되며, 자동 재생이 시작되면 첫 곡이 빠지고 중복되지 않는 다른 후보가 있을 때만 맨 아래에 새 곡이 추가됩니다. 예정 곡은 재생되기 전에는 별도 신청 건으로 저장되지 않습니다.
+
+`autoplayFilters`는 방별 자동 재생 조건입니다. `minDurationSeconds`와 `maxDurationSeconds`는 양 끝을 포함하는 영상 길이 범위이며 기본값은 0초~600초입니다. `excludedWords`는 영상 제목에 포함된 문자열을 대소문자 구분 없이 검사하며, `excludedVideoIds`는 영상 ID가 일치하는 후보를 제외합니다. `autoplayPoolCount`는 저장된 조건을 적용한 뒤 남은 직접 재생 기록의 고유 영상 수입니다. 현재 곡과 수동 대기열은 이 수에서 제외하지 않으며, 자동 재생을 꺼도 풀 크기를 볼 수 있습니다. 기존 예정 목록도 필터를 저장하면 다시 생성됩니다. 수동 신청 곡에는 필터를 적용하지 않습니다.
 
 `upvotes`와 `downvotes`는 현재 곡의 공개 추천·비추천 수입니다. `voteRevision`은 늦게 도착한 이전 투표 응답이 최신 수치를 덮어쓰지 않도록 하는 곡별 순번입니다. 투표자 정보는 `RoomState`에 포함되지 않습니다.
 
@@ -136,10 +140,11 @@ type RoomHistoryPage = {
     startedAtEstimated: boolean
   }[]
   nextCursor: string | null
+  requesters: { id: string; nickname: string; avatarUrl: string | null; plays: number }[]
 }
 ```
 
-`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 재생 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 건마다 별도 항목입니다. 자동 재생 건은 `isAutoplay: true`이며 신청자는 자동 재생으로 표시됩니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
+`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 재생 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 건마다 별도 항목입니다. 자동 재생 건은 `isAutoplay: true`이며 신청자는 자동 재생으로 표시됩니다. `requesterId`에 응답의 `requesters[].id`를 하나 이상 반복해서 지정하면 선택한 참여자들의 직접 신청 건만 반환합니다. 지정하지 않으면 전체 기록입니다. `requesters`는 페이지 범위와 무관한 전체 직접 신청자의 목록이며, 각자의 누적 재생 건수를 포함합니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
 
 ### `VideoSearchResult`
 
@@ -223,13 +228,14 @@ type RoomEvent = {
 | GET | `/api/rooms/joined` | 로그인 | 없음 | 계정으로 참여한 방 목록(소유 방 제외) |
 | GET | `/api/rooms/:code` | 공개 | 없음 | `RoomState` |
 | GET | `/api/rooms/:code/session` | 방 세션 또는 소유자 | 없음 | 저장 세션과 소유권 확인 |
+| DELETE | `/api/rooms/:code` | 방 소유자 | 변경 | `{ "confirmationName": "현재 방 이름" }`, 방 삭제 후 `204` |
 | POST | `/api/rooms/:code/host` | 방 소유자 | 변경 | 새 호스트 토큰과 `RoomState` |
 | POST | `/api/rooms/:code/join` | 공개(비로그인 참여는 방 설정에 따름) | 변경 | 익명 참여 또는 로그인 계정 멤버십 생성, 참여 토큰/정보/룸 |
 | POST | `/api/rooms/:code/resume` | 로그인 멤버 | 변경 | 다른 기기에서 멤버십을 재개할 참여 토큰/정보/룸 |
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/stats?timeZone=Asia/Seoul` | 참여자 | 없음 | `RoomStats` |
-| GET | `/api/rooms/:code/history?before={cursor}&limit=30` | 참여자 | 없음 | `RoomHistoryPage` |
+| GET | `/api/rooms/:code/history?before={cursor}&limit=30&requesterId={participantId}&requesterId={otherId}` | 참여자 | 없음 | `RoomHistoryPage` |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 대화·활동 로그 각각 최대 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 분당 30회(계정 또는 참여자 토큰 기준), IP·경로당 120회 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
@@ -243,9 +249,12 @@ type RoomEvent = {
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/autoplay/refresh` | controller | 변경 | `RoomState` |
-| PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여·기록 자동 재생: 방 소유자 | 변경 | `RoomState` |
+| GET | `/api/rooms/:code/autoplay/history-videos` | 방 소유자 | 없음 | 중복 제거한 자동 재생 가능 기록 목록 |
+| PATCH | `/api/rooms/:code/settings` | 호스트 볼륨: controller, 제목·비로그인 참여·기록 자동 재생·자동 재생 필터: 방 소유자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/managers/:participantId` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/participants/:participantId/disconnect` | 방 소유자 | 변경 | 대상의 현재 연결 종료, `RoomState` |
+
+방 삭제 요청의 `confirmationName`은 저장된 방 제목과 정확히 일치해야 합니다. 제목이 비어 있으면 방 코드를 입력합니다. 불일치하거나 생략하면 `400 ROOM_DELETE_NAME_MISMATCH`이며, 삭제 후에는 방의 연관 기록을 복구할 수 없습니다.
 
 요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
 
@@ -545,9 +554,13 @@ position = playbackPositionSeconds
 
 필수 권한: controller. 자동 재생이 켜진 방의 예정 목록을 다시 무작위로 뽑아 모든 참여자에게 `room:state`로 전달합니다. 현재 재생 곡과 직접 추가한 대기열은 유지합니다. 후보는 영상별로 중복 없이 최대 20곡이며, 선택지가 둘 이상이면 이전 목록의 첫 곡과 다른 곡을 맨 앞에 둡니다. 자동 재생이 꺼져 있으면 `409 HISTORY_AUTOPLAY_DISABLED`입니다.
 
+### `GET /api/rooms/:code/autoplay/history-videos`
+
+방 소유자 로그인 세션이 필요합니다. 자동 재생 대상이 될 수 있는 직접 신청·재생 완료 기록 중 저장된 영상 길이 범위에 해당하는 영상을 ID별로 중복 제거해 최근 재생순으로 돌려줍니다. `q`는 제목·아티스트 검색어(최대 100자), `offset`은 0부터 시작하는 페이지 위치입니다. 응답의 `items`는 최대 30개이며 `{ videoId, title, artist, durationSeconds, thumbnailUrl, startedAt }` 항목을 포함합니다. `nextOffset`이 `null`이면 마지막 페이지입니다. `excludedVideos`에는 길이 범위 밖이라도 현재 제외 목록에 있는 영상의 메타데이터가 포함됩니다. 잘못된 검색 조건에는 `400 INVALID_AUTOPLAY_SEARCH`를 반환합니다.
+
 ### `PATCH /api/rooms/:code/settings`
 
-`hostVolume`은 controller 권한, `title`, `allowGuests`, `historyAutoplay`는 방 소유자의 로그인 세션이 필요합니다.
+`hostVolume`은 controller 권한, `title`, `allowGuests`, `historyAutoplay`, `autoplayFilters`는 방 소유자의 로그인 세션이 필요합니다.
 
 ```json
 {
@@ -558,7 +571,8 @@ position = playbackPositionSeconds
 - `hostVolume`: 정수 `0..100`
 - `title`: 공백을 제거한 최대 60자 문자열. 빈 문자열로 변경하면 방 코드를 사용합니다.
 - `allowGuests`: boolean. `false`로 변경해도 이미 참여한 익명 사용자는 자동으로 연결 해제되지 않습니다.
-- `historyAutoplay`: boolean. 켜려면 직접 신청된 이전 재생 기록이 최소 10건 필요하며, 부족하면 `409 AUTOPLAY_HISTORY_REQUIRED`입니다. 직접 추가한 대기열이 비면 저장된 10분 이하 곡 중 하나를 새 재생 건으로 만들며, 이전 추천·비추천과 신청자별 통계는 이어받지 않습니다. 방이 비어 있을 때 켜면 즉시 한 곡을 시작합니다. 끄더라도 이미 재생 중인 자동 재생 곡은 유지합니다.
+- `historyAutoplay`: boolean. 켜려면 직접 신청된 이전 재생 기록이 최소 10건 필요하며, 부족하면 `409 AUTOPLAY_HISTORY_REQUIRED`입니다. 직접 추가한 대기열이 비면 저장된 길이 범위의 곡 중 하나를 새 재생 건으로 만들며, 이전 추천·비추천과 신청자별 통계는 이어받지 않습니다. 방이 비어 있을 때 켜면 즉시 한 곡을 시작합니다. 끄더라도 이미 재생 중인 자동 재생 곡은 유지합니다.
+- `autoplayFilters`: `{ "excludedWords": string[], "excludedVideoIds": string[], "minDurationSeconds": number, "maxDurationSeconds": number }`. 길이는 정수 초 단위이며 0초 이상, 최대 24시간 이하, 최소값이 최대값 이하여야 합니다. 길이 값 생략 시 현재 설정을 유지합니다. 제목 제외 단어는 공백을 뺀 1~80자, 최대 50개이며 대소문자 구분 없이 중복을 제거합니다. 영상 제외는 유효한 YouTube URL 또는 11자리 영상 ID를 최대 100개 받으며 ID로 정규화·중복 제거합니다. 잘못된 값에는 `400 INVALID_AUTOPLAY_FILTERS` 또는 `400 INVALID_AUTOPLAY_DURATION`을 반환합니다. 저장 시 예정 목록을 새 조건에 맞게 다시 생성합니다.
 
 ### `PATCH /api/rooms/:code/managers/:participantId`
 

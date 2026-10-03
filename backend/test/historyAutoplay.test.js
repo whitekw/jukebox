@@ -70,6 +70,7 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     assert.equal(next.currentSong.videoId, 'video-10')
     assert.equal(next.currentSong.isAutoplay, false)
     assert.equal(next.autoplayHistoryCount, 10)
+    rooms.setSongVote(created.code, { participantToken: created.participantToken }, next.currentSong.id, 'up')
     assert.deepEqual(next.autoplaySuggestions.slice(0, manual.autoplaySuggestions.length),
       manual.autoplaySuggestions)
     const afterManual = rooms.advance(created.code, { hostToken: created.hostToken })
@@ -85,11 +86,16 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     const requesterCredentials = { participantToken: requester.participantToken, userId: 'requester' }
     assert.equal(rooms.getSongVote(created.code, requesterCredentials, afterManual.currentSong.id).canVote, true)
     rooms.setSongVote(created.code, requesterCredentials, afterManual.currentSong.id, 'up')
+    const votedAutoplay = rooms.setSongVote(created.code,
+      { participantToken: created.participantToken }, afterManual.currentSong.id, 'down')
+    assert.equal(votedAutoplay.currentSong.upvotes, 1)
+    assert.equal(votedAutoplay.currentSong.downvotes, 1)
     const stats = rooms.getRoomStats(created.code, requesterCredentials)
     assert.equal(stats.totalPlays, 13)
     assert.equal(stats.totalUpvotes, 1)
+    assert.equal(stats.totalDownvotes, 0)
     assert.equal(stats.participants.find(({ nickname }) => nickname === 'Requester').plays, 11)
-    assert.equal(stats.participants.find(({ nickname }) => nickname === 'Requester').upvotes, 0)
+    assert.equal(stats.participants.find(({ nickname }) => nickname === 'Requester').upvotes, 1)
     const history = rooms.getRoomHistory(created.code, requesterCredentials)
     assert.equal(history.items.find(({ id }) => id === firstAutoplayId).isAutoplay, true)
     assert.equal(history.items.find(({ id }) => id === firstAutoplayId).requester, '자동 재생')
@@ -125,6 +131,154 @@ test('autoplay previews at most twenty distinct videos and drops a newly queued 
     assert.equal(queued.autoplaySuggestions.length, 20)
     assert.ok(queued.autoplaySuggestions.every(({ videoId }) => videoId !== queuedVideoId))
     assert.equal(new Set(queued.autoplaySuggestions.map(({ videoId }) => videoId)).size, 20)
+  } finally {
+    db.close()
+  }
+})
+
+test('room owner filters autoplay by title and video without affecting manual requests', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
+    const excludedId = 'abc123DEF45'
+    for (let index = 0; index < 10; index += 1) {
+      const track = index === 2 ? { ...song(index), videoId: excludedId } : song(index)
+      rooms.addSong(created.code, created.participantToken, track, 'owner')
+      rooms.advance(created.code, { hostToken: created.hostToken })
+    }
+    const owner = { userId: 'owner' }
+    const initial = rooms.updateRoomSettings(created.code, owner, { historyAutoplay: true })
+    assert.equal(initial.autoplayPoolCount, 10)
+    const filtered = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: ['SoNg 1', 'song 1'],
+      excludedVideoIds: [`https://www.youtube.com/watch?v=${excludedId}`, excludedId],
+    } })
+    assert.deepEqual(filtered.autoplayFilters, {
+      excludedWords: ['song 1'], excludedVideoIds: [excludedId],
+      minDurationSeconds: 0, maxDurationSeconds: 600,
+    })
+    assert.equal(filtered.autoplayPoolCount, 8)
+    assert.equal(filtered.autoplaySuggestions.length,
+      8 - Number(filtered.currentSong.videoId !== excludedId && filtered.currentSong.title !== 'Song 1'))
+    assert.ok(filtered.autoplaySuggestions.every(({ videoId, title }) =>
+      videoId !== excludedId && !title.toLowerCase().includes('song 1')))
+    assert.equal(createRoomService(db).getPublicRoom(created.code).autoplayPoolCount, 8)
+    const unchangedFilters = rooms.updateRoomSettings(created.code, owner, {
+      title: 'Updated title', autoplayFilters: filtered.autoplayFilters,
+    })
+    assert.deepEqual(unchangedFilters.autoplaySuggestions, filtered.autoplaySuggestions)
+    assert.throws(() => rooms.updateRoomSettings(created.code, {}, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [],
+    } }), { code: 'OWNER_FORBIDDEN' })
+    assert.throws(() => rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: ['not-a-valid-video-id'],
+    } }), { code: 'INVALID_AUTOPLAY_FILTERS' })
+    const requested = rooms.addSong(created.code, created.participantToken,
+      { ...song(11), title: 'Song 1 requested' }, 'owner')
+    assert.equal(requested.queue[0].videoId, 'video-11')
+    assert.equal(requested.autoplayPoolCount, 8)
+    assert.ok(requested.autoplaySuggestions.every(({ videoId }) => videoId !== excludedId))
+    const restored = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [],
+    } })
+    assert.equal(restored.autoplayPoolCount, 10)
+    rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: ['Song'], excludedVideoIds: [],
+    } })
+    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken })
+    assert.equal(rooms.getPublicRoom(created.code).currentSong, null)
+    const resumed = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [],
+    } })
+    assert.equal(resumed.currentSong.isAutoplay, true)
+  } finally {
+    db.close()
+  }
+})
+
+test('autoplay filter search lists distinct eligible history videos in recent-play order', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
+    const repeatedId = 'abc123DEF45'
+    for (let index = 0; index < 32; index += 1) {
+      rooms.addSong(created.code, created.participantToken,
+        index === 0 ? { ...song(index), videoId: repeatedId } : song(index), 'owner')
+      rooms.advance(created.code, { hostToken: created.hostToken })
+    }
+    rooms.addSong(created.code, created.participantToken, song(99, 601), 'owner')
+    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.addSong(created.code, created.participantToken,
+      { ...song(40), videoId: repeatedId, title: 'Special replay' }, 'owner')
+    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.updateRoomSettings(created.code, { userId: 'owner' }, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [repeatedId],
+    } })
+    const first = rooms.listAutoplayHistoryVideos(created.code, 'owner')
+    assert.equal(first.items.length, 30)
+    assert.equal(first.nextOffset, 30)
+    assert.equal(first.items[0].videoId, repeatedId)
+    assert.equal(first.items[0].title, 'Special replay')
+    assert.equal(first.items.filter(({ videoId }) => videoId === repeatedId).length, 1)
+    assert.deepEqual(first.excludedVideos.map(({ videoId }) => videoId), [repeatedId])
+    const second = rooms.listAutoplayHistoryVideos(created.code, 'owner', '', first.nextOffset)
+    assert.equal(second.items.length, 2)
+    assert.equal(second.nextOffset, null)
+    assert.deepEqual(rooms.listAutoplayHistoryVideos(created.code, 'owner', 'special').items
+      .map(({ videoId }) => videoId), [repeatedId])
+    assert.deepEqual(rooms.listAutoplayHistoryVideos(created.code, 'owner', 'Song 99').items, [])
+    assert.throws(() => rooms.listAutoplayHistoryVideos(created.code, null), { code: 'OWNER_FORBIDDEN' })
+    assert.throws(() => rooms.listAutoplayHistoryVideos(created.code, 'owner', '', -1),
+      { code: 'INVALID_AUTOPLAY_SEARCH' })
+  } finally {
+    db.close()
+  }
+})
+
+test('autoplay duration range controls the pool, history search, and next playback', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db)
+    const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
+    const owner = { userId: 'owner' }
+    for (let index = 0; index < 10; index += 1) {
+      const duration = index < 3 ? 60 : index < 6 ? 180 : index < 8 ? 300 : 601
+      rooms.addSong(created.code, created.participantToken, song(index, duration), 'owner')
+      rooms.advance(created.code, { hostToken: created.hostToken })
+    }
+    assert.equal(rooms.getPublicRoom(created.code).autoplayPoolCount, 8)
+    const ranged = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [], minDurationSeconds: 180, maxDurationSeconds: 300,
+    } })
+    assert.deepEqual([ranged.autoplayFilters.minDurationSeconds, ranged.autoplayFilters.maxDurationSeconds], [180, 300])
+    assert.equal(ranged.autoplayPoolCount, 5)
+    assert.deepEqual(rooms.listAutoplayHistoryVideos(created.code, 'owner').items
+      .map(({ durationSeconds }) => durationSeconds).sort((a, b) => a - b), [180, 180, 180, 300, 300])
+    const enabled = rooms.updateRoomSettings(created.code, owner, { historyAutoplay: true })
+    assert.ok(enabled.currentSong.durationSeconds >= 180 && enabled.currentSong.durationSeconds <= 300)
+    assert.ok(enabled.autoplaySuggestions.every(({ durationSeconds }) => durationSeconds >= 180 && durationSeconds <= 300))
+
+    const longOnly = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [], minDurationSeconds: 601, maxDurationSeconds: 601,
+    } })
+    assert.equal(longOnly.autoplayPoolCount, 2)
+    assert.ok(longOnly.autoplaySuggestions.every(({ durationSeconds }) => durationSeconds === 601))
+    assert.equal(rooms.advance(created.code, { hostToken: created.hostToken }).currentSong.durationSeconds, 601)
+    assert.throws(() => rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [], minDurationSeconds: 602, maxDurationSeconds: 601,
+    } }), { code: 'INVALID_AUTOPLAY_DURATION' })
+    assert.throws(() => rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
+      excludedWords: [], excludedVideoIds: [], minDurationSeconds: 0, maxDurationSeconds: 86_401,
+    } }), { code: 'INVALID_AUTOPLAY_DURATION' })
   } finally {
     db.close()
   }

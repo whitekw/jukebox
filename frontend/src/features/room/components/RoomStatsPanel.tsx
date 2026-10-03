@@ -4,7 +4,7 @@ import { History, RotateCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { PanelHeader } from '../../../shared/ui/PanelHeader'
 import { roomApi } from '../api'
-import type { RoomStats } from '../types'
+import type { RoomParticipant, RoomStats } from '../types'
 import { RoomPlaybackHistory } from './RoomPlaybackHistory'
 
 type Period = 'hourly' | 'daily' | 'weekly' | 'monthly'
@@ -21,11 +21,13 @@ function periodLabel(key: string, period: Period, locale: string, timeZone: stri
   }).format(date)
 }
 
-export default function RoomStatsPanel({ code, participantToken, revision, historyRevision, onClose, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
+export default function RoomStatsPanel({ code, participantToken, revision, historyRevision, participants, currentParticipantId, onClose, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
   code: string
   participantToken: string
   revision: string
   historyRevision: string
+  participants: RoomParticipant[]
+  currentParticipantId?: string
   onClose: () => void
   onAddSong: (videoId: string) => Promise<void>
   queuedVideoIds: ReadonlySet<string>
@@ -119,6 +121,7 @@ export default function RoomStatsPanel({ code, participantToken, revision, histo
       ? '[scrollbar-width:thin] [scrollbar-color:var(--color-dim)_transparent]'
       : '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}`}>
       {tab === 'history' ? <RoomPlaybackHistory code={code} participantToken={participantToken} revision={historyRevision}
+        participants={participants} currentParticipantId={currentParticipantId}
         onAddSong={onAddSong} queuedVideoIds={queuedVideoIds} currentVideoId={currentVideoId}
         onLibraryChange={onLibraryChange} libraryRevision={libraryRevision}
         message={message} roomError={roomError} />

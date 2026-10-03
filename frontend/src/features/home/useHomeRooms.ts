@@ -5,7 +5,7 @@ import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
 import type { AuthUser } from '../auth/types'
 import type { RoomState } from '../room/types'
 
-export function useHomeRooms(user: AuthUser | null, onRoomDeleted: () => void) {
+export function useHomeRooms(user: AuthUser | null) {
   const { t } = useI18n()
   const [ownedRooms, setOwnedRooms] = useState<RoomState[]>([])
   const [joinedRooms, setJoinedRooms] = useState<RoomState[]>([])
@@ -31,22 +31,6 @@ export function useHomeRooms(user: AuthUser | null, onRoomDeleted: () => void) {
     return () => { active = false }
   }, [user, t])
 
-  async function deleteOwnedRoom(room: RoomState) {
-    if (busyRoomCode || !window.confirm(t('home.deleteRoomConfirm', { code: room.code }))) return
-    setBusyRoomCode(room.code)
-    setRoomError('')
-    try {
-      await roomApi.deleteRoom(room.code)
-      clearStoredRoomCredentials(room.code)
-      setOwnedRooms((current) => current.filter((item) => item.code !== room.code))
-      onRoomDeleted()
-    } catch (error) {
-      setRoomError(getErrorMessage(error, t))
-    } finally {
-      setBusyRoomCode('')
-    }
-  }
-
   async function leaveJoinedRoom(room: RoomState) {
     if (busyRoomCode || !window.confirm(t('home.leaveRoomConfirm', { code: room.code }))) return
     setBusyRoomCode(room.code)
@@ -67,7 +51,6 @@ export function useHomeRooms(user: AuthUser | null, onRoomDeleted: () => void) {
     joinedRooms,
     busyRoomCode,
     roomError,
-    deleteOwnedRoom,
     leaveJoinedRoom,
   }
 }

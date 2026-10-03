@@ -23,6 +23,8 @@ export type RoomState = {
   allowGuests: boolean
   historyAutoplay: boolean
   autoplayHistoryCount: number
+  autoplayPoolCount: number
+  autoplayFilters: AutoplayFilters
   autoplaySuggestions: AutoplaySuggestion[]
   hostVolume: number
   playbackMode: PlaybackMode
@@ -45,6 +47,28 @@ export type AutoplaySuggestion = {
   artist: string
   durationSeconds: number
   thumbnailUrl: string
+}
+
+export type AutoplayHistoryVideo = {
+  videoId: string
+  title: string
+  artist: string
+  thumbnailUrl: string
+  durationSeconds: number
+  startedAt: number
+}
+
+export type AutoplayFilters = {
+  excludedWords: string[]
+  excludedVideoIds: string[]
+  minDurationSeconds: number
+  maxDurationSeconds: number
+}
+
+export type AutoplayHistoryVideoPage = {
+  items: AutoplayHistoryVideo[]
+  nextOffset: number | null
+  excludedVideos: AutoplayHistoryVideo[]
 }
 
 export type RoomParticipant = {
@@ -97,6 +121,12 @@ export type RoomHistoryEntry = {
 export type RoomHistoryPage = {
   items: RoomHistoryEntry[]
   nextCursor: string | null
+  requesters: {
+    id: string
+    nickname: string
+    avatarUrl: string | null
+    plays: number
+  }[]
 }
 
 export type Participant = {
