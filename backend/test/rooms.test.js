@@ -968,14 +968,26 @@ test('keeps account-owned rooms and grants their owner control', () => {
   currentTime += 7 * 24 * 60 * 60 * 1000
   assert.equal(rooms.getPublicRoom(created.code).code, created.code)
   assert.throws(
-    () => rooms.deleteOwnedRoom(created.code, 'someone-else'),
+    () => rooms.deleteOwnedRoom(created.code, 'someone-else', created.code),
     /소유자/,
   )
-  assert.deepEqual(rooms.deleteOwnedRoom(created.code, 'owner-1'), {
+  assert.throws(
+    () => rooms.deleteOwnedRoom(created.code, 'owner-1', ''),
+    /방 이름/,
+  )
+  assert.equal(rooms.getPublicRoom(created.code).code, created.code)
+  assert.deepEqual(rooms.deleteOwnedRoom(created.code, 'owner-1', created.code), {
     code: created.code,
   })
   assert.equal(rooms.listOwnedRooms('owner-1').length, 0)
   assert.throws(() => rooms.getPublicRoom(created.code), /존재하지 않는 방/)
+  const titled = rooms.createRoom({ ownerUserId: 'owner-1', title: 'Test Room' })
+  assert.throws(
+    () => rooms.deleteOwnedRoom(titled.code, 'owner-1', titled.code),
+    /방 이름/,
+  )
+  assert.equal(rooms.getPublicRoom(titled.code).title, 'Test Room')
+  rooms.deleteOwnedRoom(titled.code, 'owner-1', 'Test Room')
   db.close()
 })
 

@@ -6,14 +6,17 @@ import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { roomApi } from '../api'
-import type { RoomHistoryEntry, RoomHistoryPage } from '../types'
+import type { RoomHistoryEntry, RoomHistoryPage, RoomParticipant } from '../types'
 import { AddToQueueButton } from './AddToQueueButton'
+import { HistoryRequesterFilter } from './HistoryRequesterFilter'
 import { mergeRoomHistory } from './mergeRoomHistory'
 
-export function RoomPlaybackHistory({ code, participantToken, revision, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
+export function RoomPlaybackHistory({ code, participantToken, revision, participants, currentParticipantId, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, libraryRevision, message, roomError }: {
   code: string
   participantToken: string
   revision: string
+  participants: RoomParticipant[]
+  currentParticipantId?: string
   onAddSong: (videoId: string) => Promise<void>
   queuedVideoIds: ReadonlySet<string>
   currentVideoId: string | null
@@ -25,6 +28,8 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
   const { locale, t } = useI18n()
   const { user } = useAuth()
   const [page, setPage] = useState<RoomHistoryPage | null>(null)
+  const [selectedRequesterIds, setSelectedRequesterIds] = useState<string[]>([])
+  const [requesters, setRequesters] = useState<RoomHistoryPage['requesters']>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
@@ -59,9 +64,11 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
     let active = true
     setLoading(true)
     setLoadingMore(false)
-    void roomApi.getRoomHistory(code, participantToken).then((recent) => {
+    void roomApi.getRoomHistory(code, participantToken, undefined, selectedRequesterIds).then((recent) => {
       if (!active || generation !== requestGeneration.current) return
+      setRequesters(recent.requesters)
       setPage((current) => current ? {
+        ...recent,
         items: mergeRoomHistory(current.items, recent.items),
         nextCursor: current.nextCursor,
       } : recent)
@@ -72,16 +79,17 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
       if (active && generation === requestGeneration.current) setLoading(false)
     })
     return () => { active = false; requestGeneration.current += 1 }
-  }, [code, participantToken, revision, retry, t])
+  }, [code, participantToken, selectedRequesterIds, revision, retry, t])
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return
     const generation = requestGeneration.current
     setLoadingMore(true)
     try {
-      const page = await roomApi.getRoomHistory(code, participantToken, nextCursor)
+      const page = await roomApi.getRoomHistory(code, participantToken, nextCursor, selectedRequesterIds)
       if (generation !== requestGeneration.current) return
       setPage((current) => current ? {
+        ...current,
         items: [...current.items, ...page.items.filter((entry) =>
           !current.items.some((existing) => existing.id === entry.id))],
         nextCursor: page.nextCursor,
@@ -104,7 +112,20 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
     }
   }
 
+  function changeRequesters(ids: string[]) {
+    requestGeneration.current += 1
+    setSelectedRequesterIds(ids)
+    setPage(null)
+    setLoading(true)
+    setError('')
+  }
+
   return <section aria-label={t('history.title')} className="mx-auto w-full">
+    <div className="mb-4">
+      <HistoryRequesterFilter requesters={requesters} participants={participants}
+        currentParticipantId={currentParticipantId} selectedIds={selectedRequesterIds}
+        onChange={changeRequesters} />
+    </div>
     {error && <div role="alert" className="mb-4 flex items-center gap-3 rounded-lg border border-danger/25 px-3 py-2 text-sm text-danger">
       <span>{error}</span>
       {items.length === 0 && <button type="button" className="ml-auto rounded-md p-1 text-purple-light hover:bg-white/10"
@@ -113,7 +134,9 @@ export function RoomPlaybackHistory({ code, participantToken, revision, onAddSon
       </button>}
     </div>}
     {loading && items.length === 0 ? <p role="status" className="text-sm text-muted">{t('library.loading')}</p>
-      : items.length === 0 && !error ? <p className="rounded-xl border border-line bg-panel p-5 text-sm text-muted">{t('history.empty')}</p>
+      : items.length === 0 && !error ? <p className="rounded-xl border border-line bg-panel p-5 text-sm text-muted">
+        {t(selectedRequesterIds.length ? 'history.noRequesterResults' : 'history.empty')}
+      </p>
         : <>
           <ol className="m-0 flex list-none flex-col gap-2 p-0">
             {items.map((entry) => <li key={entry.id}

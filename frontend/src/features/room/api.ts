@@ -7,6 +7,7 @@ import type {
   RoomStats,
   RoomHistoryPage,
   VideoSearchResult,
+  AutoplayHistoryVideoPage,
 } from './types'
 import { request } from '../../shared/http'
 
@@ -32,8 +33,17 @@ function controlHeaders(credentials: ControlCredentials) {
 }
 
 export const roomApi = {
-  getRoomHistory(code: string, participantToken: string, before?: string) {
-    const query = before ? `?${new URLSearchParams({ before })}` : ''
+  getAutoplayHistoryVideos(code: string, query = '', offset = 0) {
+    const params = new URLSearchParams({ q: query, offset: String(offset) })
+    return request<AutoplayHistoryVideoPage>(
+      `/api/rooms/${encodeURIComponent(code)}/autoplay/history-videos?${params}`,
+    )
+  },
+  getRoomHistory(code: string, participantToken: string, before?: string, requesterIds: string[] = []) {
+    const params = new URLSearchParams()
+    if (before) params.set('before', before)
+    for (const requesterId of requesterIds) params.append('requesterId', requesterId)
+    const query = params.size ? `?${params}` : ''
     return request<RoomHistoryPage>(`/api/rooms/${encodeURIComponent(code)}/history${query}`, {
       headers: participantToken ? { 'x-participant-token': participantToken } : {},
     })
@@ -84,9 +94,10 @@ export const roomApi = {
     })
   },
 
-  deleteRoom(code: string) {
+  deleteRoom(code: string, confirmationName: string) {
     return request<void>(`/api/rooms/${encodeURIComponent(code)}`, {
       method: 'DELETE',
+      body: JSON.stringify({ confirmationName }),
     })
   },
 
@@ -275,6 +286,7 @@ export const roomApi = {
       title?: string
       allowGuests?: boolean
       historyAutoplay?: boolean
+      autoplayFilters?: RoomState['autoplayFilters']
     },
   ) {
     return request<RoomState>(

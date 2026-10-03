@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 12
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -76,6 +76,10 @@ function createDatabase(databasePath = ':memory:') {
       playback_pending INTEGER NOT NULL DEFAULT 0 CHECK(playback_pending IN (0, 1)),
       playback_revision INTEGER NOT NULL DEFAULT 0,
       history_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(history_autoplay IN (0, 1)),
+      autoplay_excluded_words TEXT NOT NULL DEFAULT '[]',
+      autoplay_excluded_video_ids TEXT NOT NULL DEFAULT '[]',
+      autoplay_min_duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK(autoplay_min_duration_seconds >= 0),
+      autoplay_max_duration_seconds INTEGER NOT NULL DEFAULT 600 CHECK(autoplay_max_duration_seconds >= 1),
       current_song_id TEXT,
       created_at INTEGER NOT NULL
     );
@@ -271,6 +275,18 @@ function createDatabase(databasePath = ':memory:') {
   }
   if (!roomColumns.has('history_autoplay')) {
     db.exec('ALTER TABLE rooms ADD COLUMN history_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(history_autoplay IN (0, 1))')
+  }
+  if (!roomColumns.has('autoplay_excluded_words')) {
+    db.exec("ALTER TABLE rooms ADD COLUMN autoplay_excluded_words TEXT NOT NULL DEFAULT '[]'")
+  }
+  if (!roomColumns.has('autoplay_excluded_video_ids')) {
+    db.exec("ALTER TABLE rooms ADD COLUMN autoplay_excluded_video_ids TEXT NOT NULL DEFAULT '[]'")
+  }
+  if (!roomColumns.has('autoplay_min_duration_seconds')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN autoplay_min_duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK(autoplay_min_duration_seconds >= 0)')
+  }
+  if (!roomColumns.has('autoplay_max_duration_seconds')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN autoplay_max_duration_seconds INTEGER NOT NULL DEFAULT 600 CHECK(autoplay_max_duration_seconds >= 1)')
   }
   db.exec("UPDATE rooms SET title = code WHERE title = ''")
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)

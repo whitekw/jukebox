@@ -35,6 +35,8 @@ import { CollectionsRail } from '../components/CollectionsRail'
 import { InviteRoomButton } from '../components/InviteRoomButton'
 import { RoomJoinPreview } from '../components/RoomJoinPreview'
 import { RoomSettingsButton } from '../components/RoomSettingsButton'
+import { RoomSettingsPanel } from '../components/RoomSettingsPanel'
+import { createRoomSettingsDraft, type RoomSettingsDraft } from '../roomSettingsDraft'
 import { PlaylistTracksPanel } from '../../library/PlaylistTracksPanel'
 import type { Playlist } from '../../library/api'
 import { canControlSong, getRoomPermissions } from '../roomPermissions'
@@ -88,6 +90,8 @@ export function RoomPage() {
   const [joining, setJoining] = useState(false)
   const [requestSongOpen, setRequestSongOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsDraft, setSettingsDraft] = useState<RoomSettingsDraft | null>(null)
   const [queueOpen, setQueueOpen] = useState(() => window.matchMedia('(min-width: 640px)').matches)
   const [queuePeek, setQueuePeek] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<{ userId: string; playlist: Playlist } | null>(null)
@@ -107,9 +111,11 @@ export function RoomPage() {
   const activePlaylist = selectedPlaylist && user?.id === selectedPlaylist.userId ? selectedPlaylist.playlist : null
   const closePlaylist = useCallback(() => setSelectedPlaylist(null), [])
   const closeStats = useCallback(() => setStatsOpen(false), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
   function openSongRequest() {
     setSelectedPlaylist(null)
     setStatsOpen(false)
+    setSettingsOpen(false)
     if (window.matchMedia('(max-width: 639px)').matches) {
       setQueueOpen(false)
       setQueuePeek(false)
@@ -120,17 +126,42 @@ export function RoomPage() {
     if (!user) return
     setRequestSongOpen(false)
     setStatsOpen(false)
+    setSettingsOpen(false)
     setSelectedPlaylist({ userId: user.id, playlist })
   }
   function toggleStats() {
     setRequestSongOpen(false)
     setSelectedPlaylist(null)
+    setSettingsOpen(false)
     if (window.matchMedia('(max-width: 639px)').matches) {
       setQueueOpen(false)
       setQueuePeek(false)
     }
     setStatsOpen((current) => !current)
   }
+  function openSettings() {
+    setRequestSongOpen(false)
+    setSelectedPlaylist(null)
+    setStatsOpen(false)
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      setQueueOpen(false)
+      setQueuePeek(false)
+    }
+    setSettingsOpen(true)
+  }
+  useEffect(() => {
+    if (!settingsOpen) return
+    const narrowScreen = window.matchMedia('(max-width: 1023px)')
+    const fitSettings = () => {
+      if (narrowScreen.matches) {
+        setQueueOpen(false)
+        setQueuePeek(false)
+      }
+    }
+    fitSettings()
+    narrowScreen.addEventListener('change', fitSettings)
+    return () => narrowScreen.removeEventListener('change', fitSettings)
+  }, [settingsOpen])
   const serverNow = Date.now() + serverTimeOffsetMs
 
   useEffect(() => {
@@ -313,8 +344,15 @@ export function RoomPage() {
     serverTimeOffsetMs,
     pending: room.playbackPending,
   }
-  const saveRoomSettings = async (title: string, allowGuests: boolean, historyAutoplay: boolean) => {
-    setRoom(await roomApi.updateRoomSettings(code, {}, { title, allowGuests, historyAutoplay }))
+  const saveRoomSettings = async (settings: Pick<NonNullable<typeof room>,
+    'title' | 'allowGuests' | 'historyAutoplay' | 'autoplayFilters'>) => {
+    setRoom(await roomApi.updateRoomSettings(code, {}, settings))
+    setSettingsDraft(null)
+  }
+  const deleteRoom = async (confirmationName: string) => {
+    await roomApi.deleteRoom(code, confirmationName)
+    clearStoredRoomCredentials(code)
+    navigate('/', { replace: true, state: { roomDeleted: true } })
   }
 
   return (
@@ -385,7 +423,7 @@ export function RoomPage() {
           <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests}
             triggerClassName="hidden sm:inline-flex" />
           {isOwner && (
-            <RoomSettingsButton room={room} onSave={saveRoomSettings}
+            <RoomSettingsButton onClick={openSettings}
               triggerClassName="hidden sm:inline-flex" />
           )}
           <div className="hidden sm:block">
@@ -414,9 +452,9 @@ export function RoomPage() {
             libraryRevision={libraryRevision} selectedPlaylistId={activePlaylist?.id ?? null} onSelectPlaylist={openPlaylist} />
           <div className={cn(
             'relative min-w-0 sm:h-full sm:min-h-0 sm:overflow-y-auto sm:overscroll-contain sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden',
-            statsOpen && 'min-h-[max(420px,calc(100dvh-220px))]',
+            (statsOpen || settingsOpen) && 'min-h-[max(420px,calc(100dvh-220px))]',
           )}>
-            <div inert={requestSongOpen || Boolean(activePlaylist) || statsOpen} aria-hidden={requestSongOpen || Boolean(activePlaylist) || statsOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 sm:px-6">
+            <div inert={requestSongOpen || Boolean(activePlaylist) || statsOpen || settingsOpen} aria-hidden={requestSongOpen || Boolean(activePlaylist) || statsOpen || settingsOpen} className="flex min-h-full flex-col items-center justify-center px-0 py-6 sm:px-6">
             <NowPlaying
               onRequestSong={participant ? openSongRequest : undefined}
               song={room.currentSong}
@@ -523,11 +561,15 @@ export function RoomPage() {
               <RoomStatsPanel code={code} participantToken={participantToken}
                 revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
                 historyRevision={room.currentSong?.id ?? ''}
+                participants={room.participants} currentParticipantId={participant.id}
                 onClose={closeStats} onAddSong={addSong}
                 queuedVideoIds={queuedVideoIds} currentVideoId={room.currentSong?.videoId ?? null}
                 onLibraryChange={() => setLibraryRevision((revision) => revision + 1)}
                 libraryRevision={libraryRevision} message={message} roomError={error || roomError} />
             </Suspense>}
+            {settingsOpen && isOwner && <RoomSettingsPanel room={room}
+              draft={settingsDraft ?? createRoomSettingsDraft(room)} onDraftChange={setSettingsDraft}
+              onSave={saveRoomSettings} onDelete={deleteRoom} onClose={closeSettings} />}
           </div>
             {queueOpen && <button type="button"
               className="fixed inset-0 z-[75] bg-black/60 sm:hidden"
@@ -615,7 +657,7 @@ export function RoomPage() {
                         aria-pressed={statsOpen} onClick={toggleStats}>
                         <History size={19} aria-hidden="true" />
                       </button>}
-                      {isOwner && <RoomSettingsButton room={room} onSave={saveRoomSettings}
+                      {isOwner && <RoomSettingsButton onClick={openSettings}
                         triggerClassName="text-white" />}
                       <InviteRoomButton code={code} joinUrl={joinUrl} allowGuests={room.allowGuests}
                         triggerClassName="text-white" />

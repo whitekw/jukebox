@@ -7,7 +7,6 @@ import { useHomeRooms } from './useHomeRooms'
 import { EntryLayout } from '../../shared/ui/EntryLayout'
 import { AccountMenu } from '../auth/components/AccountMenu'
 import { LoginRequiredDialog } from '../auth/components/LoginRequiredDialog'
-import { RoomCardMenu } from './RoomCardMenu'
 import { DesktopInstallLink } from './DesktopInstallLink'
 import { useAuth } from '../auth/context'
 import { useI18n } from '../../shared/i18n/i18n-context'
@@ -31,9 +30,8 @@ export function HomePage() {
     joinedRooms,
     busyRoomCode,
     roomError,
-    deleteOwnedRoom,
     leaveJoinedRoom,
-  } = useHomeRooms(user, () => setNotice(t('home.roomDeleted')))
+  } = useHomeRooms(user)
 
   useEffect(() => {
     const state = location.state as { roomDeleted?: boolean; loggedOut?: boolean; roomDisconnected?: boolean } | null
@@ -154,11 +152,6 @@ export function HomePage() {
                     aria-label={t('home.rejoinRoom')}
                   />
                 </Link>
-                <RoomCardMenu
-                  roomCode={room.code}
-                  disabled={Boolean(busyRoomCode)}
-                  onDelete={() => void deleteOwnedRoom(room)}
-                />
               </article>
             ))}
           </div>
