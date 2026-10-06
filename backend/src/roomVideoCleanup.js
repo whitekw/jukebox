@@ -1,14 +1,16 @@
 const crypto = require('node:crypto')
 const { AppError } = require('./errors')
 
+const VIDEO_ACTIVITIES_QUERY = `SELECT CASE WHEN json_valid(event_data) THEN json_extract(event_data, '$.videoId') END AS video_id,
+    CASE WHEN json_valid(event_data) THEN json_extract(event_data, '$.title') END AS title
+    FROM room_feed_entries WHERE room_id = ? AND entry_type = 'system'
+      AND event_type IN ('song_added', 'song_skipped', 'song_removed', 'queue_reordered')`
+
 // Include videos that only have an autoplay exclusion, a suggestion or activity.
 const ROOM_VIDEOS_QUERY = `WITH room_songs AS (SELECT * FROM songs WHERE room_id = ?),
   suggestions AS (SELECT * FROM room_autoplay_suggestions WHERE room_id = ?),
   excluded AS (SELECT value AS video_id FROM rooms, json_each(autoplay_excluded_video_ids) WHERE rooms.id = ?),
-  activities AS (SELECT CASE WHEN json_valid(event_data) THEN json_extract(event_data, '$.videoId') END AS video_id,
-    CASE WHEN json_valid(event_data) THEN json_extract(event_data, '$.title') END AS title
-    FROM room_feed_entries WHERE room_id = ? AND entry_type = 'system'
-      AND event_type IN ('song_added', 'song_skipped', 'song_removed', 'queue_reordered')),
+  activities AS (${VIDEO_ACTIVITIES_QUERY}),
   videos AS (SELECT video_id FROM room_songs UNION SELECT video_id FROM suggestions UNION SELECT video_id FROM excluded
     UNION SELECT video_id FROM activities WHERE typeof(video_id) = 'text' AND length(video_id) > 0)
   SELECT videos.video_id AS videoId,
@@ -40,20 +42,23 @@ function readRoomVideoRecords(db, codeInput, videoId) {
     ORDER BY song_id, voter_participant_id`).all(room.id, room.id, video.videoId)
   // Older activity entries only have titles. Match those only if no other video
   // in this room shares the title; plain chat messages are never matched.
-  const feedQuery = `SELECT id, sequence FROM room_feed_entries WHERE room_id = ? AND entry_type = 'system'
+  const feedQuery = `WITH video_titles AS (
+      SELECT video_id, title FROM songs WHERE room_id = ?
+      UNION SELECT video_id, title FROM room_autoplay_suggestions WHERE room_id = ?
+      UNION SELECT video_id, title FROM (${VIDEO_ACTIVITIES_QUERY})
+        WHERE typeof(video_id) = 'text' AND length(video_id) > 0 AND typeof(title) = 'text' AND length(title) > 0
+    ) SELECT id, sequence FROM room_feed_entries WHERE room_id = ? AND entry_type = 'system'
     AND event_type IN ('song_added', 'song_skipped', 'song_removed', 'queue_reordered')
     AND CASE WHEN json_valid(event_data) THEN
       json_extract(event_data, '$.videoId') = ? OR
       json_extract(event_data, '$.songId') IN (SELECT id FROM songs WHERE room_id = ? AND video_id = ?) OR
       (json_extract(event_data, '$.videoId') IS NULL AND json_extract(event_data, '$.songId') IS NULL AND
         json_extract(event_data, '$.title') IN (
-          SELECT title FROM songs WHERE room_id = ? AND video_id = ?
-          UNION SELECT title FROM room_autoplay_suggestions WHERE room_id = ? AND video_id = ?
-          EXCEPT SELECT title FROM songs WHERE room_id = ? AND video_id != ?
-          EXCEPT SELECT title FROM room_autoplay_suggestions WHERE room_id = ? AND video_id != ?
+          SELECT title FROM video_titles WHERE video_id = ?
+          EXCEPT SELECT title FROM video_titles WHERE video_id != ?
         )) ELSE 0 END ORDER BY id`
-  const feedParams = [room.id, video.videoId, room.id, video.videoId,
-    room.id, video.videoId, room.id, video.videoId, room.id, video.videoId, room.id, video.videoId]
+  const feedParams = [room.id, room.id, room.id, room.id, video.videoId, room.id, video.videoId,
+    video.videoId, video.videoId]
   const feed = db.prepare(feedQuery).all(...feedParams)
   const preview = {
     code: room.code, roomTitle: room.title,

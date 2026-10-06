@@ -143,6 +143,34 @@ test('ambiguous legacy titles and explicitly unrelated activities are preserved'
   } finally { db.close() }
 })
 
+test('activity-only videos with the same title preserve ambiguous legacy events', () => {
+  const { db, rooms, admin, room, listener, preview, remove } = fixture()
+  try {
+    const before = preview()
+    rooms.addRoomEvent(room.code, 'song_removed', { userId: 'owner' }, { title: 'Title target-video', videoId: 'activity-only' })
+    assert.equal(admin.listRoomVideos(room.code, 'activity-only').total, 1)
+    assert.equal(preview().counts.events, 2)
+    assert.throws(() => remove('target-video', { revision: before.revision }), { code: 'ROOM_RECORDS_CHANGED' })
+    remove()
+    const feed = rooms.listChatMessages(room.code, listener.participantToken)
+    assert.ok(feed.some((entry) => entry.eventType === 'song_skipped'))
+    assert.equal(admin.listRoomVideos(room.code, 'activity-only').total, 1)
+  } finally { db.close() }
+})
+
+test('activity-only target titles identify their unambiguous legacy events', () => {
+  const { db, rooms, admin, room, remove } = fixture()
+  try {
+    rooms.addRoomEvent(room.code, 'song_removed', { userId: 'owner' }, { videoId: 'orphan-video', title: 'Orphan video' })
+    rooms.addRoomEvent(room.code, 'song_skipped', { userId: 'owner' }, { title: 'Orphan video' })
+    const result = remove('orphan-video')
+    assert.equal(result.counts.events, 2)
+    assert.equal(admin.listRoomVideos(room.code, 'orphan-video').total, 0)
+    const feed = db.prepare("SELECT COUNT(*) AS count FROM room_feed_entries WHERE room_id = (SELECT id FROM rooms WHERE code = ?) AND event_data LIKE '%Orphan video%'").get(room.code)
+    assert.equal(feed.count, 0)
+  } finally { db.close() }
+})
+
 test('lists unique videos with searchable pagination, including exclusion-only records', () => {
   const { db, rooms, admin, room, listener, remove } = fixture()
   try {

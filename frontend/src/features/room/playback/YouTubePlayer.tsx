@@ -19,6 +19,7 @@ import {
   writePlayerAudioSettings,
   type PlayerAudioSettings,
 } from './playerAudioSettings'
+import { createPlaybackFailureReport, retryPlaybackFailureReport, type PlaybackFailureReport } from './playbackFailure'
 
 const DRIFT_TOLERANCE_SECONDS = 0.75
 const SYNCHRONIZATION_INTERVAL_MS = 3_000
@@ -35,7 +36,7 @@ type PlaybackSession = {
   started: boolean
   reportedPendingRevision: number | null
   ended: boolean
-  failed: boolean
+  failure: PlaybackFailureReport
 }
 
 export function YouTubePlayer({
@@ -60,7 +61,7 @@ export function YouTubePlayer({
   playbackBlocked?: boolean
   onPlaybackBlockedChange?: (blocked: boolean) => void
   onPlaybackStarted?: (videoId: string, positionSeconds: number) => void
-  onPlaybackFailed?: (songId: string, videoId: string, errorCode: number) => void
+  onPlaybackFailed?: (songId: string, videoId: string, errorCode: number) => Promise<boolean>
   onPositionChange?: (videoId: string, positionSeconds: number) => void
   requestedAudioSettings?: PlayerAudioSettings
   onAudioSettingsChange?: (settings: PlayerAudioSettings) => void
@@ -100,7 +101,7 @@ export function YouTubePlayer({
     started: false,
     reportedPendingRevision: null,
     ended: false,
-    failed: false,
+    failure: createPlaybackFailureReport(),
   })
   const transitionRetryTimerRef = useRef<number | null>(null)
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
@@ -159,7 +160,7 @@ export function YouTubePlayer({
     session.started = false
     session.reportedPendingRevision = null
     session.ended = false
-    session.failed = false
+    session.failure = createPlaybackFailureReport()
     setPlaybackError(null)
     const loadOptions = {
       videoId: session.videoId,
@@ -201,9 +202,17 @@ export function YouTubePlayer({
     onPlaybackStartedRef.current(session.videoId, position)
   }
 
+  function reportFailedSession(session: PlaybackSession) {
+    const report = onPlaybackFailedRef.current
+    if (!report) return
+    void retryPlaybackFailureReport(session.failure,
+      () => playbackSessionRef.current === session && session.songId === songIdRef.current,
+      (errorCode) => report(session.songId, session.videoId, errorCode))
+  }
+
   function alignPlayer(player: YTPlayer, forceSeek: boolean) {
     if (
-      playbackSessionRef.current.failed ||
+      playbackSessionRef.current.failure.errorCode !== null ||
       !playerReadyRef.current ||
       typeof player.getPlayerState !== 'function'
     ) {
@@ -250,7 +259,7 @@ export function YouTubePlayer({
       started: false,
       reportedPendingRevision: null,
       ended: false,
-      failed: false,
+      failure: createPlaybackFailureReport(),
     }
     playbackSessionRef.current = session
     requestedPausedStateRef.current =
@@ -278,7 +287,7 @@ export function YouTubePlayer({
         if (
           playbackSessionRef.current !== session ||
           session.started ||
-          session.failed ||
+          session.failure.errorCode !== null ||
           pausedRef.current ||
           locallyPausedRef.current ||
           autoplayBlockedRef.current
@@ -406,9 +415,12 @@ export function YouTubePlayer({
       ) {
         return
       }
-      const playerState = player.getPlayerState()
       const session = playbackSessionRef.current
-      if (session.failed) return
+      if (session.failure.errorCode !== null) {
+        reportFailedSession(session)
+        return
+      }
+      const playerState = player.getPlayerState()
       const loadedVideoId = getLoadedVideoId(player)
       if (loadedVideoId && loadedVideoId !== session.videoId) {
         // 위치만 보정하면 이전 영상이 계속 재생될 수 있다.
@@ -503,7 +515,7 @@ export function YouTubePlayer({
           onStateChange: (event) => {
             if (cancelled) return
             const session = playbackSessionRef.current
-            if (session.failed) return
+            if (session.failure.errorCode !== null) return
             const loadedVideoId = getLoadedVideoId(event.target)
             if (loadedVideoId && loadedVideoId !== session.videoId) return
             if (
@@ -577,9 +589,9 @@ export function YouTubePlayer({
             }
             setPlaybackError(event.data)
             if (onPlaybackFailedRef.current && session.songId === songIdRef.current &&
-              shouldReportPlaybackFailure(event.data, session.videoId, loadedVideoId, session.failed)) {
-              session.failed = true
-              onPlaybackFailedRef.current(session.songId, session.videoId, event.data)
+              shouldReportPlaybackFailure(event.data, session.videoId, loadedVideoId, session.failure.reported)) {
+              session.failure.errorCode = event.data
+              reportFailedSession(session)
             }
           },
           onAutoplayBlocked: () => {
@@ -651,7 +663,7 @@ export function YouTubePlayer({
                   started: false,
                   reportedPendingRevision: null,
                   ended: false,
-                  failed: false,
+                  failure: createPlaybackFailureReport(),
                 }
                 playbackSessionRef.current = session
                 player.loadVideoById({
