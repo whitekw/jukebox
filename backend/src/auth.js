@@ -20,10 +20,10 @@ function publicUser(row) {
     id: row.id,
     discordId: row.discord_id,
     username: row.username,
-    displayName: row.global_name || row.username,
-    avatarUrl: row.avatar_hash
+    displayName: row.custom_name || row.global_name || row.username,
+    avatarUrl: row.custom_avatar != null ? (row.custom_avatar || null) : (row.avatar_hash
       ? `https://cdn.discordapp.com/avatars/${row.discord_id}/${row.avatar_hash}.webp?size=128`
-      : null,
+      : null),
   }
 }
 
@@ -133,7 +133,7 @@ function createDiscordAuth(db, options = {}) {
     return response.json()
   }
 
-  async function completeAuthorization(code, { createSession = true } = {}) {
+  async function completeAuthorization(code, { createSession = true, syncUserId = null } = {}) {
     ensureConfigured()
     if (typeof code !== 'string' || !code) {
       throw new AppError(400, 'Discord 인증 코드가 없습니다.', 'INVALID_AUTH_CODE')
@@ -175,6 +175,12 @@ function createDiscordAuth(db, options = {}) {
     }
 
     const signedInAt = now()
+    if (syncUserId) {
+      const expected = db.prepare('SELECT discord_id FROM users WHERE id = ?').get(syncUserId)
+      if (!expected || expected.discord_id !== profile.id) {
+        throw new AppError(403, '연결된 Discord 계정으로 인증해주세요.', 'DISCORD_ACCOUNT_MISMATCH')
+      }
+    }
     const sessionToken = createSession ? createToken() : null
     const user = transaction(db, () => {
       let row = db
@@ -214,6 +220,7 @@ function createDiscordAuth(db, options = {}) {
         row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
       }
 
+      if (syncUserId) db.prepare('UPDATE users SET custom_name = NULL, custom_avatar = NULL WHERE id = ?').run(syncUserId)
       row = db.prepare('SELECT * FROM users WHERE id = ?').get(row.id)
 
       if (sessionToken) {

@@ -1,5 +1,9 @@
 # 시스템 아키텍처
 
+계정 관리(`/account`)는 `auth` 기능의 전용 페이지와 `/api/account` API로 구성됩니다. DB 스키마 15는 `users.custom_name/custom_avatar`, `youtube_connections`, `youtube_playlist_links`를 추가합니다. 로그인 시 Discord 원본 정보가 갱신되어도 B-SIDE에서 저장한 커스텀 프로필은 유지하며, 수동 Discord 재인증은 연결된 사용자 ID를 검증한 뒤 커스텀 프로필을 제거합니다.
+
+`youtubeSync.js`는 Google 읽기 전용 OAuth·PKCE, 세션에 묶인 인증 상태, AES-256-GCM 토큰 저장, 토큰 갱신, 본인 채널 목록 조회와 선택 목록 수동 가져오기를 담당합니다. 계정 단위로 동기화를 직렬화하고, 외부 조회가 모두 끝난 후 연결이 그대로인지 확인하여 단일 DB 트랜잭션으로 기존 개인 목록을 교체합니다. 기존 `library`와 같은 테이블을 쓰므로 방의 개인 플레이리스트에서 바로 사용할 수 있습니다. Google 환경 변수가 없으면 기존 Discord 로그인과 계정 관리는 그대로 제공하고 YouTube 연결만 비활성화합니다.
+
 ## 1. 아키텍처 요약
 
 Jukebox는 하나의 Node.js 프로세스가 REST API, Socket.IO, 빌드된 SPA 정적 파일을 모두 제공하고 SQLite 파일 하나를 영속 저장소로 사용하는 모듈형 모놀리스입니다. 실제 미디어 스트림은 서버를 통과하지 않습니다. 방 생성 시 선택한 모드에 따라 호스트만 또는 호스트와 모든 참여자 브라우저가 YouTube에서 직접 재생합니다.

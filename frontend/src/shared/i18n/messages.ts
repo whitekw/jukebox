@@ -1,8 +1,16 @@
+import { accountEn, accountJa, accountKo } from './accountMessages'
+import { termsEn, termsJa, termsKo } from './termsMessages'
+
 export const ko = {
+  ...accountKo,
+  ...termsKo,
+  'library.youtubeSynced': 'YouTube 동기화',
+  'library.youtubeReadOnly': '곡은 YouTube에서 변경한 뒤 계정 관리에서 갱신하세요. 연동을 해제하면 직접 수정할 수 있습니다.',
+  'errors.PLAYLIST_SYNCED_READ_ONLY': 'YouTube 동기화 재생목록의 곡은 직접 추가하거나 삭제할 수 없습니다.',
   'privacy.link': '개인정보 처리방침',
   'privacy.title': '개인정보 처리방침',
   'privacy.intro': 'B-SIDE는 함께 음악을 듣는 방과 브라우저 확장 프로그램을 운영하기 위해 필요한 정보를 처리합니다. 이 방침은 웹사이트, 데스크톱 앱, Chrome 확장 프로그램에 적용됩니다.',
-  'privacy.updated': '최종 수정: 2026년 9월 30일',
+  'privacy.updated': '최종 수정: 2026년 10월 6일',
   'privacy.dataTitle': '처리하는 정보',
   'privacy.dataDiscord': 'Discord로 로그인하면 identify 권한으로 Discord 사용자 ID, 사용자 이름, 표시 이름, 아바타 식별자를 받습니다. 이메일 주소나 Discord 비밀번호는 받지 않습니다.',
   'privacy.dataRoom': '방 이용 시 닉네임, 방 참여·관리 정보, 신청한 YouTube 영상 정보, 곡의 재생 시작 시각, 추천·비추천 선택과 채팅 내용·작성 시각을 저장합니다. 로그인하지 않아도 닉네임으로 방에 참여할 수 있습니다.',
@@ -12,7 +20,8 @@ export const ko = {
   'privacy.purposeTitle': '이용 목적',
   'privacy.purpose': '로그인 상태 유지, 방 생성과 참여 관리, 음악 신청·재생 및 방 통계, 개인 플레이리스트 저장, 채팅 제공, 확장 프로그램의 대기열 추가, 서비스 보안과 오류 대응에 사용합니다.',
   'privacy.retentionTitle': '보유 기간과 삭제',
-  'privacy.retentionAccount': 'Discord 계정 정보는 계정 이용 중 보관합니다. 현재 서비스에는 계정 자동 삭제 기능이 없으며, 삭제 요청은 아래 문의처를 통해 처리합니다.',
+  'privacy.retentionAccount': '계정 관리에서 이름·사진을 변경하고 탈퇴할 수 있습니다. 탈퇴하면 계정, 개인 재생목록과 소유한 방이 삭제되고 다른 방의 참여·재생 기록은 익명화하며 직접 작성한 채팅은 삭제합니다.',
+  'privacy.dataGoogle': 'Google 계정을 연결하면 YouTube 읽기 전용 권한으로 채널 정보와 본인 재생목록을 조회합니다. 선택한 목록만 B-SIDE에 가져오고 수동 갱신하며 YouTube에는 변경을 보내지 않습니다. 연결 유지를 위한 OAuth 토큰은 서버에서 암호화해 보관하며 연결 해제·탈퇴 시 삭제하고 Google에 권한 해제를 요청합니다. 연결 해제만 하면 가져온 B-SIDE 재생목록은 유지됩니다. Google 계정의 권한 관리 페이지에서도 접근을 해제할 수 있습니다.',
   'privacy.retentionRoom': '방의 참여 기록, 신청곡과 채팅은 방이 유지되는 동안 보관합니다. 화면에는 최근 대화와 활동 로그를 각각 100건씩 불러오지만 이전 기록이 자동 삭제되는 것은 아닙니다. 방 소유자가 방을 삭제하면 관련 기록도 삭제됩니다. 방에서 나가는 것만으로 이전 채팅이 삭제되지는 않습니다.',
   'privacy.retentionSession': '웹 로그인 세션과 확장 프로그램 로그인 토큰의 기본 유효기간은 각각 30일이며 운영 설정에 따라 달라질 수 있습니다. 로그아웃하면 해당 세션을 폐기하고, 만료된 세션은 정기적으로 삭제합니다. 확장 프로그램 로그인에 쓰는 일회용 교환 코드는 2분 후 만료됩니다.',
   'privacy.thirdPartyTitle': '외부 서비스와 정보 전달',
@@ -427,10 +436,15 @@ export const ko = {
 export type TranslationKey = keyof typeof ko
 
 export const ja = {
+  ...accountJa,
+  ...termsJa,
+  'library.youtubeSynced': 'YouTube同期',
+  'library.youtubeReadOnly': 'YouTubeで楽曲を変更し、アカウント管理から更新してください。連携を解除すると直接編集できます。',
+  'errors.PLAYLIST_SYNCED_READ_ONLY': 'YouTube同期プレイリストの楽曲は直接追加・削除できません。',
   'privacy.link': 'プライバシーポリシー',
   'privacy.title': 'プライバシーポリシー',
   'privacy.intro': 'B-SIDEは、音楽を一緒に聴くルームとブラウザー拡張機能を提供するために必要な情報を取り扱います。この方針はウェブサイト、デスクトップアプリ、Chrome拡張機能に適用されます。',
-  'privacy.updated': '最終更新日: 2026年9月30日',
+  'privacy.updated': '最終更新日: 2026年10月6日',
   'privacy.dataTitle': '取り扱う情報',
   'privacy.dataDiscord': 'Discordでログインすると、identify権限によりDiscordユーザーID、ユーザー名、表示名、アバター識別子を取得します。メールアドレスやDiscordのパスワードは取得しません。',
   'privacy.dataRoom': 'ルームの利用時に、ニックネーム、参加・管理情報、リクエストしたYouTube動画の情報、再生開始時刻、おすすめ・おすすめしないの選択、チャット内容と投稿時刻を保存します。ログインせずにニックネームで参加することもできます。',
@@ -440,7 +454,8 @@ export const ja = {
   'privacy.purposeTitle': '利用目的',
   'privacy.purpose': 'ログイン状態の維持、ルームの作成と参加管理、楽曲のリクエスト・再生とルーム統計、個人のプレイリスト保存、チャット、拡張機能からのキュー追加、サービスの保護と不具合対応に使用します。',
   'privacy.retentionTitle': '保存期間と削除',
-  'privacy.retentionAccount': 'Discordアカウント情報はアカウントの利用中に保存します。現在、自動削除機能はありません。削除のご依頼は下記の連絡先で受け付けます。',
+  'privacy.retentionAccount': 'アカウント管理で名前・写真の変更と退会ができます。退会するとアカウント、個人リスト、所有する部屋を削除し、他の部屋の履歴を匿名化して自分のチャットを削除します。',
+  'privacy.dataGoogle': 'Google連携ではYouTubeの読み取り専用権限でチャンネルと自分のプレイリストを取得します。選択したリストだけを手動で取り込み・更新し、YouTubeには変更を送りません。OAuthトークンはサーバーで暗号化し、連携解除・退会時に削除してGoogleに権限の取り消しを要求します。連携解除後も取り込んだリストは残ります。Googleの権限管理ページからもアクセスを解除できます。',
   'privacy.retentionRoom': '参加記録、リクエスト曲、チャットはルームの存続中に保存します。画面には直近の会話と活動ログをそれぞれ100件ずつ表示しますが、以前の記録が自動削除されるわけではありません。ルーム所有者が削除すると関連記録も削除されます。退室だけでは過去のチャットは削除されません。',
   'privacy.retentionSession': 'ウェブログインセッションと拡張機能トークンの標準有効期間はそれぞれ30日で、運用設定により変わる場合があります。ログアウト時に該当セッションを無効化し、期限切れセッションは定期的に削除します。拡張機能のワンタイム交換コードは2分で失効します。',
   'privacy.thirdPartyTitle': '外部サービスとの情報のやり取り',
@@ -853,10 +868,15 @@ export const ja = {
 } satisfies Record<TranslationKey, string>
 
 export const en = {
+  ...accountEn,
+  ...termsEn,
+  'library.youtubeSynced': 'YouTube sync',
+  'library.youtubeReadOnly': 'Change tracks on YouTube, then update in account management. Unlink to edit tracks here.',
+  'errors.PLAYLIST_SYNCED_READ_ONLY': 'Tracks in a YouTube synced playlist cannot be added or removed directly.',
   'privacy.link': 'Privacy policy',
   'privacy.title': 'Privacy policy',
   'privacy.intro': 'B-SIDE processes the information needed to run shared listening rooms and the browser extension. This policy applies to the website, desktop app, and Chrome extension.',
-  'privacy.updated': 'Last updated: September 30, 2026',
+  'privacy.updated': 'Last updated: October 6, 2026',
   'privacy.dataTitle': 'Information we process',
   'privacy.dataDiscord': 'When you sign in with Discord, we receive your Discord user ID, username, display name, and avatar identifier through the identify scope. We do not receive your email address or Discord password.',
   'privacy.dataRoom': 'When you use a room, we store your nickname, membership and management information, requested YouTube video information, playback start times, recommendation and dislike choices, chat content, and message timestamps. You can join with a nickname without signing in.',
@@ -866,7 +886,8 @@ export const en = {
   'privacy.purposeTitle': 'How we use the information',
   'privacy.purpose': 'We use it to keep you signed in, manage rooms and membership, play and request music, show room statistics, save personal playlists, provide chat, add videos from the extension, and maintain security and reliability.',
   'privacy.retentionTitle': 'Retention and deletion',
-  'privacy.retentionAccount': 'Discord account information is stored while the account is in use. There is currently no automatic account deletion feature; contact us below to request deletion.',
+  'privacy.retentionAccount': 'Account settings lets you change your name and photo or delete your account. Deletion removes your account, personal playlists and owned rooms, anonymizes history in other rooms and deletes your chat messages.',
+  'privacy.dataGoogle': 'Google linking uses read-only YouTube access to retrieve your channel and playlists. Only selected playlists are imported and updated manually; no changes are sent to YouTube. OAuth tokens are encrypted on the server, deleted on disconnect or withdrawal, and revocation is requested from Google. Disconnecting preserves imported B-SIDE playlists. You can also revoke access in your Google account permissions.',
   'privacy.retentionRoom': 'Membership records, requested songs, and chat are kept while the room exists. The interface loads the latest 100 conversations and 100 activity logs, but older entries are not automatically deleted. Deleting a room removes its related records. Leaving a room does not erase earlier chat.',
   'privacy.retentionSession': 'Web sessions and extension login tokens each last 30 days by default; this may vary by server configuration. Logging out revokes the relevant session, and expired sessions are cleaned up regularly. Single-use extension exchange codes expire after two minutes.',
   'privacy.thirdPartyTitle': 'External services',

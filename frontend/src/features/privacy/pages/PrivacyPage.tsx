@@ -4,7 +4,7 @@ import { EntryLayout } from '../../../shared/ui/EntryLayout'
 import { useI18n } from '../../../shared/i18n/i18n-context'
 
 const sections = [
-  { title: 'privacy.dataTitle', paragraphs: ['privacy.dataDiscord', 'privacy.dataRoom', 'privacy.dataLibrary', 'privacy.dataExtension', 'privacy.dataTechnical'] },
+  { title: 'privacy.dataTitle', paragraphs: ['privacy.dataDiscord', 'privacy.dataRoom', 'privacy.dataLibrary', 'privacy.dataGoogle', 'privacy.dataExtension', 'privacy.dataTechnical'] },
   { title: 'privacy.purposeTitle', paragraphs: ['privacy.purpose'] },
   { title: 'privacy.retentionTitle', paragraphs: ['privacy.retentionAccount', 'privacy.retentionRoom', 'privacy.retentionSession'] },
   { title: 'privacy.thirdPartyTitle', paragraphs: ['privacy.thirdPartyDiscord', 'privacy.thirdPartyYouTube', 'privacy.thirdPartyOther'] },
@@ -55,9 +55,12 @@ export function PrivacyPage() {
           ))}
         </div>
       </article>
-      <footer className="mx-auto flex w-full max-w-[920px] items-center justify-between gap-4 border-t border-line py-5 text-xs text-muted">
+      <footer className="mx-auto flex w-full max-w-[920px] flex-wrap items-center justify-between gap-4 border-t border-line py-5 text-xs text-muted">
         <span>Powered by YouTube</span>
-        <Link className="rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light" to="/">{t('common.home')}</Link>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <Link className="rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light" to="/terms">{t('terms.link')}</Link>
+          <Link className="rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light" to="/">{t('common.home')}</Link>
+        </div>
       </footer>
     </EntryLayout>
   )

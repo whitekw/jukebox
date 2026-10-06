@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 14
+const SCHEMA_VERSION = 15
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -298,6 +298,23 @@ function createDatabase(databasePath = ':memory:') {
     db.exec('ALTER TABLE rooms ADD COLUMN autoplay_max_duration_seconds INTEGER NOT NULL DEFAULT 600 CHECK(autoplay_max_duration_seconds >= 1)')
   }
   db.exec("UPDATE rooms SET title = code WHERE title = ''")
+  const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(({ name }) => name))
+  if (!userColumns.has('custom_name')) db.exec('ALTER TABLE users ADD COLUMN custom_name TEXT')
+  if (!userColumns.has('custom_avatar')) db.exec('ALTER TABLE users ADD COLUMN custom_avatar TEXT')
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS youtube_connections (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      channel_id TEXT NOT NULL, channel_title TEXT NOT NULL,
+      credentials TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS youtube_playlist_links (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      youtube_id TEXT NOT NULL,
+      playlist_id TEXT NOT NULL UNIQUE REFERENCES playlists(id) ON DELETE CASCADE,
+      synced_at INTEGER NOT NULL, skipped_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, youtube_id)
+    );
+  `)
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
 
   db.exec("UPDATE rooms SET host_token_hash = '' WHERE playback_mode = 'all_devices' AND host_token_hash <> ''")
