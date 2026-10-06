@@ -94,6 +94,8 @@ npm run dev
 
 운영 화면은 별도 터미널에서 `http://localhost:5174/admin/`에 접속합니다. 여기서 Discord 로그인을 시작해도 인증 후 운영 화면으로 돌아옵니다. 개발 서버 포트가 달라도 쿠키의 호스트가 같아 로그인 세션을 공유합니다.
 
+운영 화면의 Vite API 프록시는 브라우저의 `Origin`과 일치하도록 원래 `Host`를 유지합니다(`changeOrigin: false`). 로그인 callback 포트인 5173과 운영 화면 포트인 5174를 같은 출처로 간주하지 않고, 실제 요청의 출처를 검증합니다. `admin/`에서 `npm test`로 이 프록시 동작을 확인할 수 있습니다.
+
 ```powershell
 cd admin
 npm install

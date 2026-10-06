@@ -61,6 +61,10 @@ jobs:
         working-directory: admin
         run: npm ci
 
+      - name: Test admin
+        working-directory: admin
+        run: npm test
+
       - name: Lint admin
         working-directory: admin
         run: npm run lint

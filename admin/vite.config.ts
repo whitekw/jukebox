@@ -13,6 +13,12 @@ export default defineConfig({
   server: {
     port: 5174,
     strictPort: true,
-    proxy: { '/api': 'http://localhost:3001' },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        // Keep the dev UI's host so it matches the browser's Origin header.
+        changeOrigin: false,
+      },
+    },
   },
 })
