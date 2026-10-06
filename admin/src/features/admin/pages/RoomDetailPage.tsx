@@ -24,6 +24,7 @@ export function RoomDetailPage() {
   const [cleanupParticipantId, setCleanupParticipantId] = useState<string | null>(null)
   const [cleanupVideoId, setCleanupVideoId] = useState<string | null>(null)
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
+  const [recordsRevision, setRecordsRevision] = useState(0)
   useEffect(() => { setCleanupParticipantId(null); setCleanupVideoId(null); setCleanupMessage(null) }, [code])
 
   async function togglePlayback() {
@@ -76,9 +77,9 @@ export function RoomDetailPage() {
             </CardContent>
           </Card>
         </div>
-        <RoomVideos key={code} code={code} onDeleteRecords={setCleanupVideoId} />
+        <RoomVideos key={`${code}:${recordsRevision}`} code={code} onDeleteRecords={setCleanupVideoId} />
         <div className="grid gap-4 xl:grid-cols-2">
-          <RoomParticipants key={code} code={code} onDeleteRecords={setCleanupParticipantId} />
+          <RoomParticipants key={`${code}:${recordsRevision}`} code={code} onDeleteRecords={setCleanupParticipantId} />
           <Card><CardHeader><CardTitle>대기열·최근 재생</CardTitle><CardDescription>현재 곡과 최근 항목 50건</CardDescription></CardHeader>
             <CardContent className="max-h-96 overflow-auto"><Table><TableHeader><TableRow><TableHead>곡</TableHead><TableHead>상태</TableHead><TableHead>시각</TableHead></TableRow></TableHeader>
               <TableBody>{data.songs.map((song) => <TableRow key={song.id}>
@@ -97,6 +98,7 @@ export function RoomDetailPage() {
       onDeleted={(result) => {
         setCleanupVideoId(null)
         setCleanupMessage(`${result.target.title} 영상의 이 방 기록을 삭제했습니다. 신청·자동 재생 ${result.counts.songs}건 · 재생 ${result.counts.plays}건 · 투표 ${result.counts.votes}건 · 활동 ${result.counts.events}건`)
+        setRecordsRevision((value) => value + 1)
         reload()
       }} />}
     {cleanupParticipantId && <DeleteRoomUserRecordsDialog key={`${code}:${cleanupParticipantId}`}
@@ -104,6 +106,7 @@ export function RoomDetailPage() {
       onDeleted={(result) => {
         setCleanupParticipantId(null)
         setCleanupMessage(`${result.target.nickname}님의 이 방 기록을 삭제했습니다. 신청곡 ${result.counts.songs}건 · 투표 ${result.counts.votes}건 · 채팅·활동 ${result.counts.messages + result.counts.events}건 · 참여 이력 ${result.counts.participants}건`)
+        setRecordsRevision((value) => value + 1)
         reload()
       }} />}
   </>
