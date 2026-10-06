@@ -39,7 +39,7 @@ import { RoomSettingsPanel } from '../components/RoomSettingsPanel'
 import { createRoomSettingsDraft, type RoomSettingsDraft } from '../roomSettingsDraft'
 import { PlaylistTracksPanel } from '../../library/PlaylistTracksPanel'
 import type { Playlist } from '../../library/api'
-import { canControlSong, getRoomPermissions } from '../roomPermissions'
+import { canControlSong, canReportPlaybackFailure, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
 import { useRoomActions } from '../hooks/useRoomActions'
@@ -82,6 +82,7 @@ export function RoomPage() {
     connected,
     serverTimeOffsetMs,
     chatMessages,
+    recordsRevision,
     appendChatMessage,
     deleted,
     error: roomError,
@@ -228,6 +229,7 @@ export function RoomPage() {
     runQueueAction,
     reportPlaybackBlocked,
     reportPlaybackStarted,
+    reportPlaybackFailed,
     claimPlaybackHost,
   } = useRoomActions({
     code,
@@ -461,6 +463,7 @@ export function RoomPage() {
               player={
                 canPlayLocally && room.currentSong ? (
                   <YouTubePlayer
+                    songId={room.currentSong.id}
                     videoId={room.currentSong.videoId}
                     volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
                     requestedAudioSettings={audioSettings ?? undefined}
@@ -473,6 +476,8 @@ export function RoomPage() {
                       )
                     }}
                     paused={room.playbackPaused}
+                    onPlaybackFailed={canReportPlaybackFailure(room, participant?.id, isController, isHost, serverNow)
+                      ? reportPlaybackFailed : undefined}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
                         ? room.playbackBlocked
@@ -503,7 +508,7 @@ export function RoomPage() {
                       isHost && room.playbackMode === 'host_only'
                         ? () =>
                             runQueueAction(() =>
-                              roomApi.advance(code, hostToken),
+                              roomApi.advance(code, hostToken, { reason: 'ended', songId: room.currentSong?.id }),
                             )
                         : undefined
                     }
@@ -558,7 +563,7 @@ export function RoomPage() {
               />
             )}
             {statsOpen && participant && <Suspense fallback={<div className="absolute inset-0 z-20 bg-canvas p-6 text-sm text-muted" role="status">{t('library.loading')}</div>}>
-              <RoomStatsPanel code={code} participantToken={participantToken}
+              <RoomStatsPanel key={recordsRevision} code={code} participantToken={participantToken}
                 revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
                 historyRevision={room.currentSong?.id ?? ''}
                 participants={room.participants} currentParticipantId={participant.id}
@@ -719,7 +724,7 @@ export function RoomPage() {
         onAdvance={
           songActionCredentials && room.currentSong &&
           canControlSong(room.currentSong, participant?.id, isController, serverNow)
-            ? () => runQueueAction(() => roomApi.advance(code, songActionCredentials))
+            ? () => runQueueAction(() => roomApi.advance(code, songActionCredentials, { songId: room.currentSong?.id }))
             : undefined
         }
         onGlobalPlaybackToggle={

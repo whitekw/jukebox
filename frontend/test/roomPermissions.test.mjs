@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canControlSong, getRoomPermissions } from '../src/features/room/roomPermissions.ts'
+import { canControlSong, canReportPlaybackFailure, getRoomPermissions } from '../src/features/room/roomPermissions.ts'
 
 const room = {
   participants: [
@@ -77,4 +77,23 @@ test('a listener can control another requester song only after its one-minute de
   assert.equal(canControlSong({ ...song, otherControlAvailableAt: null }, 'listener', false, 61_000), false)
   assert.equal(canControlSong(song, 'requester', false, 1_000), true)
   assert.equal(canControlSong(song, undefined, true, 1_000), true)
+})
+
+test('all-device failure reports require the same song control as ordinary skips', () => {
+  const room = { playbackMode: 'all_devices', currentSong: { addedById: 'requester', otherControlAvailableAt: null } }
+  assert.equal(canReportPlaybackFailure(room, 'listener', false, false, 1_000), false)
+  assert.equal(canReportPlaybackFailure(room, 'requester', false, false, 1_000), true)
+  assert.equal(canReportPlaybackFailure(room, 'manager', true, false, 1_000), true)
+  assert.equal(canReportPlaybackFailure(room, undefined, true, false, 1_000), true)
+  assert.equal(canReportPlaybackFailure({ ...room, currentSong: null }, 'requester', false, false, 1_000), false)
+  const abandoned = { ...room, currentSong: { ...room.currentSong, otherControlAvailableAt: 61_000 } }
+  assert.equal(canReportPlaybackFailure(abandoned, 'listener', false, false, 60_999), false)
+  assert.equal(canReportPlaybackFailure(abandoned, 'listener', false, false, 61_000), true)
+})
+
+test('host-only failure reports require the actual playback host', () => {
+  const room = { playbackMode: 'host_only', currentSong: { addedById: 'requester', otherControlAvailableAt: null } }
+  assert.equal(canReportPlaybackFailure(room, 'requester', false, false, 1_000), false)
+  assert.equal(canReportPlaybackFailure(room, 'manager', true, false, 1_000), false)
+  assert.equal(canReportPlaybackFailure(room, undefined, true, true, 1_000), true)
 })

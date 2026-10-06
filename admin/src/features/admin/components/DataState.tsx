@@ -38,7 +38,7 @@ export function Pagination({ page, pageSize, total, onPageChange }: {
   onPageChange: (page: number) => void
 }) {
   const lastPage = Math.max(1, Math.ceil(total / pageSize))
-  return <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+  return <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
     <span>총 {total.toLocaleString('ko-KR')}건 · {page} / {lastPage} 페이지</span>
     <div className="flex gap-2">
       <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>이전</Button>

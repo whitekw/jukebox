@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { RotateCw, Shuffle } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { RotateCw, Search, Shuffle, X } from 'lucide-react'
 import { useAuth } from '../../auth/context'
 import { libraryApi } from '../../library/api'
 import { SaveToPlaylistDialog } from '../../library/SaveToPlaylistDialog'
 import { PlaylistSaveIcon } from '../../library/PlaylistSaveIcon'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
+import { formControlStyles } from '../../../shared/styles'
 import { roomApi } from '../api'
 import type { RoomHistoryEntry, RoomHistoryPage, RoomParticipant } from '../types'
 import { AddToQueueButton } from './AddToQueueButton'
@@ -29,6 +30,9 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
   const { user } = useAuth()
   const [page, setPage] = useState<RoomHistoryPage | null>(null)
   const [selectedRequesterIds, setSelectedRequesterIds] = useState<string[]>([])
+  const [searchInput, setSearchInput] = useState('')
+  const [query, setQuery] = useState('')
+  const searchId = useId()
   const [requesters, setRequesters] = useState<RoomHistoryPage['requesters']>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -41,6 +45,7 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
     byVideoId: Record<string, boolean>
   } | null>(null)
   const requestGeneration = useRef(0)
+  const historySignal = useRef<AbortSignal | undefined>(undefined)
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium', timeStyle: 'short',
   }), [locale])
@@ -48,6 +53,20 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
   const nextCursor = page?.nextCursor ?? null
   const savedByVideoId: Record<string, boolean> = user && savedMembership?.userId === user.id
     ? savedMembership.byVideoId : {}
+
+  useEffect(() => {
+    const search = searchInput.trim()
+    if (search === query) return
+    const timer = window.setTimeout(() => {
+      requestGeneration.current += 1
+      setQuery(search)
+      setPage(null)
+      setLoading(true)
+      setLoadingMore(false)
+      setError('')
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, query])
 
   useEffect(() => {
     if (!user?.id) return
@@ -61,10 +80,12 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
 
   useEffect(() => {
     const generation = ++requestGeneration.current
+    const controller = new AbortController()
+    historySignal.current = controller.signal
     let active = true
     setLoading(true)
     setLoadingMore(false)
-    void roomApi.getRoomHistory(code, participantToken, undefined, selectedRequesterIds).then((recent) => {
+    void roomApi.getRoomHistory(code, participantToken, undefined, selectedRequesterIds, query, controller.signal).then((recent) => {
       if (!active || generation !== requestGeneration.current) return
       setRequesters(recent.requesters)
       setPage((current) => current ? {
@@ -78,15 +99,15 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
     }).finally(() => {
       if (active && generation === requestGeneration.current) setLoading(false)
     })
-    return () => { active = false; requestGeneration.current += 1 }
-  }, [code, participantToken, selectedRequesterIds, revision, retry, t])
+    return () => { active = false; controller.abort(); requestGeneration.current += 1 }
+  }, [code, participantToken, selectedRequesterIds, query, revision, retry, t])
 
   async function loadMore() {
-    if (!nextCursor || loadingMore) return
+    if (!nextCursor || loading || loadingMore) return
     const generation = requestGeneration.current
     setLoadingMore(true)
     try {
-      const page = await roomApi.getRoomHistory(code, participantToken, nextCursor, selectedRequesterIds)
+      const page = await roomApi.getRoomHistory(code, participantToken, nextCursor, selectedRequesterIds, query, historySignal.current)
       if (generation !== requestGeneration.current) return
       setPage((current) => current ? {
         ...current,
@@ -121,10 +142,22 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
   }
 
   return <section aria-label={t('history.title')} className="mx-auto w-full">
-    <div className="mb-4">
-      <HistoryRequesterFilter requesters={requesters} participants={participants}
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="min-w-0 max-w-full"><HistoryRequesterFilter requesters={requesters} participants={participants}
         currentParticipantId={currentParticipantId} selectedIds={selectedRequesterIds}
-        onChange={changeRequesters} />
+        onChange={changeRequesters} /></div>
+      <div className="relative min-w-[12rem] flex-1">
+        <label htmlFor={searchId} className="sr-only">{t('history.search')}</label>
+        <Search size={16} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+        <input id={searchId} type="search" maxLength={100} value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)} placeholder={t('history.searchPlaceholder')}
+          className={formControlStyles({ className: 'h-10 rounded-lg pr-9 pl-9 [&::-webkit-search-cancel-button]:appearance-none' })} />
+        {searchInput && <button type="button" aria-label={t('history.clearSearch')}
+          onClick={() => setSearchInput('')}
+          className="absolute top-1/2 right-1 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-white/10 hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light">
+          <X size={15} aria-hidden="true" />
+        </button>}
+      </div>
     </div>
     {error && <div role="alert" className="mb-4 flex items-center gap-3 rounded-lg border border-danger/25 px-3 py-2 text-sm text-danger">
       <span>{error}</span>
@@ -135,7 +168,7 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
     </div>}
     {loading && items.length === 0 ? <p role="status" className="text-sm text-muted">{t('library.loading')}</p>
       : items.length === 0 && !error ? <p className="rounded-xl border border-line bg-panel p-5 text-sm text-muted">
-        {t(selectedRequesterIds.length ? 'history.noRequesterResults' : 'history.empty')}
+        {t(query ? 'history.noSearchResults' : selectedRequesterIds.length ? 'history.noRequesterResults' : 'history.empty')}
       </p>
         : <>
           <ol className="m-0 flex list-none flex-col gap-2 p-0">
@@ -181,7 +214,7 @@ export function RoomPlaybackHistory({ code, participantToken, revision, particip
               </div>
             </li>)}
           </ol>
-          {nextCursor && <button type="button" onClick={() => { void loadMore() }} disabled={loadingMore}
+          {nextCursor && <button type="button" onClick={() => { void loadMore() }} disabled={loading || loadingMore}
             className="mt-4 w-full rounded-lg border border-line bg-panel px-4 py-2.5 text-sm font-semibold text-purple-light transition-colors hover:bg-purple/10 focus-visible:outline-2 focus-visible:outline-purple-light disabled:opacity-50">
             {loadingMore ? t('library.loading') : t('history.more')}
           </button>}

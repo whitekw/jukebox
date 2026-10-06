@@ -12,6 +12,7 @@ const OverviewPage = lazy(() => import('../features/admin/pages/OverviewPage').t
 const RoomDetailPage = lazy(() => import('../features/admin/pages/RoomDetailPage').then(({ RoomDetailPage }) => ({ default: RoomDetailPage })))
 const RoomsPage = lazy(() => import('../features/admin/pages/RoomsPage').then(({ RoomsPage }) => ({ default: RoomsPage })))
 const UsersPage = lazy(() => import('../features/admin/pages/UsersPage').then(({ UsersPage }) => ({ default: UsersPage })))
+const UserPlaylistsPage = lazy(() => import('../features/admin/pages/UserPlaylistsPage').then(({ UserPlaylistsPage }) => ({ default: UserPlaylistsPage })))
 
 type SessionState =
   | { status: 'loading' }
@@ -69,6 +70,7 @@ function SessionGate() {
       <Route path="rooms" element={<RoomsPage />} />
       <Route path="rooms/:code" element={<RoomDetailPage />} />
       <Route path="users" element={<UsersPage currentUserId={session.user.id} />} />
+      <Route path="users/:userId/playlists" element={<UserPlaylistsPage />} />
       <Route path="audit" element={<AuditPage />} />
       <Route path="*" element={<OverviewPage />} />
     </Route>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -63,7 +64,9 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
                 <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(user.lastLoginAt)}</TableCell>
                 <TableCell className="text-right tabular-nums">{user.ownedRooms}</TableCell>
                 <TableCell className="text-right tabular-nums">{user.activeSessions}</TableCell>
-                <TableCell>
+                <TableCell><div className="flex gap-2">
+                  <Button asChild variant="outline" size="sm"><Link to={`/users/${encodeURIComponent(user.id)}/playlists`}
+                    aria-label={`${user.displayName}님의 플레이리스트 조회`}>플레이리스트 조회</Link></Button>
                   <AlertDialog><AlertDialogTrigger asChild>
                     <Button variant="outline" size="sm" disabled={user.id === currentUserId || user.activeSessions === 0 || savingId !== null}>세션 해제</Button>
                   </AlertDialogTrigger><AlertDialogContent><AlertDialogHeader>
@@ -72,7 +75,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
                   </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel>
                     <AlertDialogAction variant="destructive" onClick={() => void revoke(user)}>세션 해제</AlertDialogAction>
                   </AlertDialogFooter></AlertDialogContent></AlertDialog>
-                </TableCell>
+                </div></TableCell>
               </TableRow>)}
               {data.items.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">검색된 사용자가 없습니다.</TableCell></TableRow>}
             </TableBody></Table></div>

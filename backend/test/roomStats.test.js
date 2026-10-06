@@ -61,6 +61,7 @@ test('all participants can see starts and received votes without voter identitie
     const second = rooms.advance(created.code, { hostToken: created.hostToken })
     rooms.setSongVote(created.code, { participantToken: listener.participantToken }, second.currentSong.id, 'down')
     rooms.addSong(created.code, guest.participantToken, song('guest-song'))
+    clock += 10_000
     rooms.advance(created.code, { hostToken: created.hostToken })
 
     const stats = rooms.getRoomStats(created.code, { participantToken: guest.participantToken }, 'Asia/Seoul')

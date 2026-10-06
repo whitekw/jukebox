@@ -38,6 +38,21 @@ async function waitForServer(baseUrl) {
   throw new Error('Test server did not start')
 }
 
+async function subscribeSocket(baseUrl, code, participantToken, cookie) {
+  const headers = cookie ? { Cookie: cookie } : {}
+  const handshake = await fetch(`${baseUrl}/socket.io/?EIO=4&transport=polling`, { headers })
+  const { sid } = JSON.parse((await handshake.text()).slice(1))
+  const url = `${baseUrl}/socket.io/?EIO=4&transport=polling&sid=${sid}`
+  await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain' }, body: '40' })
+  await (await fetch(url, { headers })).text()
+  await fetch(url, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain' },
+    body: `42${JSON.stringify(['room:subscribe', { code, participantToken }])}`,
+  })
+  await (await fetch(url, { headers, signal: AbortSignal.timeout(2000) })).text()
+  return { url, headers }
+}
+
 test('admin queries expose operational summaries and enforce the Discord allowlist', () => {
   const db = createDatabase()
   try {
@@ -106,7 +121,7 @@ test('admin daily activity follows local midnight across a daylight-saving chang
   }
 })
 
-test('admin API gates data and changes, records pauses and revokes sessions', { timeout: 10_000 }, async () => {
+async function verifyAdminApi(publicOrigin = '') {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-admin-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
   const db = createDatabase(databasePath)
@@ -123,10 +138,24 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     insertSession.run(crypto.randomUUID(), 'member', hashToken(memberToken), Date.now(), Date.now() + 60_000)
     const rooms = createRoomService(db)
     const room = rooms.createRoom({ ownerUserId: 'member', nickname: 'Member', participantUserId: 'member' })
+    const listener = rooms.joinRoom(room.code, { nickname: 'Listener' })
     rooms.addSong(room.code, room.participantToken, {
       videoId: 'bbbbbbbbbbb', title: 'Now playing', artist: 'Artist',
       durationSeconds: 180, thumbnailUrl: 'https://example.com/image.jpg',
     }, 'member')
+    rooms.advance(room.code, { userId: 'member' })
+    rooms.addSong(room.code, listener.participantToken, {
+      videoId: 'bbbbbbbbbbb', title: 'Now playing', artist: 'Artist',
+      durationSeconds: 180, thumbnailUrl: 'https://example.com/image.jpg',
+    })
+    db.prepare(`INSERT INTO playlists (id, owner_user_id, name, kind, position, created_at, updated_at)
+      VALUES ('member-favorites', 'member', '', 'favorites', 0, 1, 1),
+        ('member-empty', 'member', 'Empty collection', 'custom', 1, 1, 1),
+        ('admin-private', 'admin', 'Operator collection', 'custom', 0, 1, 1)`).run()
+    db.prepare(`INSERT INTO library_tracks (video_id, title, artist, duration_seconds, thumbnail_url, updated_at)
+      VALUES ('bbbbbbbbbbb', 'Saved track', 'Saved artist', 180, 'https://example.com/image.jpg', 1)`).run()
+    db.prepare(`INSERT INTO playlist_tracks (playlist_id, video_id, added_at)
+      VALUES ('member-favorites', 'bbbbbbbbbbb', 10)`).run()
     db.close()
 
     const port = await availablePort()
@@ -135,7 +164,8 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       cwd: path.resolve(__dirname, '..'),
       env: {
         ...process.env, PORT: String(port), DATABASE_PATH: databasePath,
-        ADMIN_DISCORD_IDS: adminDiscordId, YOUTUBE_API_KEY: '',
+        ADMIN_DISCORD_IDS: adminDiscordId, YOUTUBE_API_KEY: '', TRUST_PROXY: 'false',
+        DISCORD_REDIRECT_URI: publicOrigin ? `${publicOrigin}/api/auth/discord/callback` : '',
       },
       stdio: 'ignore',
     })
@@ -160,6 +190,25 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     assert.equal(overview.totals.rooms, 1)
     assert.equal(overview.daily[0].startAt, dayStarts[0])
     assert.equal((await fetch(`${baseUrl}/api/admin/rooms/${room.code}`, { headers: adminHeaders })).status, 200)
+    const playlistsUrl = `${baseUrl}/api/admin/users/member/playlists`
+    const tracksUrl = `${playlistsUrl}/member-favorites/tracks`
+    for (const url of [playlistsUrl, tracksUrl]) {
+      assert.equal((await fetch(url)).status, 401)
+      assert.equal((await fetch(url, { headers: memberHeaders })).status, 403)
+    }
+    const playlistsResponse = await fetch(playlistsUrl, { headers: adminHeaders })
+    assert.equal(playlistsResponse.status, 200)
+    assert.equal(playlistsResponse.headers.get('cache-control'), 'no-store')
+    const playlists = await playlistsResponse.json()
+    assert.equal(playlists.user.id, 'member')
+    assert.deepEqual(playlists.items.map(({ id, trackCount }) => [id, trackCount]),
+      [['member-favorites', 1], ['member-empty', 0]])
+    const tracks = await (await fetch(`${tracksUrl}?query=Saved%20artist`, { headers: adminHeaders })).json()
+    assert.equal(tracks.total, 1)
+    assert.equal(tracks.items[0].title, 'Saved track')
+    assert.equal((await fetch(`${playlistsUrl}/admin-private/tracks`, { headers: adminHeaders })).status, 404)
+    assert.equal((await fetch(`${baseUrl}/api/admin/users/missing/playlists`, { headers: adminHeaders })).status, 404)
+    assert.equal((await fetch(`${baseUrl}/api/me/playlists/admin-private/tracks`, { headers: memberHeaders })).status, 404)
     const actionUrl = `${baseUrl}/api/admin/rooms/${room.code}/playback`
     const patch = (headers) => fetch(actionUrl, {
       method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -167,7 +216,10 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     })
     assert.equal((await patch(adminHeaders)).status, 403)
     assert.equal((await patch({ ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: 'https://evil.example' })).status, 403)
-    const actionHeaders = { ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: baseUrl }
+    const actionHeaders = { ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: publicOrigin || baseUrl,
+      ...(publicOrigin ? { 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': new URL(publicOrigin).host } : {}) }
+    assert.equal((await patch({ ...actionHeaders, Origin: 'https://evil.example',
+      'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'evil.example' })).status, 403)
     const faultDb = new DatabaseSync(databasePath)
     try {
       faultDb.exec(`CREATE TRIGGER reject_admin_audit BEFORE INSERT ON admin_audit_entries
@@ -192,7 +244,69 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     } finally {
       stateDb.close()
     }
-    const revoke = await fetch(`${baseUrl}/api/admin/users/member/revoke-sessions`, {
+    const videoRecordsUrl = `${baseUrl}/api/admin/rooms/${room.code}/videos/bbbbbbbbbbb/records`
+    assert.equal((await fetch(videoRecordsUrl)).status, 401)
+    assert.equal((await fetch(videoRecordsUrl, { headers: memberHeaders })).status, 403)
+    const videoList = await (await fetch(`${baseUrl}/api/admin/rooms/${room.code}/videos?query=bbbbbbbbbbb`, { headers: adminHeaders })).json()
+    assert.equal(videoList.total, 1)
+    assert.equal(videoList.items[0].songs, 2)
+    const videoPreview = await (await fetch(videoRecordsUrl, { headers: adminHeaders })).json()
+    const removeVideo = (headers, revision = videoPreview.revision, confirmationCode = room.code) => fetch(videoRecordsUrl, {
+      method: 'DELETE', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmationCode, revision }),
+    })
+    assert.equal((await removeVideo(adminHeaders)).status, 403)
+    assert.equal((await removeVideo({ ...actionHeaders, Origin: 'https://evil.example' })).status, 403)
+    assert.equal((await removeVideo({ ...memberHeaders, 'X-Bside-Admin-Action': '1' })).status, 403)
+    assert.equal((await removeVideo(actionHeaders, 'stale-preview')).status, 409)
+    assert.equal((await removeVideo(actionHeaders, videoPreview.revision, 'WRONG')).status, 400)
+    const videoListenerSocket = await subscribeSocket(baseUrl, room.code, listener.participantToken)
+    const videoRemoved = await removeVideo(actionHeaders)
+    assert.equal(videoRemoved.status, 200)
+    assert.equal((await videoRemoved.json()).counts.songs, 2)
+    const videoEvents = await (await fetch(videoListenerSocket.url, { signal: AbortSignal.timeout(2000) })).text()
+    assert.match(videoEvents, /room:records-cleared/)
+    assert.match(videoEvents, /"currentSong":null/)
+    assert.doesNotMatch(videoEvents, /room:membership-left/)
+    assert.equal((await fetch(`${baseUrl}/api/rooms/${room.code}/me`, { headers: { 'x-participant-token': listener.participantToken } })).status, 200)
+    assert.equal((await fetch(`${baseUrl}/api/rooms/${room.code}/me`, { headers: { ...memberHeaders, 'x-participant-token': room.participantToken } })).status, 200)
+    assert.equal((await fetch(videoRecordsUrl, { headers: adminHeaders })).status, 404)
+    await fetch(videoListenerSocket.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '41' })
+    const recordsUrl = `${baseUrl}/api/admin/rooms/${room.code}/participants/${room.participant.id}/records`
+    assert.equal((await fetch(recordsUrl)).status, 401)
+    assert.equal((await fetch(recordsUrl, { headers: memberHeaders })).status, 403)
+    const recordPreview = await (await fetch(recordsUrl, { headers: adminHeaders })).json()
+    const removeRecords = (headers, revision = recordPreview.revision, confirmationCode = room.code) => fetch(recordsUrl, {
+      method: 'DELETE', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmationCode, revision }),
+    })
+    assert.equal((await removeRecords(adminHeaders)).status, 403)
+    assert.equal((await removeRecords({ ...actionHeaders, Origin: 'https://evil.example' })).status, 403)
+    assert.equal((await removeRecords({ ...memberHeaders, 'X-Bside-Admin-Action': '1' })).status, 403)
+    assert.equal((await removeRecords(actionHeaders, 'stale-preview')).status, 409)
+    assert.equal((await removeRecords(actionHeaders, recordPreview.revision, 'WRONG')).status, 400)
+    const memberSocket = await subscribeSocket(baseUrl, room.code, room.participantToken, memberHeaders.Cookie)
+    const listenerSocket = await subscribeSocket(baseUrl, room.code, listener.participantToken)
+    // The second subscription also broadcasts a state to the first socket.
+    await (await fetch(memberSocket.url, { headers: memberSocket.headers, signal: AbortSignal.timeout(2000) })).text()
+    const removedMemberEvent = fetch(memberSocket.url, { headers: memberSocket.headers, signal: AbortSignal.timeout(2000) }).then((response) => response.text())
+    assert.equal((await removeRecords(actionHeaders)).status, 200)
+    assert.match(await removedMemberEvent, /room:membership-left/)
+    const listenerEvents = await (await fetch(listenerSocket.url, { signal: AbortSignal.timeout(2000) })).text()
+    assert.match(listenerEvents, /room:records-cleared/)
+    assert.match(listenerEvents, /"currentSong":null/)
+    const clearedRoom = await (await fetch(`${baseUrl}/api/admin/rooms/${room.code}`, { headers: adminHeaders })).json()
+    assert.equal(clearedRoom.songs.length, 0)
+    assert.equal(clearedRoom.ownerDiscordId, memberDiscordId)
+    assert.equal(clearedRoom.participants.length, 1)
+    assert.equal((await fetch(`${baseUrl}/api/rooms/${room.code}/me`, { headers: { ...memberHeaders, 'x-participant-token': room.participantToken } })).status, 401)
+    await fetch(listenerSocket.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '41' })
+    const revokeUrl = `${baseUrl}/api/admin/users/member/revoke-sessions`
+    assert.equal((await fetch(revokeUrl, { method: 'POST', headers: adminHeaders })).status, 403)
+    assert.equal((await fetch(revokeUrl, {
+      method: 'POST', headers: { ...actionHeaders, Origin: 'https://evil.example' },
+    })).status, 403)
+    const revoke = await fetch(revokeUrl, {
       method: 'POST', headers: actionHeaders,
     })
     assert.equal(revoke.status, 200)
@@ -202,7 +316,7 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       method: 'POST', headers: actionHeaders,
     })).status, 400)
     const audit = await fetch(`${baseUrl}/api/admin/audit`, { headers: adminHeaders }).then((response) => response.json())
-    assert.deepEqual(audit.items.map((entry) => entry.action), ['sessions_revoked', 'room_paused'])
+    assert.deepEqual(audit.items.map((entry) => entry.action), ['sessions_revoked', 'room_user_records_deleted', 'room_video_records_deleted', 'room_paused'])
   } finally {
     if (db.isOpen) db.close()
     if (child) {
@@ -216,4 +330,7 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       fs.rmSync(directory, { recursive: true, force: true })
     }
   }
-})
+}
+
+test('admin API gates data and changes, records pauses and revokes sessions', { timeout: 10_000 }, () => verifyAdminApi())
+test('admin mutations accept the configured HTTPS origin behind an HTTP proxy', { timeout: 10_000 }, () => verifyAdminApi('https://admin.example'))

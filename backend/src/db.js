@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 14
 
 function createDatabase(databasePath = ':memory:') {
   if (databasePath !== ':memory:') {
@@ -17,7 +17,7 @@ function createDatabase(databasePath = ':memory:') {
   const hasExistingSchema = Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
   ).get())
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION].includes(version) && (version !== 0 || hasExistingSchema)) {
     db.close()
     throw new Error('기존 DB 스키마는 지원하지 않습니다. 데이터베이스 파일을 초기화한 뒤 다시 실행해주세요.')
   }
@@ -119,6 +119,8 @@ function createDatabase(databasePath = ':memory:') {
       position INTEGER NOT NULL,
       vote_revision INTEGER NOT NULL DEFAULT 0,
       is_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(is_autoplay IN (0, 1)),
+      playback_error_code INTEGER,
+      play_count_excluded INTEGER NOT NULL DEFAULT 0 CHECK(play_count_excluded IN (0, 1)),
       started_at INTEGER,
       started_at_estimated INTEGER NOT NULL DEFAULT 0 CHECK(started_at_estimated IN (0, 1)),
       created_at INTEGER NOT NULL
@@ -262,6 +264,13 @@ function createDatabase(databasePath = ':memory:') {
   if (!songColumns.has('is_autoplay')) {
     db.exec('ALTER TABLE songs ADD COLUMN is_autoplay INTEGER NOT NULL DEFAULT 0 CHECK(is_autoplay IN (0, 1))')
   }
+  if (!songColumns.has('playback_error_code')) {
+    db.exec('ALTER TABLE songs ADD COLUMN playback_error_code INTEGER')
+  }
+  if (!songColumns.has('play_count_excluded')) {
+    db.exec('ALTER TABLE songs ADD COLUMN play_count_excluded INTEGER NOT NULL DEFAULT 0 CHECK(play_count_excluded IN (0, 1))')
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS failed_videos_by_room ON songs(room_id, video_id) WHERE playback_error_code IS NOT NULL')
   if (!songColumns.has('started_at')) {
     db.exec("UPDATE songs SET started_at = created_at, started_at_estimated = 1 WHERE status IN ('current', 'played')")
   }

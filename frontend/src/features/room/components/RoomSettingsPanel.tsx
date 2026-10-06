@@ -112,7 +112,6 @@ export function RoomSettingsPanel({ room, draft, onDraftChange, onSave, onDelete
           maxDurationSeconds,
         },
       })
-      onClose()
     } catch (cause) {
       setError(getErrorMessage(cause, t))
     } finally {

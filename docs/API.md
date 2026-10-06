@@ -121,7 +121,7 @@ type RoomStats = {
 }
 ```
 
-재생 횟수는 신청 건이 현재 곡이 된 순간 기록합니다. 건너뛴 곡도 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 시간별은 현재 시간을 포함한 최근 24개 시간대, 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 시간별 키는 서머타임의 중복 시각도 구분할 수 있는 UTC ISO 시각이며, 화면에서는 요청한 `timeZone`으로 표시합니다. 다른 키는 해당 시간대의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자와 자동 재생의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자의 직접 신청 건만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
+재생 횟수는 신청 건이 현재 곡이 된 순간 기록하되, 10초 미만에 수동 스킵하면 해당 건을 집계에서 제외합니다. 10초 이상 재생 후 스킵하거나 자연 종료한 건은 포함하며, 대기 중 삭제된 곡은 제외됩니다. 전체 및 참여자별 시간별은 현재 시간을 포함한 최근 24개 시간대, 일별은 최근 30일, 주별은 월요일 시작 최근 12주, 월별은 최근 12개월을 0회인 기간까지 반환합니다. 시간별 키는 서머타임의 중복 시각도 구분할 수 있는 UTC ISO 시각이며, 화면에서는 요청한 `timeZone`으로 표시합니다. 다른 키는 해당 시간대의 달력 날짜(`YYYY-MM-DD`, 월별 `YYYY-MM`)입니다. 기존 DB에서 재생 시작 시각이 없는 기록은 신청 시각으로 이관되며, 하나라도 있으면 `hasEstimatedHistory`가 `true`입니다. 추천·비추천은 신청 건별로 현재 남아 있는 표의 합계이며 취소된 표는 세지 않습니다. 전체 수치와 기간별 그래프에는 비로그인 참여자와 자동 재생의 활동도 포함되지만 `participants`와 그 기간별 그래프에는 로그인 계정이 연결된 참여자의 직접 신청 건만 포함됩니다. 계정으로 재입장한 참여자의 기록은 합산됩니다. 응답에는 투표자별 내역이 없습니다.
 
 ### `RoomHistoryPage`
 
@@ -138,13 +138,16 @@ type RoomHistoryPage = {
     isAutoplay: boolean
     startedAt: number
     startedAtEstimated: boolean
+    countedAsPlay: boolean
   }[]
   nextCursor: string | null
   requesters: { id: string; nickname: string; avatarUrl: string | null; plays: number }[]
 }
 ```
 
-`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 재생 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 건마다 별도 항목입니다. 자동 재생 건은 `isAutoplay: true`이며 신청자는 자동 재생으로 표시됩니다. `requesterId`에 응답의 `requesters[].id`를 하나 이상 반복해서 지정하면 선택한 참여자들의 직접 신청 건만 반환합니다. 지정하지 않으면 전체 기록입니다. `requesters`는 페이지 범위와 무관한 전체 직접 신청자의 목록이며, 각자의 누적 재생 건수를 포함합니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
+`GET /api/rooms/:code/history`는 현재 곡을 제외한 완료된 재생 건을 재생 시작 시각 역순으로 반환합니다. 건너뛴 곡도 포함하며, 같은 영상의 재생도 건마다 별도 항목입니다. 자동 재생 건은 `isAutoplay: true`이며 신청자는 자동 재생으로 표시됩니다. `requesterId`에 응답의 `requesters[].id`를 하나 이상 반복해서 지정하면 선택한 참여자들의 직접 신청 건만 반환합니다. 지정하지 않으면 전체 기록입니다. `requesters`는 페이지 범위와 무관한 전체 직접 신청자의 목록이며, 각자의 누적 기록 건수(10초 미만 스킵 기록도 포함)를 나타냅니다. 횟수 집계 여부는 각 항목의 `countedAsPlay`로 확인하며, 빠른 스킵은 `false`입니다. `before`에는 이전 응답의 `nextCursor`를 넣고, `limit`은 1~50(기본 30)입니다. 기존 기록에 재생 시작 시각이 없으면 신청 시각을 쓰고 `startedAtEstimated`를 `true`로 표시합니다. 목록 조회는 저장된 DB 정보를 사용하며 YouTube Data API를 호출하지 않습니다.
+
+재생 기록의 `q`는 최대 100자이며 앞뒤 공백을 제거한 제목·아티스트·영상 ID 부분 문자열 검색입니다. 영문 대소문자를 구분하지 않으며 `%`·`_` 등도 문자 그대로 검색합니다. 신청자 필터와 검색 조건은 함께 적용하고, 검색은 페이지를 나누기 전에 전체 완료 기록에 적용합니다. 검색어 또는 신청자를 바꾸면 `before`를 비워 처음부터 조회하고, 더 보기에서는 같은 조건을 유지합니다. `requesters`의 목록과 건수는 검색 결과와 무관하게 전체 기록을 기준으로 유지합니다. 잘못된 `q` 형식이나 100자 초과 입력은 `INVALID_HISTORY_SEARCH`(400)입니다.
 
 ### `VideoSearchResult`
 
@@ -203,8 +206,16 @@ type RoomEvent = {
 | GET | `/api/admin/overview?dayStarts=<15개의 쉼표 구분 Unix ms>` | 시스템 운영자 | 없음 | 사용자·방·재생 현황, 브라우저 현지 날짜별 14일 추이 (`daily[].startAt`), 서비스 설정 상태 |
 | GET | `/api/admin/rooms?query=&page=1` | 시스템 운영자 | 없음 | 방 검색, 20건 단위 페이지 |
 | GET | `/api/admin/rooms/:code` | 시스템 운영자 | 없음 | 방 상세, 최근 참여자·곡 |
+| GET | `/api/admin/rooms/:code/participants?query=&page=1` | 시스템 운영자 | 없음 | 퇴장 이력을 포함한 참여자 검색, 20건 단위 페이지 |
+| GET | `/api/admin/rooms/:code/participants/:participantId/records` | 시스템 운영자 | 없음 | 해당 사용자의 방 내 기록 삭제 미리보기 |
+| DELETE | `/api/admin/rooms/:code/participants/:participantId/records` | 시스템 운영자 | 삭제 | 미리보기 검증 후 방 내 사용자 기록 영구 삭제 |
+| GET | `/api/admin/rooms/:code/videos` | 시스템 운영자 | 없음 | 영상 ID별 방 기록 검색·페이지 조회 |
+| GET | `/api/admin/rooms/:code/videos/:videoId/records` | 시스템 운영자 | 없음 | 해당 영상의 방 내 기록 삭제 미리보기 |
+| DELETE | `/api/admin/rooms/:code/videos/:videoId/records` | 시스템 운영자 | 삭제 | 영상의 모든 신청·자동 재생·관련 정보 영구 삭제 |
 | PATCH | `/api/admin/rooms/:code/playback` | 시스템 운영자 | 변경 | `{ "paused": true/false }`, 방 재생 상태 변경 |
 | GET | `/api/admin/users?query=&page=1` | 시스템 운영자 | 없음 | 계정 검색, 20건 단위 페이지 |
+| GET | `/api/admin/users/:userId/playlists?page=1` | 시스템 운영자 | 없음 | 사용자의 즐겨찾기·개인 플레이리스트 조회 |
+| GET | `/api/admin/users/:userId/playlists/:playlistId/tracks?query=&page=1` | 시스템 운영자 | 없음 | 선택한 플레이리스트의 영상 검색·조회 |
 | POST | `/api/admin/users/:userId/revoke-sessions` | 시스템 운영자 | 변경 | 대상 계정의 웹 로그인 세션 해제 건수 |
 | GET | `/api/admin/audit` | 시스템 운영자 | 없음 | 최근 운영 변경 기록 30건 |
 | GET | `/api/extension/auth/start` | 등록된 확장 프로그램 리디렉션 주소 | 인증 | Discord OAuth2 시작 |
@@ -235,7 +246,7 @@ type RoomEvent = {
 | DELETE | `/api/rooms/:code/membership` | 로그인 멤버 | 변경 | 방 나가기(소유자는 불가), `204` |
 | GET | `/api/rooms/:code/me` | 참여자 | 없음 | 내 참여 정보/남은 곡 수 |
 | GET | `/api/rooms/:code/stats?timeZone=Asia/Seoul` | 참여자 | 없음 | `RoomStats` |
-| GET | `/api/rooms/:code/history?before={cursor}&limit=30&requesterId={participantId}&requesterId={otherId}` | 참여자 | 없음 | `RoomHistoryPage` |
+| GET | `/api/rooms/:code/history?before={cursor}&limit=30&requesterId={participantId}&requesterId={otherId}&q={search}` | 참여자 | 없음 | `RoomHistoryPage` |
 | GET | `/api/rooms/:code/messages` | 참여자 | 없음 | 최근 대화·활동 로그 각각 최대 100개 |
 | POST | `/api/rooms/:code/messages` | 참여자 | 분당 30회(계정 또는 참여자 토큰 기준), IP·경로당 120회 | `ChatMessage` |
 | GET | `/api/youtube/search` | 공개 | 검색 | 검색 결과 |
@@ -245,6 +256,7 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/playback/failure` | 호스트 또는 모든 기기 모드의 곡 제어 권한 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
@@ -258,7 +270,7 @@ type RoomEvent = {
 
 요청 제한은 현재 프로세스에서 계산합니다. 검색은 IP·경로당 60초에 30회, 일반 변경 요청은 IP·경로당 120회입니다. 채팅 전송은 이 변경 요청 제한에 더해 계정 또는 참여자 토큰 기준으로 60초에 30회까지 허용합니다. 채팅 조회에는 별도 제한이 없습니다.
 
-`/api/admin/*`는 `ADMIN_DISCORD_IDS`에 등록된 Discord ID와 유효한 `jukebox_session` 쿠키를 모두 요구합니다. 빈 허용 목록은 기본 거부입니다. 운영 권한이 없는 로그인 계정의 403 응답에는 본인의 Discord ID와 표시 이름이 `error.details.user`에 포함되어 설정을 확인할 수 있습니다. 변경 요청은 `X-Bside-Admin-Action: 1` 헤더가 필요하고 `Origin`이 있을 경우 현재 출처와 같아야 합니다. 재생 상태 변경과 세션 해제는 `admin_audit_entries`에 남습니다. 조회 응답은 `Cache-Control: no-store`입니다. 사용자용 방 관리자 권한으로는 이 API에 접근할 수 없습니다.
+`/api/admin/*`는 `ADMIN_DISCORD_IDS`에 등록된 Discord ID와 유효한 `jukebox_session` 쿠키를 모두 요구합니다. 빈 허용 목록은 기본 거부입니다. 운영 권한이 없는 로그인 계정의 403 응답에는 본인의 Discord ID와 표시 이름이 `error.details.user`에 포함되어 설정을 확인할 수 있습니다. 변경 요청은 `X-Bside-Admin-Action: 1` 헤더가 필요하고 `Origin`이 있을 경우 현재 요청 주소 또는 서버의 `DISCORD_REDIRECT_URI`에 설정된 HTTP(S) 출처와 같아야 합니다. 공개 HTTPS 주소는 프록시의 내부 HTTP 주소나 Host 변경과 관계없이 검증하며, 전달 헤더만으로 임의의 공개 출처를 허용하지 않습니다. 재생 상태 변경과 세션 해제는 `admin_audit_entries`에 남습니다. 조회 응답은 `Cache-Control: no-store`입니다. 사용자용 방 관리자 권한으로는 이 API에 접근할 수 없습니다.
 
 현재 재생 중인 곡의 투표 API는 참여자 토큰 또는 방에 참여한 로그인 세션을 요구합니다. `POST` 본문은 `{ "vote": "up" }`, `{ "vote": "down" }`, `{ "vote": null }` 중 하나입니다. 한 참여자가 한 신청 건에 한 표만 남길 수 있고, 반대로 바꾸거나 취소할 수 있습니다. 신청자 본인은 투표할 수 없으며, 계정으로 재입장해도 이 제한이 유지됩니다. `GET`의 `canVote`는 본인 신청 건이면 `false`입니다. 변경된 숫자는 `room:state`로 모두에게 전달됩니다. 서버는 곡 신청 건 ID, 신청자 ID, 투표자 ID와 선택을 기록하지만 공개 응답에는 참여자별 투표 내역을 싣지 않습니다. 지난 곡에는 투표할 수 없습니다.
 
@@ -492,6 +504,14 @@ Cloudflare의 `CF-IPCountry`와 `Accept-Language`를 이용해 초기 언어를 
 
 필수 권한: controller, 신청자 또는 신청자가 명시적으로 방을 나갔거나 마지막 연결이 끊긴 지 1분이 지난 경우의 다른 참여자
 
+본문은 `{ "reason": "skip", "songId": "현재 신청 건 ID" }`입니다. 생략하면 기존처럼 수동 스킵으로 처리합니다. `songId`를 보내면 현재 곡과 반드시 일치해야 하며 오래된 요청은 `CURRENT_SONG_MISMATCH`(409)로 거절합니다.
+
+수동 스킵 시 서버 타임라인의 재생 위치가 10초 미만이면 해당 신청 건을 `play_count_excluded = 1`로 표시합니다. 재생기록과 기존 투표는 유지하지만 방 통계·참여자별 횟수·기간별 그래프·운영 대시보드의 횟수, 기록 기반 자동 재생의 10건 조건 및 후보에서는 제외합니다. 일시정지·자동재생 차단·재생 대기 중에는 시간이 누적되지 않으며 정확히 10초부터는 집계합니다. 기존 기록은 소급 변경하지 않습니다.
+
+삭제 미리보기의 `counts.plays`는 삭제할 시작 기록의 건수이므로 집계에서 제외된 스킵 기록도 포함합니다. 영상별 검색 목록의 `plays`는 통계에 집계되는 재생 횟수입니다.
+
+호스트 전용 모드에서 곡이 자연 종료되면 호스트 기기가 `{ "reason": "ended", "songId": "종료된 신청 건 ID" }`를 보냅니다. 이 경우 호스트 토큰과 현재 곡 ID가 필수이고, 10초보다 짧은 곡도 끝까지 재생했으면 집계합니다. 모든 기기 모드의 자연 종료는 서버 타임라인이 처리하며 동일하게 집계합니다. 자연 종료에는 `song_skipped` 활동을 남기지 않습니다. 알 수 없는 사유는 `INVALID_ADVANCE_REASON`(400), 호스트가 아닌 완료 보고는 `HOST_FORBIDDEN`(403)입니다.
+
 - 현재 곡을 `played`로 바꿉니다.
 - 가장 앞의 `queued` 곡을 `current`로 바꿉니다.
 - 대기 곡이 없으면 `currentSong`은 `null`이 됩니다.
@@ -518,11 +538,57 @@ position = playbackPositionSeconds
 
 `playbackRevision`은 곡 변경, 일시정지/재개, 호스트 전용 자동재생 차단 상태 변경 때 증가합니다.
 
+### 운영 대시보드의 방 내 사용자 기록 삭제
+
+`GET /api/admin/rooms/:code/participants?query=&page=1`은 이름, Discord ID, 참여 ID로 퇴장 이력을 포함해 검색합니다. 로그인 계정의 동일 방 재입장 이력은 삭제 시 모두 묶으며, 비로그인 참여자는 선택한 참여 ID만 처리합니다. 자동 재생의 시스템 참여자는 대상에서 제외합니다.
+
+`GET /api/admin/rooms/:code/participants/:participantId/records`는 `{ code, roomTitle, target, counts, revision }`을 반환합니다. `target`에는 `participantId`, `nickname`, `userId`, `discordId`가 포함됩니다. `counts`에는 참여 이력 `participants`, 신청곡 `songs`, 대기 곡 `queuedSongs`, 현재 곡 `currentSongs`, 완료 곡 `playedSongs`, 재생·통계 집계 `plays`, 주고받은 표 `votes`, 채팅 `messages`, 활동 기록 `events`가 포함됩니다.
+
+삭제 요청은 운영 권한, `X-Bside-Admin-Action: 1`, 같은 출처 검증과 다음 본문을 요구합니다.
+
+```json
+{ "confirmationCode": "ABC234", "revision": "미리보기에서 받은 해시" }
+```
+
+`DELETE /api/admin/rooms/:code/participants/:participantId/records`는 해당 방에서 대상의 신청곡(현재·대기·완료·삭제 상태), 주고받은 투표, 채팅·활동 기록, 참여 정보와 방 참여 토큰을 영구 삭제합니다. 현재 곡을 지우면 다음 신청 곡 또는 남은 기록 기반 자동 재생으로 넘어가며, 다음 곡이 없으면 현재 곡을 비웁니다. 남은 곡의 투표 집계와 자동 재생 후보도 갱신합니다. 로그인 계정, 전역 로그인 세션, 개인 플레이리스트, 다른 방의 기록과 방 소유권은 유지합니다. 시스템 자동 재생의 과거 신청 건은 특정 사용자의 직접 신청 기록으로 취급하지 않습니다.
+
+활동 기록은 작성자 ID 또는 관리 대상 ID가 연결된 항목을 삭제합니다. 대상 ID 없이 이름만 저장된 과거 관리자 지정·해제 기록은 이름이 이 사용자에게만 속할 때 삭제합니다. 동명이인의 이름만으로 다른 사용자의 기록을 삭제하지 않습니다.
+
+방 코드가 정확하지 않으면 `ROOM_RECORDS_CONFIRMATION_MISMATCH`(400), 미리보기 이후 삭제 범위가 변경되었으면 `ROOM_RECORDS_CHANGED`(409)를 반환합니다. 이 경우 새 미리보기로 범위를 확인한 뒤 다시 요청해야 합니다. 삭제와 `room_user_records_deleted` 운영 감사 기록은 같은 트랜잭션에 저장됩니다. 감사 기록의 대상은 `방 코드/계정 ID` 또는 `방 코드/참여 ID`입니다. 삭제 응답은 `{ code, target, counts }`입니다.
+
+삭제된 참여자의 현재 연결에는 `room:membership-left`를 보내고 종료합니다. 나머지 연결에는 갱신된 `room:state`와 `room:records-cleared`(`{ code }`)를 전송합니다. 클라이언트는 채팅을 다시 조회하고 열린 통계·재생기록의 캐시를 초기화합니다. 삭제를 실행하는 UI는 운영 대시보드에만 있습니다.
+
+### 운영 대시보드의 방 내 영상 기록 삭제
+
+`GET /api/admin/rooms/:code/videos?query=&page=1`은 영상 ID별로 모든 신청·재생 건을 묶어 `{ items, total, page, pageSize }`를 반환합니다(페이지당 20개). 제목, 아티스트 또는 영상 ID로 검색합니다. 삭제·재생 실패 상태와 자동 재생 건도 포함하며, 자동 재생 제외 ID, 저장된 자동 재생 후보 또는 영상 ID가 연결된 활동만 남은 영상도 조회할 수 있습니다. 각 항목에는 `videoId`, `title`, `artist`, `songs`, `plays`, `queuedSongs`, `currentSongs`, `failedSongs`, `autoplayExcluded`, `lastSeenAt`이 포함됩니다.
+
+`GET /api/admin/rooms/:code/videos/:videoId/records`는 `{ code, roomTitle, target, counts, revision }`을 반환합니다. `target`은 `{ videoId, title, artist }`이며, `counts`는 전체 신청·자동 재생 `songs`, 재생·통계 기록 `plays`, 대기·현재 곡 `queuedSongs`·`currentSongs`, 재생 실패 `failedSongs`, 투표 `votes`, 관련 활동 `events`, 자동 재생 제외 연결 `autoplayExclusions`입니다.
+
+`DELETE /api/admin/rooms/:code/videos/:videoId/records`는 사용자 기록 삭제와 같은 운영 권한·요청 헤더·출처 검사 및 `{ confirmationCode, revision }` 본문을 요구합니다. 방 코드 불일치는 `ROOM_RECORDS_CONFIRMATION_MISMATCH`(400), 삭제 범위 변경은 `ROOM_RECORDS_CHANGED`(409), 방에 영상 정보가 없으면 `ROOM_VIDEO_NOT_FOUND`(404)를 반환합니다.
+
+선택한 방에서 해당 영상 ID의 모든 신청·자동 재생·재생 실패·재생기록·투표·관련 활동 및 자동 재생 제외 ID를 삭제합니다. 통계는 남은 기록으로 계산하며 자동 재생 후보를 다시 구성합니다. 현재 곡이 대상이면 다음 곡으로 넘어가고, 다음 곡이 없으면 현재 곡을 비웁니다. 삭제는 차단 기능이 아니므로 이후 같은 영상을 다시 신청할 수 있습니다. 참여자와 참여 토큰, 일반 채팅, 개인 플레이리스트·전역 영상 라이브러리, 다른 방의 동일 영상 기록은 유지합니다.
+
+새로운 건너뛰기·삭제·순서 변경 활동은 `videoId`와 `songId`를 함께 저장합니다. 과거 제목만 있는 활동은 다른 영상과 제목이 겹치지 않을 때만 삭제하며, 영상 ID나 신청 ID가 있으면 이를 우선합니다. 제목만으로 대상을 구분할 수 없는 활동은 유지합니다.
+
+삭제와 `room_video_records_deleted` 운영 감사 기록(대상 `방 코드/영상 ID`)은 같은 트랜잭션입니다. 응답은 `{ code, target, counts }`입니다. 참여자 연결은 유지하며 방 전체에 갱신된 `room:state`와 `room:records-cleared`(`{ code }`)를 보내 채팅·통계·재생기록을 다시 조회하게 합니다. 삭제 UI는 운영 대시보드의 방 상세에만 있습니다.
+
 ### `POST /api/rooms/:code/playback/start`
 
 필수 권한: 유효한 호스트 또는 참여자 세션
 
 모든 기기 모드에서 새 곡이 `pending`일 때 실제 재생을 먼저 시작한 기기가 영상 ID와 현재 위치를 보고합니다. 관리자가 자기 기기만 로컬 일시정지한 상황에서도 다른 참여자가 타임라인을 시작할 수 있습니다. 첫 유효 보고만 반영되며 이후 요청은 현재 상태를 그대로 반환합니다.
+
+### `POST /api/rooms/:code/playback/failure`
+
+필수 권한: `host_only`에서는 실제 플레이어의 `x-host-token`, `all_devices`에서는 인증된 방 세션과 일반 스킵에 적용되는 곡 제어 권한(소유자·관리자·현재 곡 신청자, 또는 신청자의 퇴장·오프라인 유예 이후 제어 가능한 참여자). 권한이 없는 참여자의 현재 곡 보고는 `SONG_CONTROL_FORBIDDEN`(403)으로 거부합니다.
+
+```json
+{ "songId": "current-song-uuid", "videoId": "youtube-video-id", "errorCode": 101 }
+```
+
+YouTube IFrame의 영상 없음·비공개 오류 `100`, 외부 재생 금지 오류 `101`·`150`을 보고합니다. 실패한 신청 건은 `removed`로 처리하고 재생 시작 시각을 지운 뒤 대기열의 다음 곡 또는 기록 기반 자동 재생으로 넘어갑니다. 실패한 신청 건은 재생 기록·재생 횟수·투표 통계에 포함하지 않으며, 해당 영상은 이 방의 기록 기반 자동 재생 후보에서 제외합니다. 같은 영상의 과거 성공 기록은 유지합니다.
+
+현재 신청 건의 ID와 영상 ID가 모두 일치할 때만 처리합니다. 중복 보고나 이전 곡의 지연 보고는 현재 상태를 반환합니다. 브라우저 자동 재생 차단, HTML5 플레이어 오류 `5`, 클라이언트 식별 오류 `153`은 전체 방의 자동 스킵을 유발하지 않습니다.
 
 ### `PATCH /api/rooms/:code/playback/autoplay-blocked`
 
@@ -589,6 +655,10 @@ position = playbackPositionSeconds
 방 소유자의 로그인 세션이 필요합니다. 대상의 현재 Socket.IO 연결을 모두 종료하고 즉시 오프라인으로 표시합니다. 로그인 멤버십과 익명 참여 토큰은 유지되므로 다시 입장할 수 있습니다. 연결 중이 아니면 `PARTICIPANT_OFFLINE`을 반환합니다. 방 소유자를 대상으로 할 수 없습니다.
 
 ## 10. 개인 플레이리스트
+
+운영 대시보드에서는 `GET /api/admin/users/:userId/playlists?page=1`로 해당 사용자의 저장된 목록을 사용자 지정 순서대로 조회합니다. 응답은 `{ user, items, total, page, pageSize }`이며 `pageSize`는 20입니다. `user`에는 `id`, `discordId`, `username`, `displayName`이 있고, 목록 항목에는 `id`, `name`, `kind`, `trackCount`, `createdAt`, `updatedAt`이 있습니다. 기본 즐겨찾기의 저장된 `name`은 빈 문자열이며 화면에서 “즐겨찾기”로 표시합니다. 목록이 없는 계정은 빈 배열을 반환하며, 조회 중 즐겨찾기를 생성하거나 데이터를 변경하지 않습니다.
+
+`GET /api/admin/users/:userId/playlists/:playlistId/tracks?query=&page=1`은 선택한 목록의 저장 영상을 20개씩 반환합니다. `{ playlist, items, total, page, pageSize }`의 `playlist`는 위 목록 항목과 같고 `trackCount`는 검색 전 전체 곡 수입니다. `items`에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있으며, 최근 저장 순서(동일 저장 시각은 영상 ID 순서)를 유지합니다. `query`는 앞뒤 공백을 제거한 최대 80자로 제목·아티스트·영상 ID를 검색합니다. 없는 계정은 `USER_NOT_FOUND`, 해당 계정 소유가 아니거나 없는 목록은 `PLAYLIST_NOT_FOUND`(404)를 반환합니다. 두 API 모두 시스템 운영자에게만 허용하며 일반 사용자의 `/api/me/*` 소유권 검사는 유지합니다. 조회 응답은 `Cache-Control: no-store`이고, 플레이리스트 변경·삭제 기능은 제공하지 않습니다.
 
 개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성합니다. 기본 순서는 `favorites` 다음으로 생성된 순서이며, 사용자가 변경한 순서가 이후 목록에 유지됩니다. 곡을 추가하거나 이름을 바꿔도 순서는 바뀌지 않습니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
 

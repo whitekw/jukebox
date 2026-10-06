@@ -39,12 +39,14 @@ export const roomApi = {
       `/api/rooms/${encodeURIComponent(code)}/autoplay/history-videos?${params}`,
     )
   },
-  getRoomHistory(code: string, participantToken: string, before?: string, requesterIds: string[] = []) {
+  getRoomHistory(code: string, participantToken: string, before?: string, requesterIds: string[] = [], search = '', signal?: AbortSignal) {
     const params = new URLSearchParams()
     if (before) params.set('before', before)
     for (const requesterId of requesterIds) params.append('requesterId', requesterId)
+    if (search) params.set('q', search)
     const query = params.size ? `?${params}` : ''
     return request<RoomHistoryPage>(`/api/rooms/${encodeURIComponent(code)}/history${query}`, {
+      signal,
       headers: participantToken ? { 'x-participant-token': participantToken } : {},
     })
   },
@@ -202,11 +204,25 @@ export const roomApi = {
     )
   },
 
-  advance(code: string, credentials: ControlCredentials) {
+  advance(code: string, credentials: ControlCredentials, options: { reason?: 'skip' | 'ended'; songId?: string } = {}) {
     return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/advance`, {
       method: 'POST',
       headers: controlHeaders(credentials),
-      body: '{}',
+      body: JSON.stringify(options),
+    })
+  },
+
+  reportPlaybackFailure(
+    code: string,
+    credentials: ControlCredentials,
+    songId: string,
+    videoId: string,
+    errorCode: number,
+  ) {
+    return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/playback/failure`, {
+      method: 'POST',
+      headers: controlHeaders(credentials),
+      body: JSON.stringify({ songId, videoId, errorCode }),
     })
   },
 
