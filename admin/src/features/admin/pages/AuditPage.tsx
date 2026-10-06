@@ -11,6 +11,7 @@ const actionLabels: Record<AuditEntry['action'], string> = {
   room_paused: '방 재생 일시정지',
   room_resumed: '방 재생 재개',
   sessions_revoked: '사용자 세션 해제',
+  room_user_records_deleted: '방 내 사용자 기록 삭제',
 }
 
 export function AuditPage() {

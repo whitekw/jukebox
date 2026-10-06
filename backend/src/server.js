@@ -164,6 +164,7 @@ const presence = createRoomPresence({
   },
 })
 const admin = createAdminService(db, {
+  roomService: rooms,
   discordIds: process.env.ADMIN_DISCORD_IDS,
   onlineCount: (code, participantId) => {
     const ids = presence.getParticipantIds(code)
@@ -801,6 +802,38 @@ app.post('/api/rooms/:code/playback/start', mutationLimiter, (req, res) => {
   res.json(emitRoom(req.params.code, state))
 })
 
+app.get('/api/admin/rooms/:code/participants/:participantId/records', (req, res) => {
+  res.json(rooms.previewUserRecordsAsAdmin(req.params.code, req.params.participantId))
+})
+
+app.get('/api/admin/rooms/:code/participants', (req, res) => {
+  res.json(admin.listRoomParticipants(req.params.code, req.query.query, req.query.page))
+})
+
+app.delete('/api/admin/rooms/:code/participants/:participantId/records', mutationLimiter, (req, res) => {
+  requireAdminAction(req)
+  const result = admin.deleteRoomUserRecords(
+    req.adminUser, req.params.code, req.params.participantId, req.body,
+  )
+  for (const participantId of result.participantIds) {
+    presence.removeParticipant(result.code, participantId)
+    io.to(participantChannel(participantId)).emit('room:membership-left')
+    io.in(participantChannel(participantId)).disconnectSockets(true)
+  }
+  emitRoom(result.code, result.room)
+  io.to(roomChannel(result.code)).emit('room:records-cleared', { code: result.code })
+  res.json({ code: result.code, target: result.target, counts: result.counts })
+})
+
+app.post('/api/rooms/:code/playback/failure', mutationLimiter, (req, res) => {
+  const state = rooms.reportPlaybackFailure(
+    req.params.code,
+    controlCredentials(req),
+    req.body,
+  )
+  res.json(emitRoom(req.params.code, state))
+})
+
 app.patch(
   '/api/rooms/:code/playback/autoplay-blocked',
   mutationLimiter,
@@ -890,7 +923,7 @@ app.patch('/api/rooms/:code/managers/:participantId', mutationLimiter, (req, res
       normalizedCode,
       req.body.isManager ? 'manager_added' : 'manager_removed',
       requestActivityActor(req, normalizedCode),
-      { target: target.nickname, automatic: false },
+      { target: target.nickname, targetParticipantId: target.id, automatic: false },
     )
   }
   res.json(emitRoom(normalizedCode))

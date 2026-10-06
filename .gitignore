@@ -12,6 +12,7 @@ extension/dist-production/
 extension/dist-store/
 extension/dist-unpacked/
 extension/*.pem
+extension/*.crx
 extension/B-SIDE-Extension-*.zip
 coverage/
 .nyc_output/

@@ -210,6 +210,20 @@ export const roomApi = {
     })
   },
 
+  reportPlaybackFailure(
+    code: string,
+    credentials: ControlCredentials,
+    songId: string,
+    videoId: string,
+    errorCode: number,
+  ) {
+    return request<RoomState>(`/api/rooms/${encodeURIComponent(code)}/playback/failure`, {
+      method: 'POST',
+      headers: controlHeaders(credentials),
+      body: JSON.stringify({ songId, videoId, errorCode }),
+    })
+  },
+
   setPlaybackPaused(
     code: string,
     credentials: ControlCredentials,

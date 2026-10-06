@@ -23,6 +23,7 @@ export function useRoomState(
   const [connected, setConnected] = useState(false)
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [recordsRevision, setRecordsRevision] = useState(0)
   const [error, setError] = useState<unknown>(null)
   const [deleted, setDeleted] = useState(false)
 
@@ -68,6 +69,7 @@ export function useRoomState(
   useEffect(() => {
     if (!participantToken) return
     let active = true
+    setChatMessages([])
     void roomApi
       .getChatMessages(code, participantToken)
       .then(({ items }) => {
@@ -81,7 +83,7 @@ export function useRoomState(
     return () => {
       active = false
     }
-  }, [code, participantToken])
+  }, [code, participantToken, recordsRevision])
 
   useEffect(() => {
     setError(null)
@@ -90,6 +92,7 @@ export function useRoomState(
   useEffect(() => {
     let active = true
     let clockSynchronized = false
+    let connectedBefore = false
     // Vite의 개발 프록시나 일부 공유기에서는 WebSocket upgrade가 늦거나
     // 실패할 수 있다. polling으로 먼저 연결하면 실시간 통신은 유지되고,
     // 가능한 환경에서는 Socket.IO가 자동으로 WebSocket으로 승격한다.
@@ -105,6 +108,13 @@ export function useRoomState(
       })
     }
     socket.on('connect', () => {
+      if (!active) return
+      // A cleanup event may have been missed while this connection was offline.
+      if (connectedBefore) {
+        setChatMessages([])
+        setRecordsRevision((revision) => revision + 1)
+      }
+      connectedBefore = true
       setConnected(true)
       synchronizeClock()
       socket.emit(
@@ -148,6 +158,12 @@ export function useRoomState(
     socket.on('room:host-revoked', () => {
       if (active) onHostRevoked?.()
     })
+    socket.on('room:records-cleared', (payload: { code?: string }) => {
+      if (active && payload?.code === code) {
+        setChatMessages([])
+        setRecordsRevision((revision) => revision + 1)
+      }
+    })
     socket.on('room:membership-left', () => {
       if (active) onMembershipLeft?.()
     })
@@ -176,6 +192,7 @@ export function useRoomState(
     connected,
     serverTimeOffsetMs,
     chatMessages,
+    recordsRevision,
     appendChatMessage,
     deleted,
     error: error === null ? '' : getErrorMessage(error, t),

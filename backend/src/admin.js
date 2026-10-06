@@ -5,7 +5,7 @@ const { AppError } = require('./errors')
 const PAGE_SIZE = 20
 const DAY_MS = 24 * 60 * 60 * 1000
 
-function createAdminService(db, { discordIds = '', now = Date.now, onlineCount = () => 0 } = {}) {
+function createAdminService(db, { discordIds = '', now = Date.now, onlineCount = () => 0, roomService } = {}) {
   const allowedDiscordIds = new Set(
     String(discordIds).split(',').map((id) => id.trim()).filter((id) => /^\d{17,20}$/.test(id)),
   )
@@ -125,10 +125,14 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     ).get(code)
     if (!room) throw new AppError(404, '방을 찾지 못했습니다.', 'ROOM_NOT_FOUND')
     const participants = db.prepare(
-      `SELECT id, nickname, user_id, is_manager, left_at, created_at
-       FROM participants WHERE room_id = ? ORDER BY created_at DESC LIMIT 100`,
+      `SELECT participants.id, nickname, user_id, is_manager, left_at, participants.created_at,
+              users.discord_id
+       FROM participants LEFT JOIN users ON users.id = participants.user_id
+       WHERE room_id = ? AND participants.id NOT LIKE 'autoplay:%'
+       ORDER BY participants.created_at DESC LIMIT 100`,
     ).all(room.id).map((participant) => ({
       id: participant.id, nickname: participant.nickname,
+      discordId: participant.discord_id ?? null,
       isMember: Boolean(participant.user_id), isManager: Boolean(participant.is_manager),
       online: participant.left_at === null && onlineCount(code, participant.id) > 0,
       leftAt: participant.left_at, createdAt: participant.created_at,
@@ -213,7 +217,40 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     })
   }
 
-  return { requireAdmin, listOverview, listRooms, getRoom, listUsers, listAudit, recordAction, revokeUserSessions }
+  function listRoomParticipants(codeInput, queryInput, pageInput) {
+    const code = String(codeInput ?? '').trim().toUpperCase()
+    const room = db.prepare('SELECT id FROM rooms WHERE code = ?').get(code)
+    if (!room) throw new AppError(404, '방을 찾지 못했습니다.', 'ROOM_NOT_FOUND')
+    const pattern = `%${searchTerm(queryInput)}%`
+    const { page, limit, offset } = pageOptions(pageInput)
+    const source = `FROM participants LEFT JOIN users ON users.id = participants.user_id
+      WHERE participants.room_id = ? AND participants.id NOT LIKE 'autoplay:%'
+        AND (nickname LIKE ? OR users.discord_id LIKE ? OR users.username LIKE ?
+          OR users.global_name LIKE ? OR participants.id LIKE ?)`
+    const args = [room.id, pattern, pattern, pattern, pattern, pattern]
+    const total = db.prepare(`SELECT COUNT(*) AS count ${source}`).get(...args).count
+    const items = db.prepare(
+      `SELECT participants.id, nickname, user_id, is_manager, left_at, participants.created_at,
+              users.discord_id ${source}
+       ORDER BY participants.created_at DESC, participants.id ASC LIMIT ? OFFSET ?`,
+    ).all(...args, limit, offset).map((participant) => ({
+      id: participant.id, nickname: participant.nickname, discordId: participant.discord_id ?? null,
+      isMember: Boolean(participant.user_id), isManager: Boolean(participant.is_manager),
+      online: participant.left_at === null && onlineCount(code, participant.id) > 0,
+      leftAt: participant.left_at, createdAt: participant.created_at,
+    }))
+    return { items, total, page, pageSize: PAGE_SIZE }
+  }
+
+  function deleteRoomUserRecords(adminUser, code, participantId, confirmation) {
+    requireAdmin(adminUser)
+    return roomService.deleteUserRecordsAsAdmin(code, participantId, confirmation, (preview) => {
+      recordAction(adminUser, 'room_user_records_deleted', 'room',
+        `${preview.code}/${preview.target.userId ?? preview.target.participantId}`)
+    })
+  }
+
+  return { requireAdmin, listOverview, listRooms, getRoom, listRoomParticipants, listUsers, listAudit, recordAction, revokeUserSessions, deleteRoomUserRecords }
 }
 
 module.exports = { createAdminService }

@@ -84,3 +84,15 @@ export function shouldReloadMismatchedVideo(
   if (!loadedVideoId || loadedVideoId === expectedVideoId) return false
   return millisecondsSinceLoad >= (buffering ? 8_000 : 2_000)
 }
+
+export function shouldReportPlaybackFailure(
+  errorCode: number,
+  expectedVideoId: string,
+  loadedVideoId: string,
+  alreadyReported: boolean,
+) {
+  // Missing/private videos and embed restrictions are video failures.
+  // HTML5 errors, missing client identification and autoplay blocks are local failures.
+  return [100, 101, 150].includes(errorCode) &&
+    Boolean(expectedVideoId) && loadedVideoId === expectedVideoId && !alreadyReported
+}

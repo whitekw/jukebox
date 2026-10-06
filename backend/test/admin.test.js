@@ -38,6 +38,21 @@ async function waitForServer(baseUrl) {
   throw new Error('Test server did not start')
 }
 
+async function subscribeSocket(baseUrl, code, participantToken, cookie) {
+  const headers = cookie ? { Cookie: cookie } : {}
+  const handshake = await fetch(`${baseUrl}/socket.io/?EIO=4&transport=polling`, { headers })
+  const { sid } = JSON.parse((await handshake.text()).slice(1))
+  const url = `${baseUrl}/socket.io/?EIO=4&transport=polling&sid=${sid}`
+  await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain' }, body: '40' })
+  await (await fetch(url, { headers })).text()
+  await fetch(url, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain' },
+    body: `42${JSON.stringify(['room:subscribe', { code, participantToken }])}`,
+  })
+  await (await fetch(url, { headers, signal: AbortSignal.timeout(2000) })).text()
+  return { url, headers }
+}
+
 test('admin queries expose operational summaries and enforce the Discord allowlist', () => {
   const db = createDatabase()
   try {
@@ -123,6 +138,7 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     insertSession.run(crypto.randomUUID(), 'member', hashToken(memberToken), Date.now(), Date.now() + 60_000)
     const rooms = createRoomService(db)
     const room = rooms.createRoom({ ownerUserId: 'member', nickname: 'Member', participantUserId: 'member' })
+    const listener = rooms.joinRoom(room.code, { nickname: 'Listener' })
     rooms.addSong(room.code, room.participantToken, {
       videoId: 'bbbbbbbbbbb', title: 'Now playing', artist: 'Artist',
       durationSeconds: 180, thumbnailUrl: 'https://example.com/image.jpg',
@@ -192,6 +208,35 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     } finally {
       stateDb.close()
     }
+    const recordsUrl = `${baseUrl}/api/admin/rooms/${room.code}/participants/${room.participant.id}/records`
+    assert.equal((await fetch(recordsUrl)).status, 401)
+    assert.equal((await fetch(recordsUrl, { headers: memberHeaders })).status, 403)
+    const recordPreview = await (await fetch(recordsUrl, { headers: adminHeaders })).json()
+    const removeRecords = (headers, revision = recordPreview.revision, confirmationCode = room.code) => fetch(recordsUrl, {
+      method: 'DELETE', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmationCode, revision }),
+    })
+    assert.equal((await removeRecords(adminHeaders)).status, 403)
+    assert.equal((await removeRecords({ ...actionHeaders, Origin: 'https://evil.example' })).status, 403)
+    assert.equal((await removeRecords({ ...memberHeaders, 'X-Bside-Admin-Action': '1' })).status, 403)
+    assert.equal((await removeRecords(actionHeaders, 'stale-preview')).status, 409)
+    assert.equal((await removeRecords(actionHeaders, recordPreview.revision, 'WRONG')).status, 400)
+    const memberSocket = await subscribeSocket(baseUrl, room.code, room.participantToken, memberHeaders.Cookie)
+    const listenerSocket = await subscribeSocket(baseUrl, room.code, listener.participantToken)
+    // The second subscription also broadcasts a state to the first socket.
+    await (await fetch(memberSocket.url, { headers: memberSocket.headers, signal: AbortSignal.timeout(2000) })).text()
+    const removedMemberEvent = fetch(memberSocket.url, { headers: memberSocket.headers, signal: AbortSignal.timeout(2000) }).then((response) => response.text())
+    assert.equal((await removeRecords(actionHeaders)).status, 200)
+    assert.match(await removedMemberEvent, /room:membership-left/)
+    const listenerEvents = await (await fetch(listenerSocket.url, { signal: AbortSignal.timeout(2000) })).text()
+    assert.match(listenerEvents, /room:records-cleared/)
+    assert.match(listenerEvents, /"currentSong":null/)
+    const clearedRoom = await (await fetch(`${baseUrl}/api/admin/rooms/${room.code}`, { headers: adminHeaders })).json()
+    assert.equal(clearedRoom.songs.length, 0)
+    assert.equal(clearedRoom.ownerDiscordId, memberDiscordId)
+    assert.equal(clearedRoom.participants.length, 1)
+    assert.equal((await fetch(`${baseUrl}/api/rooms/${room.code}/me`, { headers: { ...memberHeaders, 'x-participant-token': room.participantToken } })).status, 401)
+    await fetch(listenerSocket.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '41' })
     const revoke = await fetch(`${baseUrl}/api/admin/users/member/revoke-sessions`, {
       method: 'POST', headers: actionHeaders,
     })
@@ -202,7 +247,7 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       method: 'POST', headers: actionHeaders,
     })).status, 400)
     const audit = await fetch(`${baseUrl}/api/admin/audit`, { headers: adminHeaders }).then((response) => response.json())
-    assert.deepEqual(audit.items.map((entry) => entry.action), ['sessions_revoked', 'room_paused'])
+    assert.deepEqual(audit.items.map((entry) => entry.action), ['sessions_revoked', 'room_user_records_deleted', 'room_paused'])
   } finally {
     if (db.isOpen) db.close()
     if (child) {

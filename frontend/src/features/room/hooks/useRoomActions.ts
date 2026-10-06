@@ -114,6 +114,16 @@ export function useRoomActions({
     }
   }
 
+  function reportPlaybackFailed(songId: string, videoId: string, errorCode: number) {
+    const playbackCredentials = room?.playbackMode === 'host_only'
+      ? hostToken
+      : { participantToken: participantToken || undefined }
+    if (!playbackCredentials) return
+    void runRoomAction(() =>
+      roomApi.reportPlaybackFailure(code, playbackCredentials, songId, videoId, errorCode),
+    ).catch((requestError) => setError(getErrorMessage(requestError, t)))
+  }
+
   return {
     message,
     error,
@@ -124,6 +134,7 @@ export function useRoomActions({
     runQueueAction,
     reportPlaybackBlocked,
     reportPlaybackStarted,
+    reportPlaybackFailed,
     claimPlaybackHost,
   }
 }

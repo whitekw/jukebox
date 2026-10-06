@@ -203,6 +203,9 @@ type RoomEvent = {
 | GET | `/api/admin/overview?dayStarts=<15개의 쉼표 구분 Unix ms>` | 시스템 운영자 | 없음 | 사용자·방·재생 현황, 브라우저 현지 날짜별 14일 추이 (`daily[].startAt`), 서비스 설정 상태 |
 | GET | `/api/admin/rooms?query=&page=1` | 시스템 운영자 | 없음 | 방 검색, 20건 단위 페이지 |
 | GET | `/api/admin/rooms/:code` | 시스템 운영자 | 없음 | 방 상세, 최근 참여자·곡 |
+| GET | `/api/admin/rooms/:code/participants?query=&page=1` | 시스템 운영자 | 없음 | 퇴장 이력을 포함한 참여자 검색, 20건 단위 페이지 |
+| GET | `/api/admin/rooms/:code/participants/:participantId/records` | 시스템 운영자 | 없음 | 해당 사용자의 방 내 기록 삭제 미리보기 |
+| DELETE | `/api/admin/rooms/:code/participants/:participantId/records` | 시스템 운영자 | 삭제 | 미리보기 검증 후 방 내 사용자 기록 영구 삭제 |
 | PATCH | `/api/admin/rooms/:code/playback` | 시스템 운영자 | 변경 | `{ "paused": true/false }`, 방 재생 상태 변경 |
 | GET | `/api/admin/users?query=&page=1` | 시스템 운영자 | 없음 | 계정 검색, 20건 단위 페이지 |
 | POST | `/api/admin/users/:userId/revoke-sessions` | 시스템 운영자 | 변경 | 대상 계정의 웹 로그인 세션 해제 건수 |
@@ -245,6 +248,7 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/playback/failure` | 호스트 또는 모든 기기 모드의 방 세션 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
@@ -518,11 +522,43 @@ position = playbackPositionSeconds
 
 `playbackRevision`은 곡 변경, 일시정지/재개, 호스트 전용 자동재생 차단 상태 변경 때 증가합니다.
 
+### 운영 대시보드의 방 내 사용자 기록 삭제
+
+`GET /api/admin/rooms/:code/participants?query=&page=1`은 이름, Discord ID, 참여 ID로 퇴장 이력을 포함해 검색합니다. 로그인 계정의 동일 방 재입장 이력은 삭제 시 모두 묶으며, 비로그인 참여자는 선택한 참여 ID만 처리합니다. 자동 재생의 시스템 참여자는 대상에서 제외합니다.
+
+`GET /api/admin/rooms/:code/participants/:participantId/records`는 `{ code, roomTitle, target, counts, revision }`을 반환합니다. `target`에는 `participantId`, `nickname`, `userId`, `discordId`가 포함됩니다. `counts`에는 참여 이력 `participants`, 신청곡 `songs`, 대기 곡 `queuedSongs`, 현재 곡 `currentSongs`, 완료 곡 `playedSongs`, 재생·통계 집계 `plays`, 주고받은 표 `votes`, 채팅 `messages`, 활동 기록 `events`가 포함됩니다.
+
+삭제 요청은 운영 권한, `X-Bside-Admin-Action: 1`, 같은 출처 검증과 다음 본문을 요구합니다.
+
+```json
+{ "confirmationCode": "ABC234", "revision": "미리보기에서 받은 해시" }
+```
+
+`DELETE /api/admin/rooms/:code/participants/:participantId/records`는 해당 방에서 대상의 신청곡(현재·대기·완료·삭제 상태), 주고받은 투표, 채팅·활동 기록, 참여 정보와 방 참여 토큰을 영구 삭제합니다. 현재 곡을 지우면 다음 신청 곡 또는 남은 기록 기반 자동 재생으로 넘어가며, 다음 곡이 없으면 현재 곡을 비웁니다. 남은 곡의 투표 집계와 자동 재생 후보도 갱신합니다. 로그인 계정, 전역 로그인 세션, 개인 플레이리스트, 다른 방의 기록과 방 소유권은 유지합니다. 시스템 자동 재생의 과거 신청 건은 특정 사용자의 직접 신청 기록으로 취급하지 않습니다.
+
+활동 기록은 작성자 ID 또는 관리 대상 ID가 연결된 항목을 삭제합니다. 대상 ID 없이 이름만 저장된 과거 관리자 지정·해제 기록은 이름이 이 사용자에게만 속할 때 삭제합니다. 동명이인의 이름만으로 다른 사용자의 기록을 삭제하지 않습니다.
+
+방 코드가 정확하지 않으면 `ROOM_RECORDS_CONFIRMATION_MISMATCH`(400), 미리보기 이후 삭제 범위가 변경되었으면 `ROOM_RECORDS_CHANGED`(409)를 반환합니다. 이 경우 새 미리보기로 범위를 확인한 뒤 다시 요청해야 합니다. 삭제와 `room_user_records_deleted` 운영 감사 기록은 같은 트랜잭션에 저장됩니다. 감사 기록의 대상은 `방 코드/계정 ID` 또는 `방 코드/참여 ID`입니다. 삭제 응답은 `{ code, target, counts }`입니다.
+
+삭제된 참여자의 현재 연결에는 `room:membership-left`를 보내고 종료합니다. 나머지 연결에는 갱신된 `room:state`와 `room:records-cleared`(`{ code }`)를 전송합니다. 클라이언트는 채팅을 다시 조회하고 열린 통계·재생기록의 캐시를 초기화합니다. 삭제를 실행하는 UI는 운영 대시보드에만 있습니다.
+
 ### `POST /api/rooms/:code/playback/start`
 
 필수 권한: 유효한 호스트 또는 참여자 세션
 
 모든 기기 모드에서 새 곡이 `pending`일 때 실제 재생을 먼저 시작한 기기가 영상 ID와 현재 위치를 보고합니다. 관리자가 자기 기기만 로컬 일시정지한 상황에서도 다른 참여자가 타임라인을 시작할 수 있습니다. 첫 유효 보고만 반영되며 이후 요청은 현재 상태를 그대로 반환합니다.
+
+### `POST /api/rooms/:code/playback/failure`
+
+필수 권한: `host_only`에서는 실제 플레이어의 `x-host-token`, `all_devices`에서는 인증된 방 참여자 또는 소유자 세션.
+
+```json
+{ "songId": "current-song-uuid", "videoId": "youtube-video-id", "errorCode": 101 }
+```
+
+YouTube IFrame의 영상 없음·비공개 오류 `100`, 외부 재생 금지 오류 `101`·`150`을 보고합니다. 실패한 신청 건은 `removed`로 처리하고 재생 시작 시각을 지운 뒤 대기열의 다음 곡 또는 기록 기반 자동 재생으로 넘어갑니다. 실패한 신청 건은 재생 기록·재생 횟수·투표 통계에 포함하지 않으며, 해당 영상은 이 방의 기록 기반 자동 재생 후보에서 제외합니다. 같은 영상의 과거 성공 기록은 유지합니다.
+
+현재 신청 건의 ID와 영상 ID가 모두 일치할 때만 처리합니다. 중복 보고나 이전 곡의 지연 보고는 현재 상태를 반환합니다. 브라우저 자동 재생 차단, HTML5 플레이어 오류 `5`, 클라이언트 식별 오류 `153`은 전체 방의 자동 스킵을 유발하지 않습니다.
 
 ### `PATCH /api/rooms/:code/playback/autoplay-blocked`
 

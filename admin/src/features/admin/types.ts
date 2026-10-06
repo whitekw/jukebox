@@ -52,6 +52,7 @@ export type RoomDetail = Omit<RoomSummary, 'queueCount' | 'playCount' | 'current
   participants: {
     id: string
     nickname: string
+    discordId: string | null
     isMember: boolean
     isManager: boolean
     online: boolean
@@ -84,8 +85,26 @@ export type UserSummary = {
 export type AuditEntry = {
   id: string
   adminDiscordId: string
-  action: 'room_paused' | 'room_resumed' | 'sessions_revoked'
+  action: 'room_paused' | 'room_resumed' | 'sessions_revoked' | 'room_user_records_deleted'
   targetType: 'room' | 'user'
   targetId: string
   createdAt: number
+}
+
+export type RoomUserRecordsPreview = {
+  code: string
+  roomTitle: string
+  target: { participantId: string; nickname: string; userId: string | null; discordId: string | null }
+  counts: {
+    participants: number
+    songs: number
+    queuedSongs: number
+    currentSongs: number
+    playedSongs: number
+    plays: number
+    votes: number
+    messages: number
+    events: number
+  }
+  revision: string
 }

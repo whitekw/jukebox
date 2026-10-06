@@ -82,6 +82,7 @@ export function RoomPage() {
     connected,
     serverTimeOffsetMs,
     chatMessages,
+    recordsRevision,
     appendChatMessage,
     deleted,
     error: roomError,
@@ -228,6 +229,7 @@ export function RoomPage() {
     runQueueAction,
     reportPlaybackBlocked,
     reportPlaybackStarted,
+    reportPlaybackFailed,
     claimPlaybackHost,
   } = useRoomActions({
     code,
@@ -461,6 +463,7 @@ export function RoomPage() {
               player={
                 canPlayLocally && room.currentSong ? (
                   <YouTubePlayer
+                    songId={room.currentSong.id}
                     videoId={room.currentSong.videoId}
                     volume={room.playbackMode === 'host_only' ? room.hostVolume : 100}
                     requestedAudioSettings={audioSettings ?? undefined}
@@ -473,6 +476,7 @@ export function RoomPage() {
                       )
                     }}
                     paused={room.playbackPaused}
+                    onPlaybackFailed={reportPlaybackFailed}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
                         ? room.playbackBlocked
@@ -558,7 +562,7 @@ export function RoomPage() {
               />
             )}
             {statsOpen && participant && <Suspense fallback={<div className="absolute inset-0 z-20 bg-canvas p-6 text-sm text-muted" role="status">{t('library.loading')}</div>}>
-              <RoomStatsPanel code={code} participantToken={participantToken}
+              <RoomStatsPanel key={recordsRevision} code={code} participantToken={participantToken}
                 revision={`${room.currentSong?.id ?? ''}:${room.currentSong?.voteRevision ?? 0}:${room.playbackRevision}`}
                 historyRevision={room.currentSong?.id ?? ''}
                 participants={room.participants} currentParticipantId={participant.id}

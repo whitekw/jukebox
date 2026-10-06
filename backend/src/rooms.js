@@ -3,6 +3,7 @@ const { transaction } = require('./db')
 const { AppError } = require('./errors')
 const { buildPlaybackSeries } = require('./roomStats')
 const { extractYouTubeVideoId } = require('./youtube')
+const { readRoomUserRecords, deleteRoomUserRecords } = require('./roomRecordCleanup')
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PLAYBACK_MODES = new Set(['host_only', 'all_devices'])
@@ -271,6 +272,9 @@ function createRoomService(db, options = {}) {
   function getAutoplayCandidates(room) {
     const { excludedWords, excludedVideoIds } = getAutoplayFilters(room)
     const excludedIds = new Set(excludedVideoIds)
+    for (const { video_id } of db.prepare(
+      'SELECT DISTINCT video_id FROM songs WHERE room_id = ? AND playback_error_code IS NOT NULL',
+    ).all(room.id)) excludedIds.add(video_id)
     const words = excludedWords.map((word) => word.normalize('NFKC').toLocaleLowerCase())
     return getAutoplayHistoryVideos(room).filter(({ video_id, title }) => {
         if (excludedIds.has(video_id)) return false
@@ -653,7 +657,7 @@ function createRoomService(db, options = {}) {
               SUM(CASE WHEN song_votes.vote = -1 THEN 1 ELSE 0 END) AS downvotes
        FROM song_votes
        JOIN songs ON songs.id = song_votes.song_id
-       WHERE song_votes.room_id = ? AND songs.is_autoplay = 0
+       WHERE song_votes.room_id = ? AND songs.is_autoplay = 0 AND songs.playback_error_code IS NULL
        GROUP BY song_votes.requester_participant_id`,
     ).all(room.id)
     const byParticipant = new Map()
@@ -1296,7 +1300,7 @@ function createRoomService(db, options = {}) {
       .get(room.id)
     const suggestion = next ? null : getAutoplaySuggestions(room)[0]
     if (room.current_song_id) {
-      db.prepare("UPDATE songs SET status = 'played' WHERE id = ?").run(
+      db.prepare("UPDATE songs SET status = 'played' WHERE id = ? AND status = 'current'").run(
         room.current_song_id,
       )
     }
@@ -1402,6 +1406,62 @@ function createRoomService(db, options = {}) {
     }
 
     return advancedRooms
+  }
+
+  function previewUserRecordsAsAdmin(code, participantId) {
+    return transaction(db, () => readRoomUserRecords(db, code, participantId).preview)
+  }
+
+  function deleteUserRecordsAsAdmin(code, participantId, confirmation, onDelete) {
+    return transaction(db, () => {
+      const records = readRoomUserRecords(db, code, participantId)
+      if (confirmation?.confirmationCode !== records.room.code) {
+        throw new AppError(400, '확인을 위해 방 코드를 정확히 입력해주세요.', 'ROOM_RECORDS_CONFIRMATION_MISMATCH')
+      }
+      if (confirmation?.revision !== records.preview.revision) {
+        throw new AppError(409, '삭제 대상 기록이 변경되었습니다. 삭제 범위를 다시 확인해주세요.', 'ROOM_RECORDS_CHANGED')
+      }
+      const currentSongRemoved = Boolean(records.room.current_song_id && db.prepare(
+        `SELECT 1 FROM songs WHERE id = ? AND added_by IN (${records.participantQuery})`,
+      ).get(records.room.current_song_id, records.room.id, records.identity))
+      deleteRoomUserRecords(db, records)
+      if (currentSongRemoved) advanceRoom(records.room, records.room.code)
+      else db.prepare('UPDATE rooms SET playback_revision = playback_revision + 1 WHERE id = ?').run(records.room.id)
+      onDelete?.(records.preview)
+      return {
+        ...records.preview,
+        participantIds: records.participants.map(({ id }) => id),
+        room: getPublicRoom(records.room.code),
+      }
+    })
+  }
+
+  function reportPlaybackFailure(code, credentials, { songId, videoId, errorCode } = {}) {
+    if (typeof songId !== 'string' || !songId || typeof videoId !== 'string' || !videoId ||
+      ![100, 101, 150].includes(errorCode)) {
+      throw new AppError(400, '재생 오류 보고가 올바르지 않습니다.', 'INVALID_PLAYBACK_STATE')
+    }
+    return transaction(db, () => {
+      const room = getRoomRecord(code)
+      const identity = getSessionIdentity(room, credentials)
+      if (room.playback_mode === 'host_only') {
+        if (!identity.isHost) {
+          throw new AppError(403, '호스트 권한이 없습니다.', 'HOST_FORBIDDEN')
+        }
+      } else if (!identity.isOwner && !identity.participant) {
+        throw new AppError(401, '이 방에 다시 참여해주세요.', 'PARTICIPANT_REQUIRED')
+      }
+      // Duplicate reports and delayed reports for a previous occurrence must not skip another song.
+      if (room.current_song_id !== songId) return getPublicRoom(code)
+      const currentSong = db.prepare(
+        "SELECT video_id FROM songs WHERE id = ? AND room_id = ? AND status = 'current'",
+      ).get(songId, room.id)
+      if (!currentSong || currentSong.video_id !== videoId) return getPublicRoom(code)
+      db.prepare(
+        "UPDATE songs SET status = 'removed', started_at = NULL, playback_error_code = ? WHERE id = ?",
+      ).run(errorCode, songId)
+      return advanceRoom(room, code)
+    })
   }
 
   function changePlaybackPaused(code, paused, { authorize, onChange, skipUnchanged = false }) {
@@ -1878,6 +1938,9 @@ function createRoomService(db, options = {}) {
     setPlaybackPaused,
     setPlaybackPausedAsAdmin,
     startPlayback,
+    reportPlaybackFailure,
+    previewUserRecordsAsAdmin,
+    deleteUserRecordsAsAdmin,
     reportPlaybackBlocked,
     removeSong,
     reorderSong,
