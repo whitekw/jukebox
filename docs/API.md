@@ -1,5 +1,24 @@
 # API 및 실시간 이벤트 계약
 
+## 계정 관리와 YouTube 단방향 동기화
+
+계정 관리 API는 웹 로그인 세션 쿠키가 필요합니다. 변경 요청은 `x-bside-account-action: 1`과 같은 출처(또는 설정된 공개 OAuth 출처)를 검사합니다. 계정 응답은 `Cache-Control: no-store`입니다.
+
+| 메서드 / 경로 | 요청 / 응답 |
+| --- | --- |
+| `PATCH /api/account/profile` | `{ displayName, avatarUrl? }` → `{ user: AuthUser }`. 이름은 1~20자. 사진은 280,000자 이하 WebP Data URI, 빈 문자열은 사진 제거, 생략은 기존 사진 유지. 본문 한도 300KB. 계정 프로필을 따르는 방 참여 프로필도 갱신합니다. |
+| `GET /api/account/discord/sync` | Discord `identify` 재인증으로 리디렉션. callback은 현재 세션의 연결된 Discord 사용자 ID와 일치해야 합니다. 커스텀 이름·사진을 제거하고 현재 Discord 프로필을 반영합니다. 성공 시 `/account?discordSynced=1`. |
+| `DELETE /api/account` | `{ confirmation: 현재 표시 이름 }` → 204. Google 연결 해제, 개인 목록·소유 방·계정 삭제, 다른 방의 프로필 익명화, 작성 채팅 삭제, 웹·확장·방 접근 토큰 무효화. |
+| `GET /api/account/youtube` | `{ enabled, connected, channelTitle, links: [{ youtubeId, playlistId, name, syncedAt, skippedCount }] }`. 토큰은 반환하지 않습니다. |
+| `GET /api/account/youtube/connect` | Google `youtube.readonly`, offline access, PKCE 인증으로 리디렉션. |
+| `GET /api/account/youtube/callback` | state·PKCE·사용자·웹 세션·10분 만료 검증 후 암호화 토큰과 채널 저장. 성공 시 `/account?youtubeConnected=1`, 실패 시 `/account?youtubeError=failed` 또는 `cancelled`. |
+| `GET /api/account/youtube/playlists?pageToken=...` | 본인 목록 `{ items: [{ id, title, trackCount, thumbnailUrl }], nextPageToken }`. 한 페이지 최대 50개. 목록 조회만으로 가져오지는 않습니다. |
+| `POST /api/account/youtube/sync` | `{ playlistIds: string[] }` → 최신 연결 상태. 선택한 본인 목록 1~20개, 목록당 최대 5,000곡. 첫 가져오기는 B-SIDE custom 목록 생성, 이후 같은 로컬 목록을 원본의 이름·순서·곡으로 교체합니다. 중복·비공개·삭제·재생 불가 영상은 제외하며 모든 외부 조회가 성공한 뒤 원자적으로 반영합니다. |
+| `DELETE /api/account/youtube/links/:youtubeId` | 해당 목록의 동기화 연결만 삭제하고 최신 상태 반환. 가져온 B-SIDE 목록 유지. |
+| `DELETE /api/account/youtube` | OAuth 토큰과 동기화 연결 삭제, Google 권한 취소 요청. 가져온 B-SIDE 목록 유지. |
+
+동기화는 수동이며 Google API 쓰기 요청은 수행하지 않습니다. 연결된 목록의 곡은 일반 플레이리스트 API에서 직접 추가·삭제할 수 없으며 `PLAYLIST_SYNCED_READ_ONLY`(403)를 반환합니다. 연결 해제 후에는 일반 목록처럼 편집할 수 있습니다. 다른 YouTube 채널로 다시 연결하면 기존 목록 연결을 해제하고 로컬 목록은 유지합니다. 대표 오류: `YOUTUBE_RECONNECT_REQUIRED`, `INVALID_YOUTUBE_SELECTION`, `YOUTUBE_SYNC_BUSY`, `YOUTUBE_SYNC_CHANGED`, `YOUTUBE_PLAYLIST_TOO_LARGE`, `INVALID_ACCOUNT_PROFILE`, `INVALID_ACCOUNT_CONFIRMATION`.
+
 ## 1. 공통 규칙
 
 - 기본 경로: 같은 출처의 `/api`
@@ -660,7 +679,7 @@ YouTube IFrame의 영상 없음·비공개 오류 `100`, 외부 재생 금지 �
 
 `GET /api/admin/users/:userId/playlists/:playlistId/tracks?query=&page=1`은 선택한 목록의 저장 영상을 20개씩 반환합니다. `{ playlist, items, total, page, pageSize }`의 `playlist`는 위 목록 항목과 같고 `trackCount`는 검색 전 전체 곡 수입니다. `items`에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있으며, 최근 저장 순서(동일 저장 시각은 영상 ID 순서)를 유지합니다. `query`는 앞뒤 공백을 제거한 최대 80자로 제목·아티스트·영상 ID를 검색합니다. 없는 계정은 `USER_NOT_FOUND`, 해당 계정 소유가 아니거나 없는 목록은 `PLAYLIST_NOT_FOUND`(404)를 반환합니다. 두 API 모두 시스템 운영자에게만 허용하며 일반 사용자의 `/api/me/*` 소유권 검사는 유지합니다. 조회 응답은 `Cache-Control: no-store`이고, 플레이리스트 변경·삭제 기능은 제공하지 않습니다.
 
-개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성합니다. 기본 순서는 `favorites` 다음으로 생성된 순서이며, 사용자가 변경한 순서가 이후 목록에 유지됩니다. 곡을 추가하거나 이름을 바꿔도 순서는 바뀌지 않습니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다.
+개인 플레이리스트는 로그인 계정에 귀속됩니다. `GET /api/me/playlists`는 첫 호출에서 삭제할 수 없는 기본 `favorites` 목록을 생성합니다. 기본 순서는 `favorites` 다음으로 생성된 순서이며, 사용자가 변경한 순서가 이후 목록에 유지됩니다. 곡을 추가하거나 이름을 바꿔도 순서는 바뀌지 않습니다. 선택적인 `videoId` 쿼리를 주면 각 항목의 `containsTrack`에 포함 여부가 표시됩니다. 각 항목에는 `id`, `name`, `kind` (`favorites` 또는 `custom`), `isYouTubeSynced` (현재 YouTube 동기화 연결 여부), `updatedAt`, `trackCount`, `containsTrack`, `thumbnailUrl`이 있습니다. 연결된 목록은 `custom` 종류를 유지하지만 `isYouTubeSynced: true`이며 곡 추가·삭제 API는 `PLAYLIST_SYNCED_READ_ONLY`(403)로 거부됩니다. 연동 해제 후에는 `false`가 되어 직접 편집할 수 있습니다.
 
 `GET /api/me/saved-videos`는 로그인 계정의 플레이리스트 중 하나 이상에 저장된 영상 ID를 중복 없이 `videoIds` 배열로 반환합니다. 대기열의 저장 표시를 한 번에 갱신할 때 사용합니다.
 
@@ -668,7 +687,7 @@ YouTube IFrame의 영상 없음·비공개 오류 `100`, 외부 재생 금지 �
 
 `POST /api/me/playlists/:playlistId/reorder`는 `{ "targetIndex": 0 }`처럼 0부터 시작하는 최종 위치를 받습니다. 기본 `favorites`도 이동할 수 있으며 응답은 변경된 `{ "items": Playlist[] }`입니다. 소유하지 않은 목록은 `PLAYLIST_NOT_FOUND`, 범위를 벗어난 위치는 `INVALID_PLAYLIST_POSITION`으로 거부합니다.
 
-`GET /api/me/playlists/:playlistId/tracks`는 최신 추가순으로 곡을 반환합니다. 각 항목에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있습니다.
+`GET /api/me/playlists/:playlistId/tracks`는 먼저 등록한 곡부터 등록 순서대로 반환합니다. 새 곡은 목록 맨 뒤에 추가되며 중복 저장·메타데이터 갱신은 순서를 바꾸지 않습니다. 삭제 후 다시 등록하면 맨 뒤에 놓입니다. YouTube 동기화 목록은 원본 순서로 등록되므로 원본 순서가 유지되며, 연동 해제 후에도 기존 순서는 보존됩니다. 목록의 `thumbnailUrl`은 첫 번째 곡의 썸네일입니다. 각 곡 항목에는 `videoId`, `title`, `artist`, `durationSeconds`, `thumbnailUrl`, `addedAt`이 있습니다.
 
 `PATCH /api/me/playlists/:playlistId`는 `{ "name": "새 이름" }`을 받아 공백을 제거한 1~60자 이름으로 바꾸고 `{ "id", "name", "updatedAt" }`을 반환합니다. `DELETE /api/me/playlists/:playlistId`는 목록과 곡 매핑만 삭제하고 `{ "deleted": true }`를 반환합니다. 다른 목록의 곡과 공통 곡 정보는 유지됩니다. 기본 `favorites` 목록은 두 API 모두 `PLAYLIST_IMMUTABLE`로 거부합니다.
 

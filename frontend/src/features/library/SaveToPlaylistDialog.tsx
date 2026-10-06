@@ -4,6 +4,7 @@ import { useAuth } from '../auth/context'
 import { getErrorMessage, useI18n } from '../../shared/i18n/i18n-context'
 import { buttonStyles, cn, panelCloseButtonStyles } from '../../shared/styles'
 import { libraryApi, type Playlist } from './api'
+import { YouTubePlaylistBadge } from './YouTubePlaylistBadge'
 
 export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryChange }: {
   song: { videoId: string; roomSongId?: string }
@@ -52,7 +53,7 @@ export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryCh
   }, [user, song.videoId, t])
 
   async function toggle(playlist: Playlist) {
-    if (savingId) return
+    if (savingId || playlist.isYouTubeSynced) return
     setError('')
     setSavingId(playlist.id)
     try {
@@ -148,13 +149,16 @@ export function SaveToPlaylistDialog({ song, onClose, onSavedChange, onLibraryCh
               {loading ? <p className="text-sm text-muted">{t('library.loading')}</p> : visible.length === 0 ? <p className="text-sm text-muted">{t('library.noPlaylists')}</p> : (
                 <div className="space-y-1.5">
                   {visible.map((playlist) => (
-                    <button key={playlist.id} type="button" disabled={Boolean(savingId)} onClick={() => void toggle(playlist)} aria-pressed={playlist.containsTrack} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-purple-light disabled:opacity-60">
+                    <button key={playlist.id} type="button" disabled={Boolean(savingId) || playlist.isYouTubeSynced} title={playlist.isYouTubeSynced ? t('library.youtubeReadOnly') : undefined} onClick={() => void toggle(playlist)} aria-pressed={playlist.containsTrack} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-purple-light disabled:opacity-60">
                       <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-purple to-[#9de0cf] text-white">
                         {playlist.kind === 'favorites' ? <Heart size={22} fill="currentColor" aria-hidden="true" /> : playlist.thumbnailUrl ? <img className="size-full object-cover" src={playlist.thumbnailUrl} alt="" /> : <ListMusic size={21} aria-hidden="true" />}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{playlist.kind === 'favorites' ? t('collection.favorites') : playlist.name}</span>
-                        <span className="text-xs text-muted">{t('library.trackCount', { count: playlist.trackCount })}</span>
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                          <span>{t('library.trackCount', { count: playlist.trackCount })}</span>
+                          {playlist.isYouTubeSynced && <YouTubePlaylistBadge />}
+                        </span>
                       </span>
                       <span className={cn('grid size-6 shrink-0 place-items-center rounded-full border', playlist.containsTrack ? 'border-lime bg-lime text-canvas' : 'border-muted text-transparent')} aria-hidden="true"><Check size={15} /></span>
                     </button>

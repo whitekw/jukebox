@@ -23,9 +23,19 @@ function createLibraryService(db) {
 
   function requireOwnedPlaylist(userId, playlistId) {
     const playlist = db.prepare(
-      'SELECT id, kind FROM playlists WHERE id = ? AND owner_user_id = ?',
+      `SELECT id, kind, EXISTS(SELECT 1 FROM youtube_playlist_links
+        WHERE playlist_id = playlists.id AND user_id = playlists.owner_user_id) AS isYouTubeSynced
+       FROM playlists WHERE id = ? AND owner_user_id = ?`,
     ).get(playlistId, userId)
     if (!playlist) throw new AppError(404, '플레이리스트를 찾지 못했습니다.', 'PLAYLIST_NOT_FOUND')
+    return playlist
+  }
+
+  function requireEditableTracks(userId, playlistId) {
+    const playlist = requireOwnedPlaylist(userId, playlistId)
+    if (playlist.isYouTubeSynced) {
+      throw new AppError(403, 'YouTube 동기화 재생목록의 곡은 직접 추가하거나 삭제할 수 없습니다.', 'PLAYLIST_SYNCED_READ_ONLY')
+    }
     return playlist
   }
 
@@ -49,12 +59,14 @@ function createLibraryService(db) {
     ensureFavorites(userId)
     return db.prepare(
       `SELECT playlists.id, playlists.name, playlists.kind, playlists.updated_at AS updatedAt,
+              EXISTS(SELECT 1 FROM youtube_playlist_links
+                WHERE playlist_id = playlists.id AND user_id = playlists.owner_user_id) AS isYouTubeSynced,
               COUNT(playlist_tracks.video_id) AS trackCount,
               MAX(CASE WHEN playlist_tracks.video_id = ? THEN 1 ELSE 0 END) AS containsTrack,
-              (SELECT library_tracks.thumbnail_url FROM playlist_tracks AS latest
-               JOIN library_tracks ON library_tracks.video_id = latest.video_id
-               WHERE latest.playlist_id = playlists.id
-               ORDER BY latest.added_at DESC LIMIT 1) AS thumbnailUrl
+              (SELECT library_tracks.thumbnail_url FROM playlist_tracks AS first_track
+               JOIN library_tracks ON library_tracks.video_id = first_track.video_id
+               WHERE first_track.playlist_id = playlists.id
+               ORDER BY first_track.rowid ASC LIMIT 1) AS thumbnailUrl
        FROM playlists
        LEFT JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id
        WHERE playlists.owner_user_id = ?
@@ -64,6 +76,7 @@ function createLibraryService(db) {
       id: row.id,
       name: row.name,
       kind: row.kind,
+      isYouTubeSynced: Boolean(row.isYouTubeSynced),
       updatedAt: row.updatedAt,
       trackCount: row.trackCount,
       containsTrack: Boolean(row.containsTrack),
@@ -80,7 +93,7 @@ function createLibraryService(db) {
        FROM playlist_tracks
        JOIN library_tracks ON library_tracks.video_id = playlist_tracks.video_id
        WHERE playlist_tracks.playlist_id = ?
-       ORDER BY playlist_tracks.added_at DESC, library_tracks.video_id`,
+       ORDER BY playlist_tracks.rowid ASC`,
     ).all(playlistId)
   }
 
@@ -104,7 +117,7 @@ function createLibraryService(db) {
         `INSERT INTO playlists (id, owner_user_id, name, kind, position, created_at, updated_at)
          VALUES (?, ?, ?, 'custom', ?, ?, ?)`,
       ).run(id, userId, trimmed, position, now, now)
-      return { id, name: trimmed, kind: 'custom', updatedAt: now, trackCount: 0, containsTrack: false, thumbnailUrl: null }
+      return { id, name: trimmed, kind: 'custom', isYouTubeSynced: false, updatedAt: now, trackCount: 0, containsTrack: false, thumbnailUrl: null }
     })
   }
 
@@ -148,7 +161,7 @@ function createLibraryService(db) {
       throw new AppError(400, '저장할 곡을 선택해주세요.', 'INVALID_LIBRARY_SONG')
     }
     return transaction(db, () => {
-      requireOwnedPlaylist(userId, playlistId)
+      requireEditableTracks(userId, playlistId)
       const song = db.prepare(
         `SELECT video_id, title, artist, duration_seconds, thumbnail_url
          FROM songs WHERE id = ?`,
@@ -178,7 +191,7 @@ function createLibraryService(db) {
       throw new AppError(400, '저장할 곡을 선택해주세요.', 'INVALID_LIBRARY_SONG')
     }
     return transaction(db, () => {
-      requireOwnedPlaylist(userId, playlistId)
+      requireEditableTracks(userId, playlistId)
       const track = db.prepare('SELECT video_id FROM library_tracks WHERE video_id = ?').get(videoId)
       if (!track) throw new AppError(404, '곡을 찾지 못했습니다.', 'SONG_NOT_FOUND')
       const now = Date.now()
@@ -195,7 +208,7 @@ function createLibraryService(db) {
 
   function removeTrack(userId, playlistId, videoId) {
     return transaction(db, () => {
-      requireOwnedPlaylist(userId, playlistId)
+      requireEditableTracks(userId, playlistId)
       const result = db.prepare(
         'DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?',
       ).run(playlistId, videoId)

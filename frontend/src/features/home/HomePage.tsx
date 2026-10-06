@@ -225,9 +225,10 @@ export function HomePage() {
 
       <footer className={cn('mx-auto flex w-full max-w-[920px] shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-2 pb-4 text-xs text-muted', hasRooms ? 'mt-10' : 'mt-auto')}>
         <span>Powered by YouTube</span>
-        <Link className="rounded-sm underline-offset-4 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-purple-light" to="/privacy">
-          {t('privacy.link')}
-        </Link>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <Link className="rounded-sm underline-offset-4 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-purple-light" to="/terms">{t('terms.link')}</Link>
+          <Link className="rounded-sm underline-offset-4 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-purple-light" to="/privacy">{t('privacy.link')}</Link>
+        </div>
       </footer>
       <LoginRequiredDialog open={loginPromptOpen && !user} onClose={() => setLoginPromptOpen(false)} />
     </EntryLayout>

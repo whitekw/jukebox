@@ -6,6 +6,7 @@ import { PanelHeader } from '../../shared/ui/PanelHeader'
 import { VideoResultList } from '../room/components/VideoResultList'
 import { libraryApi, type LibraryTrack, type Playlist } from './api'
 import { SaveToPlaylistDialog } from './SaveToPlaylistDialog'
+import { YouTubePlaylistBadge } from './YouTubePlaylistBadge'
 
 export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, queuedVideoIds, currentVideoId, onLibraryChange, onPlaylistRenamed, onPlaylistDeleted, message, roomError }: {
   playlist: Playlist
@@ -114,7 +115,10 @@ export function PlaylistTracksPanel({ playlist, revision, onClose, onAddSong, qu
   return (
     <section ref={panelRef} aria-labelledby={titleId} className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-canvas text-ink">
       <PanelHeader titleId={titleId} title={name}
-        subtitle={t('library.trackCount', { count: loading || error ? playlist.trackCount : tracks.length })}
+        subtitle={<span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>{t('library.trackCount', { count: loading || error ? playlist.trackCount : tracks.length })}</span>
+          {playlist.isYouTubeSynced && <YouTubePlaylistBadge />}
+        </span>}
         icon={playlist.kind === 'favorites' ? <Heart size={21} fill="currentColor" aria-hidden="true" /> : coverUrl ? <img src={coverUrl} alt="" className="size-full object-cover" /> : <ListMusic size={20} aria-hidden="true" />}
         iconClassName={playlist.kind === 'favorites' ? 'bg-gradient-to-br from-purple to-[#9de0cf] text-white' : undefined}
         closeLabel={t('common.close')} onClose={onClose} closeButtonRef={closeButtonRef}

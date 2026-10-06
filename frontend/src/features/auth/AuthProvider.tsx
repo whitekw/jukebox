@@ -65,6 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enabled,
       loading,
       user,
+      async refresh() {
+        const version = ++authVersion.current
+        const session = await authApi.getAuthSession()
+        if (version !== authVersion.current) return
+        setEnabled(session.enabled)
+        setUser(session.user)
+      },
       loginUrl(returnTo = currentReturnTo()) {
         return `/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
       },

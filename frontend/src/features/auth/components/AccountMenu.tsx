@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { CircleUserRound as UserCircleIcon, LogOut as LogoutIcon } from 'lucide-react'
 import { SiDiscord as DiscordIcon } from 'react-icons/si'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
 import { buttonStyles, chromeIconButtonStyles, cn } from '../../../shared/styles'
@@ -16,6 +17,7 @@ export function AccountMenu({
 }) {
   const { enabled, loading, user, loginUrl, logout } = useAuth()
   const { t } = useI18n()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState('')
@@ -172,11 +174,11 @@ export function AccountMenu({
               type="button"
               onClick={() => {
                 setOpen(false)
-                triggerRef.current?.focus()
+                navigate('/account')
               }}
             >
               <UserCircleIcon className="shrink-0 text-muted" size={18} />
-              <span className="flex-1">{t('auth.editProfile')}</span>
+              <span className="flex-1">{t('account.title')}</span>
             </button>
 
           <button

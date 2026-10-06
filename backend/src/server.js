@@ -20,6 +20,8 @@ const { createRoomService, normalizeCode } = require('./rooms')
 const { createLibraryService } = require('./library')
 const { createYouTubeService } = require('./youtube')
 const { createAdminService } = require('./admin')
+const { createAccountService } = require('./account')
+const { createYouTubeSync } = require('./youtubeSync')
 
 const port = Number(process.env.PORT ?? 3001)
 const databasePath = process.env.DATABASE_PATH ?? './data/jukebox.sqlite'
@@ -57,11 +59,18 @@ const authSessionCookie = 'jukebox_session'
 const oauthStateCookie = 'jukebox_oauth_state'
 const oauthReturnCookie = 'jukebox_oauth_return_to'
 const oauthExtensionFlowCookie = 'jukebox_extension_flow'
+const oauthProfileCookie = 'jukebox_profile_sync'
+const googleFlowCookie = 'jukebox_google_flow'
 const oauthStateMaxAgeSeconds = 10 * 60
 
 const db = createDatabase(databasePath)
 const rooms = createRoomService(db)
 const library = createLibraryService(db)
+const account = createAccountService(db)
+const youtubeSync = createYouTubeSync(db, {
+  clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  redirectUri: process.env.GOOGLE_REDIRECT_URI, encryptionKey: process.env.OAUTH_TOKEN_ENCRYPTION_KEY,
+})
 rooms.markAllParticipantsOffline()
 const youtube = createYouTubeService(process.env.YOUTUBE_API_KEY)
 const auth = createDiscordAuth(db, {
@@ -79,6 +88,7 @@ const io = new Server(server, { serveClient: false })
 
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1)
 app.disable('x-powered-by')
+app.use('/api/account/profile', express.json({ limit: '300kb' }))
 app.use(express.json({ limit: '32kb' }))
 
 const searchLimiter = createRateLimiter({ windowMs: 60_000, limit: 30 })
@@ -115,6 +125,7 @@ function clearOAuthCookies(res) {
   clearCookie(res, oauthStateCookie, '/api/auth/discord/callback')
   clearCookie(res, oauthReturnCookie, '/api/auth/discord/callback')
   clearCookie(res, oauthExtensionFlowCookie, '/api/auth/discord/callback')
+  clearCookie(res, oauthProfileCookie, '/api/auth/discord/callback')
 }
 
 function addAuthError(returnTo, error) {
@@ -337,6 +348,7 @@ app.get('/api/admin/audit', (req, res) => {
 })
 
 app.get('/api/auth/session', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
   const cookies = parseCookies(req.get('cookie'))
   res.json({
     enabled: auth.enabled,
@@ -356,6 +368,7 @@ app.get('/api/auth/discord', authLimiter, (req, res) => {
     path: '/api/auth/discord/callback',
   })
   clearCookie(res, oauthExtensionFlowCookie, '/api/auth/discord/callback')
+  clearCookie(res, oauthProfileCookie, '/api/auth/discord/callback')
   res.redirect(302, authorization.url)
 })
 
@@ -375,6 +388,7 @@ app.get('/api/extension/auth/start', authLimiter, (req, res) => {
     path: '/api/auth/discord/callback',
   })
   clearCookie(res, oauthReturnCookie, '/api/auth/discord/callback')
+  clearCookie(res, oauthProfileCookie, '/api/auth/discord/callback')
   res.redirect(302, authorization.url)
 })
 
@@ -385,6 +399,7 @@ app.get(
     const cookies = parseCookies(req.get('cookie'))
     const returnTo = safeReturnTo(cookies[oauthReturnCookie])
     const extensionFlow = readExtensionFlow(cookies[oauthExtensionFlowCookie])
+    const syncUserId = cookies[oauthProfileCookie]
     clearOAuthCookies(res)
 
     function fail(error) {
@@ -401,9 +416,16 @@ app.get(
     }
 
     try {
+      if (syncUserId && (extensionFlow || requireAuthUser(req).id !== syncUserId)) return fail('invalid_state')
       const session = await auth.completeAuthorization(req.query.code, {
-        createSession: !extensionFlow,
+        createSession: !extensionFlow && !syncUserId,
+        syncUserId,
       })
+      if (syncUserId) {
+        const updated = account.propagate(syncUserId)
+        for (const code of updated.codes) emitRoom(code)
+        return res.redirect(302, '/account?discordSynced=1')
+      }
       if (extensionFlow) {
         const grant = extensionAuth.createGrant(
           session.user.id,
@@ -525,6 +547,85 @@ app.post('/api/auth/logout', mutationLimiter, (req, res) => {
   clearCookie(res, authSessionCookie)
   res.status(204).end()
 })
+
+app.use('/api/account', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store')
+  try {
+    req.accountUser = requireAuthUser(req)
+    if (!['GET', 'HEAD'].includes(req.method)) {
+      const origin = req.get('origin')
+      if (req.get('x-bside-account-action') !== '1' ||
+        (origin && origin !== `${req.protocol}://${req.get('host')}` && origin !== adminPublicOrigin)) {
+        throw new AppError(403, '허용되지 않은 계정 요청입니다.', 'ACCOUNT_ACTION_FORBIDDEN')
+      }
+    }
+    next()
+  } catch (error) { next(error) }
+})
+app.patch('/api/account/profile', mutationLimiter, (req, res) => {
+  const updated = account.update(req.accountUser.id, req.body)
+  for (const code of updated.codes) emitRoom(code)
+  res.json({ user: updated.user })
+})
+app.get('/api/account/discord/sync', authLimiter, (req, res) => {
+  const authorization = auth.createAuthorization()
+  const cookie = { maxAge: oauthStateMaxAgeSeconds, path: '/api/auth/discord/callback' }
+  appendCookie(res, oauthStateCookie, authorization.state, cookie)
+  appendCookie(res, oauthProfileCookie, req.accountUser.id, cookie)
+  appendCookie(res, oauthReturnCookie, '/account', cookie)
+  clearCookie(res, oauthExtensionFlowCookie, cookie.path)
+  res.redirect(302, authorization.url)
+})
+app.get('/api/account/youtube', (req, res) => res.json(youtubeSync.status(req.accountUser.id)))
+app.get('/api/account/youtube/connect', authLimiter, (req, res) => {
+  const session = parseCookies(req.get('cookie'))[authSessionCookie]
+  const flow = youtubeSync.authorization(req.accountUser.id, hashToken(session))
+  appendCookie(res, googleFlowCookie, flow.cookie, { maxAge: oauthStateMaxAgeSeconds, path: '/api/account/youtube/callback' })
+  res.redirect(302, flow.url)
+})
+app.get('/api/account/youtube/callback', authLimiter, asyncRoute(async (req, res) => {
+  const cookies = parseCookies(req.get('cookie'))
+  clearCookie(res, googleFlowCookie, '/api/account/youtube/callback')
+  try {
+    if (req.query.error) return res.redirect(302, '/account?youtubeError=cancelled')
+    await youtubeSync.complete(req.accountUser.id, hashToken(cookies[authSessionCookie]), req.query.state, cookies[googleFlowCookie], req.query.code)
+    res.redirect(302, '/account?youtubeConnected=1')
+  } catch { res.redirect(302, '/account?youtubeError=failed') }
+}))
+app.get('/api/account/youtube/playlists', authLimiter, asyncRoute(async (req, res) => {
+  res.json(await youtubeSync.list(req.accountUser.id, req.query.pageToken ?? ''))
+}))
+app.post('/api/account/youtube/sync', authLimiter, asyncRoute(async (req, res) => {
+  res.json(await youtubeSync.sync(req.accountUser.id, req.body?.playlistIds))
+}))
+app.delete('/api/account/youtube/links/:youtubeId', mutationLimiter, (req, res) => {
+  res.json(youtubeSync.unlink(req.accountUser.id, req.params.youtubeId))
+})
+app.delete('/api/account/youtube', mutationLimiter, asyncRoute(async (req, res) => {
+  await youtubeSync.disconnect(req.accountUser.id)
+  res.json(youtubeSync.status(req.accountUser.id))
+}))
+app.delete('/api/account', mutationLimiter, asyncRoute(async (req, res) => {
+  // Validate the confirmation before disconnecting the external account.
+  if (req.body?.confirmation !== req.accountUser.displayName) throw new AppError(400, '현재 이름을 정확히 입력해주세요.', 'INVALID_ACCOUNT_CONFIRMATION')
+  await youtubeSync.disconnect(req.accountUser.id)
+  const removed = account.remove(req.accountUser.id, req.body.confirmation)
+  for (const code of removed.owned) {
+    io.to(roomChannel(code)).emit('room:deleted', { code })
+    presence.removeRoom(code)
+    io.in(roomChannel(code)).socketsLeave(roomChannel(code))
+    io.in(chatRoomChannel(code)).socketsLeave(chatRoomChannel(code))
+  }
+  for (const member of removed.memberships) presence.removeParticipant(member.code, member.id)
+  for (const id of removed.participants) { io.to(participantChannel(id)).emit('room:membership-left'); io.in(participantChannel(id)).disconnectSockets(true) }
+  for (const hash of removed.sessions) io.in(`auth-session:${hash}`).disconnectSockets(true)
+  for (const code of removed.codes) {
+    emitRoom(code)
+    io.to(roomChannel(code)).emit('room:records-cleared', { code })
+  }
+  clearCookie(res, authSessionCookie)
+  res.status(204).end()
+}))
 
 app.post('/api/rooms', mutationLimiter, (req, res) => {
   const user = requestAuthUser(req)
@@ -1094,6 +1195,7 @@ app.get(/.*/, (req, res, next) => {
 })
 
 app.use((error, _req, res, _next) => {
+  if (error.type === 'entity.too.large') return res.status(413).json({ error: { code: 'INVALID_ACCOUNT_PROFILE', message: '요청 크기가 너무 큽니다.' } })
   if (error instanceof SyntaxError && 'body' in error) {
     return res.status(400).json({
       error: { code: 'INVALID_JSON', message: '요청 형식이 올바르지 않습니다.' },

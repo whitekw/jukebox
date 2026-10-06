@@ -21,6 +21,7 @@
 - SQLite 영속 저장과 사용자가 직접 삭제하기 전까지 유지되는 계정 소유 방
 - 호스트·참여자 토큰 해시 검증과 기본 요청 제한
 - 별도 React 운영 대시보드와 운영자 감사 기록
+- 로그인 없이 접근하는 서비스 이용약관(`/terms`)과 개인정보 처리방침(`/privacy`), 홈·계정 관리에서 연결되는 공개 정책 페이지
 
 ## 구조
 
@@ -69,6 +70,14 @@ ADMIN_DISCORD_IDS=123456789012345678
 리버스 프록시 뒤에서 운영한다면 실제 클라이언트 IP를 요청 제한에 사용하도록 `TRUST_PROXY=true`로 설정합니다.
 
 Discord Developer Portal에서 OAuth2 Redirect URI를 `DISCORD_REDIRECT_URI`와 완전히 동일하게 등록해야 합니다. 운영 주소가 HTTPS라면 `AUTH_COOKIE_SECURE=true`를 사용합니다. 방 생성은 로그인이 필수이므로 세 Discord 환경 변수를 모두 설정해야 합니다. 로그인하지 않은 사용자도 기존 방에는 참여할 수 있습니다.
+
+계정 관리(`/account`)에서 프로필 이름·사진 변경, Discord 수동 프로필 동기화, 회원 탈퇴, YouTube 재생목록 선택 가져오기와 수동 갱신을 제공합니다. Discord 동기화는 연결된 계정으로 다시 인증하며 B-SIDE의 이름·사진을 현재 Discord 프로필로 바꿉니다.
+
+YouTube 연결을 사용하려면 Google Cloud 프로젝트에서 YouTube Data API v3를 활성화하고 **웹 애플리케이션** OAuth 클라이언트를 만드세요. `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_TOKEN_ENCRYPTION_KEY`를 설정합니다. Google에 등록할 리디렉션 URI는 `GOOGLE_REDIRECT_URI`와 동일해야 합니다(로컬: `http://localhost:5173/api/account/youtube/callback`, 운영: `https://서비스주소/api/account/youtube/callback`). 읽기 전용 범위 `https://www.googleapis.com/auth/youtube.readonly`만 요청합니다. 테스트 모드에서는 사용할 Google 계정을 테스트 사용자로 등록해야 하며, 공개 운영 시 Google의 OAuth 앱 검증 절차를 확인하세요.
+
+암호화 키는 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`로 생성한 32바이트 Base64 값입니다. 이 키를 영속적으로 보관하세요. 변경하거나 잃으면 사용자가 Google 계정을 다시 연결해야 합니다. 운영 Compose의 네 Google 환경 변수도 함께 설정합니다. 설정하지 않으면 계정 관리의 다른 기능은 사용할 수 있고 YouTube 연결만 비활성화됩니다.
+
+한 번에 20개, 목록당 최대 5,000곡을 지원합니다. 본인 채널의 목록만 허용하고 중복·비공개·삭제·외부 재생 불가 영상은 제외합니다. 연동 중인 목록에는 YouTube 동기화 표시가 붙고 곡을 직접 추가·삭제할 수 없습니다. 갱신은 기존 B-SIDE 목록의 이름·곡을 YouTube 원본으로 교체합니다. 외부 조회가 모두 성공한 뒤 한 트랜잭션으로 반영하며 실패하면 기존 목록을 보존합니다. 연결·동기화 해제는 가져온 목록을 삭제하지 않으며 해제 후에는 곡을 직접 편집할 수 있습니다.
 
 운영 화면은 `ADMIN_DISCORD_IDS`에 Discord 사용자 ID를 쉼표로 나열한 계정만 접근할 수 있습니다. 비어 있으면 모든 계정의 운영 API 접근이 거부됩니다. 방 관리자 권한과 시스템 운영자 권한은 별개입니다. 운영 화면은 전체 현황, 방·사용자 검색, 긴급 재생 일시정지/재개, 사용자 웹 로그인 세션 해제, 감사 기록을 제공합니다. YouTube API 할당량 사용량은 현재 저장하지 않아 표시하지 않습니다.
 

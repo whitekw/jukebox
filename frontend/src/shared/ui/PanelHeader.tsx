@@ -5,7 +5,7 @@ import { cn, panelCloseButtonStyles } from '../styles'
 type PanelHeaderProps = {
   titleId: string
   title: string
-  subtitle: string
+  subtitle: ReactNode
   icon: ReactNode
   iconClassName?: string
   actions?: ReactNode

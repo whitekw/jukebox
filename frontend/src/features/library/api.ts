@@ -4,6 +4,7 @@ export type Playlist = {
   id: string
   name: string
   kind: 'favorites' | 'custom'
+  isYouTubeSynced: boolean
   updatedAt: number
   trackCount: number
   containsTrack: boolean

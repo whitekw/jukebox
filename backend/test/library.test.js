@@ -3,6 +3,82 @@ const assert = require('node:assert/strict')
 const { createDatabase } = require('../src/db')
 const { createLibraryService } = require('../src/library')
 
+test('playlist tracks follow registration order, including tied times and re-added tracks', t => {
+  const db = createDatabase()
+  t.after(() => db.close())
+  db.exec(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+    VALUES ('alice', 'discord-alice', 'Alice', 1, 1, 1);
+    INSERT INTO library_tracks VALUES
+      ('zzzzzzzzzzz', 'First', 'Artist', 180, 'first-cover', 1),
+      ('aaaaaaaaaaa', 'Second', 'Artist', 180, 'second-cover', 1),
+      ('bbbbbbbbbbb', 'Third', 'Artist', 180, 'third-cover', 1);`)
+  let time = 1000
+  t.mock.method(Date, 'now', () => time)
+  const library = createLibraryService(db)
+  const custom = library.create('alice', 'My playlist')
+  const favorites = library.list('alice').find(p => p.kind === 'favorites')
+  const ids = () => library.listTracks('alice', custom.id).map(v => v.videoId)
+  library.addExistingTrack('alice', custom.id, 'zzzzzzzzzzz')
+  library.addExistingTrack('alice', custom.id, 'aaaaaaaaaaa')
+  time = 900
+  library.addExistingTrack('alice', custom.id, 'bbbbbbbbbbb')
+  assert.deepEqual(ids(), ['zzzzzzzzzzz', 'aaaaaaaaaaa', 'bbbbbbbbbbb'])
+  library.addExistingTrack('alice', favorites.id, 'bbbbbbbbbbb')
+  library.addExistingTrack('alice', favorites.id, 'zzzzzzzzzzz')
+  assert.deepEqual(library.listTracks('alice', favorites.id).map(v => v.videoId), ['bbbbbbbbbbb', 'zzzzzzzzzzz'])
+  time = 2000
+  library.addExistingTrack('alice', custom.id, 'zzzzzzzzzzz')
+  db.exec("UPDATE library_tracks SET updated_at = 5000, title = 'Updated' WHERE video_id = 'zzzzzzzzzzz'")
+  assert.deepEqual(ids(), ['zzzzzzzzzzz', 'aaaaaaaaaaa', 'bbbbbbbbbbb'])
+  assert.equal(library.list('alice').find(p => p.id === custom.id).thumbnailUrl, 'first-cover')
+  library.removeTrack('alice', custom.id, 'zzzzzzzzzzz')
+  library.addExistingTrack('alice', custom.id, 'zzzzzzzzzzz')
+  assert.deepEqual(ids(), ['aaaaaaaaaaa', 'bbbbbbbbbbb', 'zzzzzzzzzzz'])
+  assert.equal(library.list('alice').find(p => p.id === custom.id).thumbnailUrl, 'second-cover')
+})
+
+test('linked YouTube playlists reject every track mutation until unlinked', t => {
+  const db = createDatabase()
+  t.after(() => db.close())
+  db.exec(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+    VALUES ('alice', 'discord-alice', 'Alice', 1, 1, 1), ('bob', 'discord-bob', 'Bob', 1, 1, 1);
+    INSERT INTO rooms (id, code, host_token_hash, created_at) VALUES ('room', 'ABC123', '', 1);
+    INSERT INTO participants (id, room_id, token_hash, nickname, created_at) VALUES ('participant', 'room', 'token', 'Alice', 1);
+    INSERT INTO songs (id, room_id, video_id, title, artist, duration_seconds, thumbnail_url, added_by, status, position, created_at)
+      VALUES ('song', 'room', 'abcdefghijk', 'Changed title', 'Artist', 180, 'cover', 'participant', 'played', 0, 1);
+    INSERT INTO library_tracks VALUES ('abcdefghijk', 'Original title', 'Artist', 180, 'cover', 1), ('lmnopqrstuv', 'New song', 'Artist', 90, 'cover', 1);`)
+  const library = createLibraryService(db)
+  const synced = library.create('alice', 'YouTube playlist')
+  const ordinary = library.create('alice', 'My playlist')
+  library.addExistingTrack('alice', synced.id, 'abcdefghijk')
+  db.prepare('INSERT INTO youtube_playlist_links VALUES (?, ?, ?, 1, 0)').run('alice', 'PLownplaylist01', synced.id)
+  const before = {
+    tracks: db.prepare('SELECT * FROM playlist_tracks').all(),
+    metadata: db.prepare('SELECT * FROM library_tracks').all(),
+    playlist: db.prepare('SELECT * FROM playlists WHERE id = ?').get(synced.id),
+  }
+  for (const mutation of [
+    () => library.addTrack('alice', synced.id, 'song'),
+    () => library.addExistingTrack('alice', synced.id, 'lmnopqrstuv'),
+    () => library.removeTrack('alice', synced.id, 'abcdefghijk'),
+  ]) assert.throws(mutation, { status: 403, code: 'PLAYLIST_SYNCED_READ_ONLY' })
+  assert.deepEqual(db.prepare('SELECT * FROM playlist_tracks').all(), before.tracks)
+  assert.deepEqual(db.prepare('SELECT * FROM library_tracks').all(), before.metadata)
+  assert.deepEqual(db.prepare('SELECT * FROM playlists WHERE id = ?').get(synced.id), before.playlist)
+  assert.throws(() => library.addExistingTrack('bob', synced.id, 'lmnopqrstuv'), { code: 'PLAYLIST_NOT_FOUND' })
+  assert.equal(library.list('alice').find(p => p.id === synced.id).isYouTubeSynced, true)
+  assert.equal(library.list('alice').find(p => p.id === ordinary.id).isYouTubeSynced, false)
+  assert.equal(library.listTracks('alice', synced.id).length, 1)
+  library.addExistingTrack('alice', ordinary.id, 'abcdefghijk')
+  assert.equal(library.listTracks('alice', ordinary.id).length, 1)
+  db.prepare('DELETE FROM youtube_playlist_links WHERE playlist_id = ?').run(synced.id)
+  assert.equal(library.list('alice').find(p => p.id === synced.id).isYouTubeSynced, false)
+  library.addTrack('alice', synced.id, 'song')
+  library.addExistingTrack('alice', synced.id, 'lmnopqrstuv')
+  library.removeTrack('alice', synced.id, 'abcdefghijk')
+  assert.deepEqual(library.listTracks('alice', synced.id).map(v => v.videoId), ['lmnopqrstuv'])
+})
+
 test('saves one video in multiple user playlists without changing room history', () => {
   const db = createDatabase()
   try {
