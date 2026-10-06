@@ -148,6 +148,27 @@ test('deleting a guest occurrence preserves another guest with the same nickname
   } finally { db.close() }
 })
 
+test('account cleanup preserves legacy manager events shared with a guest nickname', () => {
+  const { db, rooms, room, preview, remove } = fixture()
+  try {
+    const before = preview()
+    assert.equal(before.counts.events, 3)
+    const guest = rooms.joinRoom(room.code, { nickname: 'Test user' })
+    assert.equal(preview().counts.events, 2)
+    assert.throws(() => remove({ revision: before.revision }), { code: 'ROOM_RECORDS_CHANGED' })
+
+    const result = remove()
+    assert.equal(result.counts.events, 2)
+    assert.equal(rooms.getParticipantStatus(room.code, guest.participantToken).id, guest.participant.id)
+    const managerEvents = db.prepare(`SELECT event_type, event_data FROM room_feed_entries
+      WHERE room_id = (SELECT id FROM rooms WHERE code = ?)
+        AND event_type IN ('manager_added', 'manager_removed')`).all(room.code)
+    assert.deepEqual(managerEvents.map(({ event_type, event_data }) => [event_type, JSON.parse(event_data)]), [
+      ['manager_removed', { target: 'Test user' }],
+    ])
+  } finally { db.close() }
+})
+
 test('rebuilds autoplay suggestions from surviving history and keeps room ownership', () => {
   const { db, rooms, admin, room, dummy, listen } = fixture()
   try {

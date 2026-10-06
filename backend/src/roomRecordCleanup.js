@@ -30,6 +30,7 @@ function readRoomUserRecords(db, codeInput, participantId) {
   ).all(room.id, room.id, identity, room.id, identity)
   // Old manager events stored only a nickname. Resolve those only when the name
   // uniquely belongs to this target; newer events carry the participant ID.
+  // A guest's NULL user_id also conflicts with a signed-in account's nickname.
   const feedQuery = `SELECT id, entry_type, sequence FROM room_feed_entries
     WHERE room_id = ? AND (
       participant_id IN (${participantQuery}) OR
@@ -39,7 +40,7 @@ function readRoomUserRecords(db, codeInput, participantId) {
           (json_extract(event_data, '$.targetParticipantId') IS NULL AND
            json_extract(event_data, '$.target') IN (
              SELECT nickname FROM participants WHERE room_id = ? AND ${identityClause}
-             EXCEPT SELECT nickname FROM participants WHERE room_id = ? AND NOT (${identityClause})
+             EXCEPT SELECT nickname FROM participants WHERE room_id = ? AND (${identityClause}) IS NOT TRUE
            ))
         ELSE 0 END)
     ) ORDER BY id`
