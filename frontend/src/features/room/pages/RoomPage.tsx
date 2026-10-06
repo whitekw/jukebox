@@ -39,7 +39,7 @@ import { RoomSettingsPanel } from '../components/RoomSettingsPanel'
 import { createRoomSettingsDraft, type RoomSettingsDraft } from '../roomSettingsDraft'
 import { PlaylistTracksPanel } from '../../library/PlaylistTracksPanel'
 import type { Playlist } from '../../library/api'
-import { canControlSong, getRoomPermissions } from '../roomPermissions'
+import { canControlSong, canReportPlaybackFailure, getRoomPermissions } from '../roomPermissions'
 import { useRoomSession } from '../hooks/useRoomSession'
 import { clearStoredRoomCredentials, normalizeRoomCode } from '../roomCredentials'
 import { useRoomActions } from '../hooks/useRoomActions'
@@ -476,7 +476,8 @@ export function RoomPage() {
                       )
                     }}
                     paused={room.playbackPaused}
-                    onPlaybackFailed={reportPlaybackFailed}
+                    onPlaybackFailed={canReportPlaybackFailure(room, participant?.id, isController, isHost, serverNow)
+                      ? reportPlaybackFailed : undefined}
                     playbackBlocked={
                       isHost && room.playbackMode === 'host_only'
                         ? room.playbackBlocked

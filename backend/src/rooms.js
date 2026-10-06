@@ -1500,9 +1500,12 @@ function createRoomService(db, options = {}) {
       // Duplicate reports and delayed reports for a previous occurrence must not skip another song.
       if (room.current_song_id !== songId) return getPublicRoom(code)
       const currentSong = db.prepare(
-        "SELECT video_id FROM songs WHERE id = ? AND room_id = ? AND status = 'current'",
+        "SELECT video_id, added_by FROM songs WHERE id = ? AND room_id = ? AND status = 'current'",
       ).get(songId, room.id)
       if (!currentSong || currentSong.video_id !== videoId) return getPublicRoom(code)
+      if (room.playback_mode === 'all_devices') {
+        requireSongControl(room, credentials, currentSong.added_by)
+      }
       db.prepare(
         "UPDATE songs SET status = 'removed', started_at = NULL, playback_error_code = ? WHERE id = ?",
       ).run(errorCode, songId)

@@ -588,7 +588,7 @@ export function YouTubePlayer({
               transitionRetryTimerRef.current = null
             }
             setPlaybackError(event.data)
-            if (onPlaybackFailedRef.current && session.songId === songIdRef.current &&
+            if (session.songId === songIdRef.current &&
               shouldReportPlaybackFailure(event.data, session.videoId, loadedVideoId, session.failure.reported)) {
               session.failure.errorCode = event.data
               reportFailedSession(session)

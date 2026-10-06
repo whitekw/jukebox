@@ -117,7 +117,7 @@ export function useRoomActions({
   async function reportPlaybackFailed(songId: string, videoId: string, errorCode: number) {
     const playbackCredentials = room?.playbackMode === 'host_only'
       ? hostToken
-      : { participantToken: participantToken || undefined }
+      : controlCredentials ?? (participantToken ? { participantToken } : null)
     if (!playbackCredentials) return false
     try {
       await runRoomAction(() =>

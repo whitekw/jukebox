@@ -18,7 +18,7 @@ function fixture(playbackMode = 'host_only', databasePath = ':memory:') {
   const reporter = rooms.joinRoom(created.code, { nickname: 'Listener' })
   const credentials = playbackMode === 'host_only'
     ? { hostToken: created.hostToken }
-    : { participantToken: reporter.participantToken }
+    : { participantToken: guest.participantToken }
   const add = (videoId) => rooms.addSong(created.code, guest.participantToken, {
     videoId, title: videoId, artist: 'Artist', durationSeconds: 180, thumbnailUrl: 'image',
   })
@@ -105,6 +105,53 @@ test('only the playback host reports host-only failures; all-devices reports nee
   }
 })
 
+test('ordinary listeners cannot remove another requester song through failure reports', () => {
+  const { db, rooms, created, guest, reporter, add, report } = fixture('all_devices')
+  try {
+    const failed = add('unavailable')
+    add('next')
+    const songId = failed.currentSong.id
+    rooms.setSongVote(created.code, { participantToken: reporter.participantToken }, songId, 'down')
+    const before = db.prepare('SELECT status, started_at, playback_error_code FROM songs WHERE id = ?').get(songId)
+    for (const errorCode of [100, 101, 150]) {
+      assert.throws(() => report(failed, errorCode, {}, { participantToken: reporter.participantToken }), { code: 'SONG_CONTROL_FORBIDDEN' })
+    }
+    const unchanged = rooms.getPublicRoom(created.code)
+    assert.equal(unchanged.currentSong.id, songId)
+    assert.equal(unchanged.playbackRevision, failed.playbackRevision)
+    assert.equal(unchanged.queue.length, 1)
+    assert.deepEqual(db.prepare('SELECT status, started_at, playback_error_code FROM songs WHERE id = ?').get(songId), before)
+    assert.equal(db.prepare('SELECT autoplay_excluded_video_ids FROM rooms WHERE code = ?').get(created.code).autoplay_excluded_video_ids, '[]')
+    assert.equal(rooms.getRoomStats(created.code, { participantToken: guest.participantToken }).totalDownvotes, 1)
+
+    const next = report(failed)
+    assert.equal(next.currentSong.videoId, 'next')
+    assert.throws(() => report(next, 150, {}, { participantToken: reporter.participantToken }), { code: 'SONG_CONTROL_FORBIDDEN' })
+    assert.equal(rooms.getPublicRoom(created.code).currentSong.id, next.currentSong.id)
+  } finally { db.close() }
+})
+
+test('room owners and signed-in managers can report all-device failures for another requester', () => {
+  for (const role of ['owner', 'manager']) {
+    const { db, rooms, created, add, report } = fixture('all_devices')
+    try {
+      let credentials = { userId: 'owner' }
+      if (role === 'manager') {
+        db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+          VALUES ('manager', 'discord-manager', 'Manager', 1, 1, 1)`).run()
+        const manager = rooms.joinRoom(created.code, { userId: 'manager', nickname: 'Manager' })
+        rooms.setManager(created.code, { userId: 'owner' }, manager.participant.id, true)
+        credentials = { userId: 'manager', participantToken: manager.participantToken }
+      }
+      const failed = add('unavailable')
+      add('next')
+      const next = report(failed, 101, {}, credentials)
+      assert.equal(next.currentSong.videoId, 'next')
+      assert.equal(report(failed, 101, {}, credentials).currentSong.id, next.currentSong.id)
+    } finally { db.close() }
+  }
+})
+
 test('failed historical videos leave the autoplay pool and stay excluded after service restart', () => {
   const { db, rooms, created, guest, add, report } = fixture()
   try {
@@ -147,10 +194,10 @@ test('autoplay stops when its only historical video becomes unavailable', () => 
   }
 })
 
-test('playback failure API validates reports and returns the persisted next room state', { timeout: 15_000 }, async () => {
+async function verifyPlaybackFailureApi(playbackMode) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-playback-failure-api-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
-  const { db, created, guest, add } = fixture('host_only', databasePath)
+  const { db, created, guest, reporter, add } = fixture(playbackMode, databasePath)
   let child
   try {
     const failed = add('unavailable')
@@ -180,14 +227,22 @@ test('playback failure API validates reports and returns the persisted next room
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     assert.ok(ready, 'test server started')
-    const report = (errorCode, hostToken = created.hostToken) => fetch(
+    const report = (errorCode, token = playbackMode === 'host_only' ? created.hostToken : guest.participantToken) => fetch(
       `${baseUrl}/api/rooms/${created.code}/playback/failure`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-host-token': hostToken },
+        headers: { 'Content-Type': 'application/json', [playbackMode === 'host_only' ? 'x-host-token' : 'x-participant-token']: token },
         body: JSON.stringify({ songId: failed.currentSong.id, videoId: 'unavailable', errorCode }),
       },
     )
-    assert.equal((await report(101, 'wrong-token')).status, 403)
+    assert.equal((await report(101, 'wrong-token')).status, playbackMode === 'host_only' ? 403 : 401)
+    if (playbackMode === 'all_devices') {
+      const forbidden = await report(150, reporter.participantToken)
+      assert.equal(forbidden.status, 403)
+      assert.equal((await forbidden.json()).error.code, 'SONG_CONTROL_FORBIDDEN')
+      const unchanged = await (await fetch(`${baseUrl}/api/rooms/${created.code}`)).json()
+      assert.equal(unchanged.currentSong.id, failed.currentSong.id)
+      assert.equal(unchanged.queue.length, 1)
+    }
     assert.equal((await report(153)).status, 400)
     const response = await report(101)
     assert.equal(response.status, 200)
@@ -209,4 +264,8 @@ test('playback failure API validates reports and returns the persisted next room
     }
     fs.rmSync(directory, { recursive: true, force: true })
   }
-})
+}
+
+for (const playbackMode of ['host_only', 'all_devices']) {
+  test(`${playbackMode} failure API enforces authorization and returns the persisted next room state`, { timeout: 15_000 }, () => verifyPlaybackFailureApi(playbackMode))
+}

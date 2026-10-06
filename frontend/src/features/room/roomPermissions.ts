@@ -16,6 +16,19 @@ export function canControlSong(
   )
 }
 
+export function canReportPlaybackFailure(
+  room: Pick<RoomState, 'playbackMode' | 'currentSong'>,
+  participantId: string | undefined,
+  isController: boolean,
+  isHost: boolean,
+  serverNow: number,
+) {
+  if (!room.currentSong) return false
+  return room.playbackMode === 'host_only'
+    ? isHost
+    : canControlSong(room.currentSong, participantId, isController, serverNow)
+}
+
 export function getRoomPermissions({
   room,
   participant,

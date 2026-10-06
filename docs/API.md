@@ -256,7 +256,7 @@ type RoomEvent = {
 | POST | `/api/rooms/:code/advance` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback` | controller | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/playback/start` | 인증된 방 세션 | 변경 | `RoomState` |
-| POST | `/api/rooms/:code/playback/failure` | 호스트 또는 모든 기기 모드의 방 세션 | 변경 | `RoomState` |
+| POST | `/api/rooms/:code/playback/failure` | 호스트 또는 모든 기기 모드의 곡 제어 권한 | 변경 | `RoomState` |
 | PATCH | `/api/rooms/:code/playback/autoplay-blocked` | 호스트 | 변경 | `RoomState` |
 | DELETE | `/api/rooms/:code/songs/:songId` | controller·신청자·자리를 비운 신청자의 곡에 대한 참여자 | 변경 | `RoomState` |
 | POST | `/api/rooms/:code/songs/:songId/reorder` | controller | 변경 | `RoomState` |
@@ -580,7 +580,7 @@ position = playbackPositionSeconds
 
 ### `POST /api/rooms/:code/playback/failure`
 
-필수 권한: `host_only`에서는 실제 플레이어의 `x-host-token`, `all_devices`에서는 인증된 방 참여자 또는 소유자 세션.
+필수 권한: `host_only`에서는 실제 플레이어의 `x-host-token`, `all_devices`에서는 인증된 방 세션과 일반 스킵에 적용되는 곡 제어 권한(소유자·관리자·현재 곡 신청자, 또는 신청자의 퇴장·오프라인 유예 이후 제어 가능한 참여자). 권한이 없는 참여자의 현재 곡 보고는 `SONG_CONTROL_FORBIDDEN`(403)으로 거부합니다.
 
 ```json
 { "songId": "current-song-uuid", "videoId": "youtube-video-id", "errorCode": 101 }
