@@ -85,11 +85,33 @@ export type UserSummary = {
 export type AuditEntry = {
   id: string
   adminDiscordId: string
-  action: 'room_paused' | 'room_resumed' | 'sessions_revoked' | 'room_user_records_deleted'
+  action: 'room_paused' | 'room_resumed' | 'sessions_revoked' | 'room_user_records_deleted' | 'room_video_records_deleted'
   targetType: 'room' | 'user'
   targetId: string
   createdAt: number
 }
+
+export type UserPlaylist = {
+  id: string
+  name: string
+  kind: 'favorites' | 'custom'
+  trackCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export type UserPlaylistsPage = Page<UserPlaylist> & {
+  user: Pick<UserSummary, 'id' | 'discordId' | 'username' | 'displayName'>
+}
+
+export type UserPlaylistTracksPage = Page<{
+  videoId: string
+  title: string
+  artist: string
+  durationSeconds: number
+  thumbnailUrl: string
+  addedAt: number
+}> & { playlist: UserPlaylist }
 
 export type RoomUserRecordsPreview = {
   code: string
@@ -105,6 +127,36 @@ export type RoomUserRecordsPreview = {
     votes: number
     messages: number
     events: number
+  }
+  revision: string
+}
+
+export type RoomVideo = {
+  videoId: string
+  title: string
+  artist: string
+  songs: number
+  plays: number
+  queuedSongs: number
+  currentSongs: number
+  failedSongs: number
+  autoplayExcluded: boolean
+  lastSeenAt: number
+}
+
+export type RoomVideoRecordsPreview = {
+  code: string
+  roomTitle: string
+  target: Pick<RoomVideo, 'videoId' | 'title' | 'artist'>
+  counts: {
+    songs: number
+    plays: number
+    queuedSongs: number
+    currentSongs: number
+    failedSongs: number
+    votes: number
+    events: number
+    autoplayExclusions: number
   }
   revision: string
 }

@@ -7,6 +7,63 @@ function song(videoId) {
   return { videoId, title: `Title ${videoId}`, artist: 'Artist', durationSeconds: 180, thumbnailUrl: 'image' }
 }
 
+test('history searches all completed records before paging and combines search with requester filters', () => {
+  const db = createDatabase()
+  try {
+    db.prepare(`INSERT INTO users (id, discord_id, username, created_at, updated_at, last_login_at)
+      VALUES ('owner', 'discord-owner', 'Owner', 1, 1, 1)`).run()
+    const rooms = createRoomService(db, { now: () => 1000 })
+    const owner = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Host' })
+    const alice = rooms.joinRoom(owner.code, { nickname: 'Alice' })
+    const bob = rooms.joinRoom(owner.code, { nickname: 'Bob' })
+    const metadata = [
+      ['바람과 비 · Needle', 'Artist', alice], ['Different title', 'Needle artist', bob],
+      ['Another NEEDLE', 'Artist', alice], ['100%_mix', 'Artist', alice],
+      ['Autoplay Needle', 'Artist', alice], ['Removed Needle', 'Artist', bob],
+    ]
+    const ids = []
+    for (const [index, [title, artist, guest]] of metadata.entries()) {
+      ids.push(rooms.addSong(owner.code, guest.participantToken, { ...song(`v${index}`), title, artist }).currentSong.id)
+      rooms.advance(owner.code, { hostToken: owner.hostToken })
+    }
+    db.prepare('UPDATE songs SET is_autoplay = 1 WHERE id = ?').run(ids[4])
+    db.prepare("UPDATE songs SET status = 'removed' WHERE id = ?").run(ids[5])
+    rooms.addSong(owner.code, alice.participantToken, { ...song('current'), title: 'Current Needle' })
+    const another = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Other room' })
+    rooms.addSong(another.code, another.participantToken, { ...song('other'), title: 'Other room Needle' })
+    rooms.advance(another.code, { hostToken: another.hostToken })
+    const credentials = { participantToken: alice.participantToken }
+    const search = (query, before = null, requesterIds = [], limit = 1) =>
+      rooms.getRoomHistory(owner.code, credentials, before, limit, requesterIds, query)
+    const first = search('  needle  ')
+    assert.deepEqual(first.items.map(({ id }) => id), [ids[4]])
+    assert.equal(first.nextCursor, ids[4])
+    const second = search('needle', first.nextCursor)
+    assert.deepEqual(second.items.map(({ id }) => id), [ids[2]])
+    const third = search('needle', second.nextCursor)
+    assert.deepEqual(third.items.map(({ id }) => id), [ids[1]])
+    const last = search('needle', third.nextCursor)
+    assert.deepEqual(last.items.map(({ id }) => id), [ids[0]])
+    assert.equal(last.nextCursor, null)
+    assert.deepEqual(search('needle', null, [alice.participant.id], 10).items.map(({ id }) => id), [ids[2], ids[0]])
+    assert.deepEqual(search('needle', null, [alice.participant.id, bob.participant.id], 10).items.map(({ id }) => id), [ids[2], ids[1], ids[0]])
+    assert.deepEqual(search('바람').items.map(({ id }) => id), [ids[0]])
+    assert.deepEqual(search('V2').items.map(({ id }) => id), [ids[2]])
+    assert.deepEqual(search('%_').items.map(({ id }) => id), [ids[3]])
+    assert.equal(search('no match').items.length, 0)
+    assert.equal(search('no match').nextCursor, null)
+    const all = search('  ', null, [], 50)
+    assert.equal(all.items.length, 5)
+    assert.deepEqual(search('no match').requesters, all.requesters)
+    assert.deepEqual(all.requesters.map(({ nickname, plays }) => [nickname, plays]), [['Alice', 3], ['Bob', 1]])
+    assert.throws(() => search('x'.repeat(101)), { code: 'INVALID_HISTORY_SEARCH' })
+    assert.throws(() => search(['needle']), { code: 'INVALID_HISTORY_SEARCH' })
+    assert.throws(() => rooms.getRoomHistory(owner.code, {}, null, 30, [], 'needle'), { code: 'PARTICIPANT_REQUIRED' })
+  } finally {
+    db.close()
+  }
+})
+
 test('room history keeps each played request and pages equal-time starts without repetition', () => {
   const db = createDatabase()
   const clock = Date.parse('2026-10-01T00:00:00Z')

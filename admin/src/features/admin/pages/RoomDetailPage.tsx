@@ -11,6 +11,8 @@ import { DataState, PageHeading } from '../components/DataState'
 import { useAdminData } from '../hooks/useAdminData'
 import { DeleteRoomUserRecordsDialog } from '../components/DeleteRoomUserRecordsDialog'
 import { RoomParticipants } from '../components/RoomParticipants'
+import { RoomVideos } from '../components/RoomVideos'
+import { DeleteRoomVideoRecordsDialog } from '../components/DeleteRoomVideoRecordsDialog'
 import { formatDate } from '../../../shared/format'
 
 export function RoomDetailPage() {
@@ -20,8 +22,9 @@ export function RoomDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [cleanupParticipantId, setCleanupParticipantId] = useState<string | null>(null)
+  const [cleanupVideoId, setCleanupVideoId] = useState<string | null>(null)
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
-  useEffect(() => { setCleanupParticipantId(null); setCleanupMessage(null) }, [code])
+  useEffect(() => { setCleanupParticipantId(null); setCleanupVideoId(null); setCleanupMessage(null) }, [code])
 
   async function togglePlayback() {
     if (!data || saving) return
@@ -57,7 +60,7 @@ export function RoomDetailPage() {
           <Card className="lg:w-72"><CardHeader><CardTitle>긴급 재생 제어</CardTitle>
             <CardDescription>방 참여자에게 즉시 반영되고 운영 기록에 남습니다.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              <Badge variant={data.playbackPaused ? 'outline' : 'secondary'}>{data.playbackPaused ? '일시정지' : '재생 중'}</Badge>
+              <Badge variant={data.playbackPaused ? 'outline' : 'secondary'}>{!data.songs.some((song) => song.status === 'current') ? '재생 대기' : data.playbackPaused ? '일시정지' : '재생 중'}</Badge>
               <AlertDialog>
                 <AlertDialogTrigger asChild><Button className="w-full" variant="outline" disabled={saving || !data.songs.some((song) => song.status === 'current')}>
                   {data.playbackPaused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
@@ -73,6 +76,7 @@ export function RoomDetailPage() {
             </CardContent>
           </Card>
         </div>
+        <RoomVideos key={code} code={code} onDeleteRecords={setCleanupVideoId} />
         <div className="grid gap-4 xl:grid-cols-2">
           <RoomParticipants key={code} code={code} onDeleteRecords={setCleanupParticipantId} />
           <Card><CardHeader><CardTitle>대기열·최근 재생</CardTitle><CardDescription>현재 곡과 최근 항목 50건</CardDescription></CardHeader>
@@ -88,6 +92,13 @@ export function RoomDetailPage() {
         </div>
       </div>}
     </DataState>
+    {cleanupVideoId && <DeleteRoomVideoRecordsDialog key={`${code}:${cleanupVideoId}`}
+      code={code} videoId={cleanupVideoId} onClose={() => setCleanupVideoId(null)}
+      onDeleted={(result) => {
+        setCleanupVideoId(null)
+        setCleanupMessage(`${result.target.title} 영상의 이 방 기록을 삭제했습니다. 신청·자동 재생 ${result.counts.songs}건 · 재생 ${result.counts.plays}건 · 투표 ${result.counts.votes}건 · 활동 ${result.counts.events}건`)
+        reload()
+      }} />}
     {cleanupParticipantId && <DeleteRoomUserRecordsDialog key={`${code}:${cleanupParticipantId}`}
       code={code} participantId={cleanupParticipantId} onClose={() => setCleanupParticipantId(null)}
       onDeleted={(result) => {

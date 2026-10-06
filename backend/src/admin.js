@@ -1,6 +1,7 @@
 const crypto = require('node:crypto')
 const { transaction } = require('./db')
 const { AppError } = require('./errors')
+const { ROOM_VIDEOS_QUERY } = require('./roomVideoCleanup')
 
 const PAGE_SIZE = 20
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -62,15 +63,15 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
       onlineParticipants,
       queuedSongs: db.prepare("SELECT COUNT(*) AS count FROM songs WHERE status = 'queued'").get().count,
       playsToday: db.prepare(
-        "SELECT COUNT(*) AS count FROM songs WHERE started_at >= ? AND status IN ('current', 'played')",
+        "SELECT COUNT(*) AS count FROM songs WHERE started_at >= ? AND status IN ('current', 'played') AND play_count_excluded = 0",
       ).get(currentTime - DAY_MS).count,
       totalPlays: db.prepare(
-        "SELECT COUNT(*) AS count FROM songs WHERE started_at IS NOT NULL AND status IN ('current', 'played')",
+        "SELECT COUNT(*) AS count FROM songs WHERE started_at IS NOT NULL AND status IN ('current', 'played') AND play_count_excluded = 0",
       ).get().count,
     }
     const countPlays = db.prepare(
       `SELECT COUNT(*) AS count FROM songs
-       WHERE started_at >= ? AND started_at < ? AND status IN ('current', 'played')`,
+       WHERE started_at >= ? AND started_at < ? AND status IN ('current', 'played') AND play_count_excluded = 0`,
     )
     const countRooms = db.prepare(
       'SELECT COUNT(*) AS count FROM rooms WHERE created_at >= ? AND created_at < ?',
@@ -97,7 +98,7 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
               rooms.playback_paused, rooms.history_autoplay,
               COALESCE(users.global_name, users.username) AS owner_name,
               (SELECT COUNT(*) FROM songs WHERE songs.room_id = rooms.id AND songs.status = 'queued') AS queue_count,
-              (SELECT COUNT(*) FROM songs WHERE songs.room_id = rooms.id AND songs.started_at IS NOT NULL) AS play_count,
+              (SELECT COUNT(*) FROM songs WHERE songs.room_id = rooms.id AND songs.started_at IS NOT NULL AND songs.play_count_excluded = 0) AS play_count,
               (SELECT title FROM songs WHERE songs.id = rooms.current_song_id) AS current_title
        FROM rooms LEFT JOIN users ON users.id = rooms.owner_user_id
        ${filter} ORDER BY rooms.created_at DESC, rooms.code ASC LIMIT ? OFFSET ?`,
@@ -183,6 +184,44 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     return { items, total, page, pageSize: PAGE_SIZE }
   }
 
+  function getPlaylistUser(userId) {
+    const user = db.prepare(`SELECT id, discord_id AS discordId, username,
+      COALESCE(NULLIF(global_name, ''), username) AS displayName FROM users WHERE id = ?`).get(userId)
+    if (!user) throw new AppError(404, '사용자를 찾지 못했습니다.', 'USER_NOT_FOUND')
+    return user
+  }
+
+  function listUserPlaylists(userId, pageInput) {
+    const user = getPlaylistUser(userId)
+    const { page, limit, offset } = pageOptions(pageInput)
+    const total = db.prepare('SELECT COUNT(*) AS count FROM playlists WHERE owner_user_id = ?').get(userId).count
+    const items = db.prepare(`SELECT id, name, kind, created_at AS createdAt, updated_at AS updatedAt,
+      (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) AS trackCount
+      FROM playlists WHERE owner_user_id = ?
+      ORDER BY position ASC, created_at ASC, rowid ASC LIMIT ? OFFSET ?`).all(userId, limit, offset)
+    return { user, items, total, page, pageSize: PAGE_SIZE }
+  }
+
+  function listUserPlaylistTracks(userId, playlistId, queryInput, pageInput) {
+    getPlaylistUser(userId)
+    const playlist = db.prepare(`SELECT id, name, kind, created_at AS createdAt, updated_at AS updatedAt,
+      (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) AS trackCount
+      FROM playlists WHERE id = ? AND owner_user_id = ?`).get(playlistId, userId)
+    if (!playlist) throw new AppError(404, '플레이리스트를 찾지 못했습니다.', 'PLAYLIST_NOT_FOUND')
+    const pattern = `%${searchTerm(queryInput)}%`
+    const { page, limit, offset } = pageOptions(pageInput)
+    const source = `FROM playlist_tracks JOIN library_tracks ON library_tracks.video_id = playlist_tracks.video_id
+      WHERE playlist_tracks.playlist_id = ? AND
+        (library_tracks.title LIKE ? OR library_tracks.artist LIKE ? OR library_tracks.video_id LIKE ?)`
+    const args = [playlistId, pattern, pattern, pattern]
+    const total = db.prepare(`SELECT COUNT(*) AS count ${source}`).get(...args).count
+    const items = db.prepare(`SELECT library_tracks.video_id AS videoId, library_tracks.title, library_tracks.artist,
+      library_tracks.duration_seconds AS durationSeconds, library_tracks.thumbnail_url AS thumbnailUrl,
+      playlist_tracks.added_at AS addedAt ${source}
+      ORDER BY playlist_tracks.added_at DESC, library_tracks.video_id ASC LIMIT ? OFFSET ?`).all(...args, limit, offset)
+    return { playlist, items, total, page, pageSize: PAGE_SIZE }
+  }
+
   function listAudit(limitInput = 30) {
     const limit = Math.max(1, Math.min(Number(limitInput) || 30, 100))
     return db.prepare(
@@ -242,6 +281,27 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     return { items, total, page, pageSize: PAGE_SIZE }
   }
 
+  function listRoomVideos(codeInput, queryInput, pageInput) {
+    const code = String(codeInput ?? '').trim().toUpperCase()
+    const room = db.prepare('SELECT id FROM rooms WHERE code = ?').get(code)
+    if (!room) throw new AppError(404, '방을 찾지 못했습니다.', 'ROOM_NOT_FOUND')
+    const pattern = `%${searchTerm(queryInput)}%`
+    const { page, limit, offset } = pageOptions(pageInput)
+    const source = `FROM (${ROOM_VIDEOS_QUERY}) WHERE videoId LIKE ? OR title LIKE ? OR artist LIKE ?`
+    const args = [room.id, room.id, room.id, room.id, pattern, pattern, pattern]
+    const total = db.prepare(`SELECT COUNT(*) AS count ${source}`).get(...args).count
+    const items = db.prepare(`SELECT * ${source} ORDER BY lastSeenAt DESC, videoId LIMIT ? OFFSET ?`)
+      .all(...args, limit, offset).map((video) => ({ ...video, autoplayExcluded: Boolean(video.autoplayExcluded) }))
+    return { items, total, page, pageSize: PAGE_SIZE }
+  }
+
+  function deleteRoomVideoRecords(adminUser, code, videoId, confirmation) {
+    requireAdmin(adminUser)
+    return roomService.deleteVideoRecordsAsAdmin(code, videoId, confirmation, (preview) => {
+      recordAction(adminUser, 'room_video_records_deleted', 'room', `${preview.code}/${preview.target.videoId}`)
+    })
+  }
+
   function deleteRoomUserRecords(adminUser, code, participantId, confirmation) {
     requireAdmin(adminUser)
     return roomService.deleteUserRecordsAsAdmin(code, participantId, confirmation, (preview) => {
@@ -250,7 +310,7 @@ function createAdminService(db, { discordIds = '', now = Date.now, onlineCount =
     })
   }
 
-  return { requireAdmin, listOverview, listRooms, getRoom, listRoomParticipants, listUsers, listAudit, recordAction, revokeUserSessions, deleteRoomUserRecords }
+  return { requireAdmin, listOverview, listRooms, getRoom, listRoomParticipants, listRoomVideos, listUsers, listUserPlaylists, listUserPlaylistTracks, listAudit, recordAction, revokeUserSessions, deleteRoomUserRecords, deleteRoomVideoRecords }
 }
 
 module.exports = { createAdminService }

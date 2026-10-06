@@ -1,5 +1,5 @@
 import { request } from '../../shared/http'
-import type { AdminUser, AuditEntry, Overview, Page, RoomDetail, RoomSummary, RoomUserRecordsPreview, UserSummary } from './types'
+import type { AdminUser, AuditEntry, Overview, Page, RoomDetail, RoomSummary, RoomUserRecordsPreview, RoomVideo, RoomVideoRecordsPreview, UserSummary, UserPlaylistsPage, UserPlaylistTracksPage } from './types'
 
 const base = '/api/admin'
 
@@ -29,8 +29,22 @@ export const adminApi = {
         method: 'DELETE', body: JSON.stringify({ confirmationCode, revision }),
       },
     ),
+  roomVideos: (code: string, query: string, page: number, signal?: AbortSignal) =>
+    request<Page<RoomVideo>>(`${base}/rooms/${encodeURIComponent(code)}/videos?query=${encodeURIComponent(query)}&page=${page}`, { signal }),
+  roomVideoRecords: (code: string, videoId: string, signal?: AbortSignal) =>
+    request<RoomVideoRecordsPreview>(`${base}/rooms/${encodeURIComponent(code)}/videos/${encodeURIComponent(videoId)}/records`, { signal }),
+  deleteRoomVideoRecords: (code: string, videoId: string, confirmationCode: string, revision: string) =>
+    request<Pick<RoomVideoRecordsPreview, 'code' | 'target' | 'counts'>>(
+      `${base}/rooms/${encodeURIComponent(code)}/videos/${encodeURIComponent(videoId)}/records`, {
+        method: 'DELETE', body: JSON.stringify({ confirmationCode, revision }),
+      },
+    ),
   users: (query: string, page: number, signal?: AbortSignal) =>
     request<Page<UserSummary>>(`${base}/users?query=${encodeURIComponent(query)}&page=${page}`, { signal }),
+  userPlaylists: (userId: string, page: number, signal?: AbortSignal) =>
+    request<UserPlaylistsPage>(`${base}/users/${encodeURIComponent(userId)}/playlists?page=${page}`, { signal }),
+  userPlaylistTracks: (userId: string, playlistId: string, query: string, page: number, signal?: AbortSignal) =>
+    request<UserPlaylistTracksPage>(`${base}/users/${encodeURIComponent(userId)}/playlists/${encodeURIComponent(playlistId)}/tracks?query=${encodeURIComponent(query)}&page=${page}`, { signal }),
   audit: (signal?: AbortSignal) => request<{ items: AuditEntry[] }>(`${base}/audit`, { signal }),
   setRoomPaused: (code: string, paused: boolean) =>
     request(`${base}/rooms/${encodeURIComponent(code)}/playback`, {

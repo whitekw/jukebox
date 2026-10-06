@@ -507,7 +507,7 @@ export function RoomPage() {
                       isHost && room.playbackMode === 'host_only'
                         ? () =>
                             runQueueAction(() =>
-                              roomApi.advance(code, hostToken),
+                              roomApi.advance(code, hostToken, { reason: 'ended', songId: room.currentSong?.id }),
                             )
                         : undefined
                     }
@@ -723,7 +723,7 @@ export function RoomPage() {
         onAdvance={
           songActionCredentials && room.currentSong &&
           canControlSong(room.currentSong, participant?.id, isController, serverNow)
-            ? () => runQueueAction(() => roomApi.advance(code, songActionCredentials))
+            ? () => runQueueAction(() => roomApi.advance(code, songActionCredentials, { songId: room.currentSong?.id }))
             : undefined
         }
         onGlobalPlaybackToggle={

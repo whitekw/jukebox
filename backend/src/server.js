@@ -307,6 +307,14 @@ app.get('/api/admin/users', (req, res) => {
   res.json(admin.listUsers(req.query.query, req.query.page))
 })
 
+app.get('/api/admin/users/:userId/playlists', (req, res) => {
+  res.json(admin.listUserPlaylists(req.params.userId, req.query.page))
+})
+
+app.get('/api/admin/users/:userId/playlists/:playlistId/tracks', (req, res) => {
+  res.json(admin.listUserPlaylistTracks(req.params.userId, req.params.playlistId, req.query.query, req.query.page))
+})
+
 app.post('/api/admin/users/:userId/revoke-sessions', mutationLimiter, (req, res) => {
   requireAdminAction(req)
   const hashes = admin.revokeUserSessions(req.adminUser, req.params.userId)
@@ -640,7 +648,7 @@ app.get('/api/rooms/:code/stats', (req, res) => {
 app.get('/api/rooms/:code/history', (req, res) => {
   res.json(rooms.getRoomHistory(
     req.params.code, controlCredentials(req), req.query.before, req.query.limit ?? 30,
-    req.query.requesterId ?? [],
+    req.query.requesterId ?? [], req.query.q ?? '',
   ))
 })
 
@@ -764,12 +772,12 @@ app.post('/api/rooms/:code/songs/:songId/vote', mutationLimiter, (req, res) => {
 
 app.post('/api/rooms/:code/advance', mutationLimiter, (req, res) => {
   const currentSong = rooms.getPublicRoom(req.params.code).currentSong
-  const state = rooms.advance(req.params.code, controlCredentials(req))
-  logRoomEvent(
+  const state = rooms.advance(req.params.code, controlCredentials(req), req.body)
+  if (req.body?.reason !== 'ended') logRoomEvent(
     req.params.code,
     'song_skipped',
     requestActivityActor(req, req.params.code),
-    { title: currentSong?.title ?? '' },
+    { title: currentSong?.title ?? '', videoId: currentSong?.videoId, songId: currentSong?.id },
   )
   res.json(emitRoom(req.params.code, state))
 })
@@ -825,6 +833,22 @@ app.delete('/api/admin/rooms/:code/participants/:participantId/records', mutatio
   res.json({ code: result.code, target: result.target, counts: result.counts })
 })
 
+app.get('/api/admin/rooms/:code/videos', (req, res) => {
+  res.json(admin.listRoomVideos(req.params.code, req.query.query, req.query.page))
+})
+
+app.get('/api/admin/rooms/:code/videos/:videoId/records', (req, res) => {
+  res.json(rooms.previewVideoRecordsAsAdmin(req.params.code, req.params.videoId))
+})
+
+app.delete('/api/admin/rooms/:code/videos/:videoId/records', mutationLimiter, (req, res) => {
+  requireAdminAction(req)
+  const result = admin.deleteRoomVideoRecords(req.adminUser, req.params.code, req.params.videoId, req.body)
+  emitRoom(result.code, result.room)
+  io.to(roomChannel(result.code)).emit('room:records-cleared', { code: result.code })
+  res.json({ code: result.code, target: result.target, counts: result.counts })
+})
+
 app.post('/api/rooms/:code/playback/failure', mutationLimiter, (req, res) => {
   const state = rooms.reportPlaybackFailure(
     req.params.code,
@@ -860,7 +884,7 @@ app.delete('/api/rooms/:code/songs/:songId', mutationLimiter, (req, res) => {
     req.params.code,
     'song_removed',
     requestActivityActor(req, req.params.code),
-    { title: removedSong?.title ?? '' },
+    { title: removedSong?.title ?? '', videoId: removedSong?.videoId, songId: removedSong?.id },
   )
   res.json(emitRoom(req.params.code, state))
 })
@@ -884,6 +908,8 @@ app.post('/api/rooms/:code/songs/:songId/reorder', mutationLimiter, (req, res) =
       requestActivityActor(req, req.params.code),
       {
         title: movedSong?.title ?? '',
+        videoId: movedSong?.videoId,
+        songId: movedSong?.id,
         position: Number(req.body.targetIndex) + 1,
       },
     )

@@ -110,7 +110,7 @@ test('failed historical videos leave the autoplay pool and stay excluded after s
   try {
     for (let index = 0; index < 10; index += 1) {
       add(`history-${index}`)
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     const enabled = rooms.updateRoomSettings(created.code, { userId: 'owner' }, { historyAutoplay: true })
     const failedVideo = enabled.currentSong.videoId
@@ -133,7 +133,7 @@ test('autoplay stops when its only historical video becomes unavailable', () => 
   try {
     for (let index = 0; index < 10; index += 1) {
       add('only-video')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     const enabled = rooms.updateRoomSettings(created.code, { userId: 'owner' }, { historyAutoplay: true })
     const empty = report(enabled)

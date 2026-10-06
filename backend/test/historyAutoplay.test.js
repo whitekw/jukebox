@@ -26,7 +26,7 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
 
     for (let index = 0; index < 9; index += 1) {
       rooms.addSong(created.code, requester.participantToken, song(index), 'requester')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     assert.equal(rooms.getPublicRoom(created.code).autoplayHistoryCount, 9)
     assert.throws(() => rooms.updateRoomSettings(created.code, credentials, { historyAutoplay: true }),
@@ -36,7 +36,7 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     { code: 'OWNER_FORBIDDEN' })
 
     rooms.addSong(created.code, requester.participantToken, song(9, 601), 'requester')
-    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     const enabled = rooms.updateRoomSettings(created.code, credentials, { historyAutoplay: true })
     assert.equal(enabled.autoplayHistoryCount, 10)
     assert.equal(enabled.historyAutoplay, true)
@@ -66,14 +66,14 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     const firstAutoplayId = enabled.currentSong.id
     const manual = rooms.addSong(created.code, requester.participantToken, song(10), 'requester')
     assert.equal(manual.queue[0].videoId, 'video-10')
-    const next = rooms.advance(created.code, { hostToken: created.hostToken })
+    const next = rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     assert.equal(next.currentSong.videoId, 'video-10')
     assert.equal(next.currentSong.isAutoplay, false)
     assert.equal(next.autoplayHistoryCount, 10)
     rooms.setSongVote(created.code, { participantToken: created.participantToken }, next.currentSong.id, 'up')
     assert.deepEqual(next.autoplaySuggestions.slice(0, manual.autoplaySuggestions.length),
       manual.autoplaySuggestions)
-    const afterManual = rooms.advance(created.code, { hostToken: created.hostToken })
+    const afterManual = rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     assert.equal(afterManual.currentSong.isAutoplay, true)
     assert.notEqual(afterManual.currentSong.id, firstAutoplayId)
     assert.equal(afterManual.currentSong.videoId, next.autoplaySuggestions[0].videoId)
@@ -101,7 +101,7 @@ test('history autoplay needs ten manual plays, yields to requests and creates se
     assert.equal(history.items.find(({ id }) => id === firstAutoplayId).requester, '자동 재생')
 
     rooms.updateRoomSettings(created.code, credentials, { historyAutoplay: false })
-    const stopped = rooms.advance(created.code, { hostToken: created.hostToken })
+    const stopped = rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     assert.equal(stopped.currentSong, null)
     assert.deepEqual(stopped.autoplaySuggestions, [])
   } finally {
@@ -118,7 +118,7 @@ test('autoplay previews at most twenty distinct videos and drops a newly queued 
     const created = rooms.createRoom({ ownerUserId: 'owner', nickname: 'Owner' })
     for (let index = 0; index < 22; index += 1) {
       rooms.addSong(created.code, created.participantToken, song(index), 'owner')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     const enabled = rooms.updateRoomSettings(created.code, { userId: 'owner' }, { historyAutoplay: true })
     assert.equal(enabled.autoplaySuggestions.length, 20)
@@ -147,7 +147,7 @@ test('room owner filters autoplay by title and video without affecting manual re
     for (let index = 0; index < 10; index += 1) {
       const track = index === 2 ? { ...song(index), videoId: excludedId } : song(index)
       rooms.addSong(created.code, created.participantToken, track, 'owner')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     const owner = { userId: 'owner' }
     const initial = rooms.updateRoomSettings(created.code, owner, { historyAutoplay: true })
@@ -188,8 +188,8 @@ test('room owner filters autoplay by title and video without affecting manual re
     rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
       excludedWords: ['Song'], excludedVideoIds: [],
     } })
-    rooms.advance(created.code, { hostToken: created.hostToken })
-    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     assert.equal(rooms.getPublicRoom(created.code).currentSong, null)
     const resumed = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
       excludedWords: [], excludedVideoIds: [],
@@ -211,13 +211,13 @@ test('autoplay filter search lists distinct eligible history videos in recent-pl
     for (let index = 0; index < 32; index += 1) {
       rooms.addSong(created.code, created.participantToken,
         index === 0 ? { ...song(index), videoId: repeatedId } : song(index), 'owner')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     rooms.addSong(created.code, created.participantToken, song(99, 601), 'owner')
-    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     rooms.addSong(created.code, created.participantToken,
       { ...song(40), videoId: repeatedId, title: 'Special replay' }, 'owner')
-    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     rooms.updateRoomSettings(created.code, { userId: 'owner' }, { autoplayFilters: {
       excludedWords: [], excludedVideoIds: [repeatedId],
     } })
@@ -253,7 +253,7 @@ test('autoplay duration range controls the pool, history search, and next playba
     for (let index = 0; index < 10; index += 1) {
       const duration = index < 3 ? 60 : index < 6 ? 180 : index < 8 ? 300 : 601
       rooms.addSong(created.code, created.participantToken, song(index, duration), 'owner')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     assert.equal(rooms.getPublicRoom(created.code).autoplayPoolCount, 8)
     const ranged = rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
@@ -272,7 +272,7 @@ test('autoplay duration range controls the pool, history search, and next playba
     } })
     assert.equal(longOnly.autoplayPoolCount, 2)
     assert.ok(longOnly.autoplaySuggestions.every(({ durationSeconds }) => durationSeconds === 601))
-    assert.equal(rooms.advance(created.code, { hostToken: created.hostToken }).currentSong.durationSeconds, 601)
+    assert.equal(rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id }).currentSong.durationSeconds, 601)
     assert.throws(() => rooms.updateRoomSettings(created.code, owner, { autoplayFilters: {
       excludedWords: [], excludedVideoIds: [], minDurationSeconds: 602, maxDurationSeconds: 601,
     } }), { code: 'INVALID_AUTOPLAY_DURATION' })
@@ -296,7 +296,7 @@ test('controllers can redraw autoplay suggestions without changing the current s
       { code: 'HISTORY_AUTOPLAY_DISABLED' })
     for (let index = 0; index < 12; index += 1) {
       rooms.addSong(created.code, created.participantToken, song(index), 'owner')
-      rooms.advance(created.code, { hostToken: created.hostToken })
+      rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId: rooms.getPublicRoom(created.code).currentSong.id })
     }
     const enabled = rooms.updateRoomSettings(created.code, credentials, { historyAutoplay: true })
     const queued = rooms.addSong(created.code, created.participantToken, song(99), 'owner')

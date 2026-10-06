@@ -138,7 +138,7 @@ test('an account cannot vote on its request after leaving and rejoining the room
     assert.deepEqual([rooms.getPublicRoom(created.code).currentSong.upvotes,
       rooms.getPublicRoom(created.code).currentSong.downvotes], [0, 0])
     rooms.addSong(created.code, secondMembership.participantToken, song('account-vote-song-2', 'Next'), 'requester')
-    rooms.advance(created.code, { hostToken: created.hostToken })
+    rooms.advance(created.code, { hostToken: created.hostToken }, { reason: 'ended', songId })
     const requesterStats = rooms.getRoomStats(created.code, { userId: 'requester' }).participants
       .filter(({ nickname }) => nickname === 'Requester again')
     assert.equal(requesterStats.length, 1)

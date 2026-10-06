@@ -116,6 +116,7 @@ export type RoomHistoryEntry = {
   isAutoplay: boolean
   startedAt: number
   startedAtEstimated: boolean
+  countedAsPlay: boolean
 }
 
 export type RoomHistoryPage = {

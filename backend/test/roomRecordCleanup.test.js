@@ -13,18 +13,26 @@ function fixture(playbackMode = 'host_only') {
     VALUES ('owner', '234567890123456789', 'Owner', 1, 1, 1),
       ('dummy', '345678901234567890', 'Dummy', 1, 1, 1),
       ('operator', '123456789012345678', 'Operator', 1, 1, 1)`).run()
-  const rooms = createRoomService(db)
+  let clock = Date.now()
+  const rooms = createRoomService(db, { now: () => clock })
   const room = rooms.createRoom({ ownerUserId: 'owner', participantUserId: 'owner', nickname: 'Owner', playbackMode })
+  const listen = () => {
+    const state = rooms.getPublicRoom(room.code)
+    if (state.playbackPending) rooms.startPlayback(room.code, { userId: 'owner' }, state.currentSong.videoId, 0)
+    clock += 10_000
+  }
   const oldDummy = rooms.joinRoom(room.code, { userId: 'dummy', nickname: 'Test user' })
   rooms.addSong(room.code, oldDummy.participantToken, song('dummy-played'), 'dummy')
   rooms.addChatMessage(room.code, oldDummy.participantToken, 'dummy old chat', 'dummy')
   rooms.addRoomEvent(room.code, 'song_added', { userId: 'dummy' }, { title: 'dummy-played' })
+  listen()
   rooms.advance(room.code, { userId: 'owner' })
   rooms.leaveAccountRoom(room.code, 'dummy')
   const dummy = rooms.joinRoom(room.code, { userId: 'dummy', nickname: 'Test user' })
   const other = rooms.joinRoom(room.code, { nickname: 'Real listener' })
   const otherSong = rooms.addSong(room.code, other.participantToken, song('other-played')).currentSong
   rooms.setSongVote(room.code, { userId: 'dummy' }, otherSong.id, 'up')
+  listen()
   rooms.advance(room.code, { userId: 'owner' })
   const current = rooms.addSong(room.code, dummy.participantToken, song('dummy-current'), 'dummy').currentSong
   rooms.setSongVote(room.code, { userId: 'owner' }, current.id, 'down')
@@ -49,7 +57,7 @@ function fixture(playbackMode = 'host_only') {
       confirmationCode: room.code, revision: currentPreview.revision, ...confirmation,
     })
   }
-  return { db, rooms, admin, room, dummy, oldDummy, other, current, otherSong, secondRoom, preview, remove }
+  return { db, rooms, admin, room, dummy, oldDummy, other, current, otherSong, secondRoom, preview, remove, listen }
 }
 
 for (const mode of ['host_only', 'all_devices']) {
@@ -141,13 +149,17 @@ test('deleting a guest occurrence preserves another guest with the same nickname
 })
 
 test('rebuilds autoplay suggestions from surviving history and keeps room ownership', () => {
-  const { db, rooms, admin, room, dummy } = fixture()
+  const { db, rooms, admin, room, dummy, listen } = fixture()
   try {
+    listen()
     rooms.advance(room.code, { userId: 'owner' })
+    listen()
     rooms.advance(room.code, { userId: 'owner' })
+    listen()
     rooms.advance(room.code, { userId: 'owner' })
     for (let index = 0; index < 10; index += 1) {
       rooms.addSong(room.code, room.participantToken, song(`owner-history-${index}`), 'owner')
+      listen()
       rooms.advance(room.code, { userId: 'owner' })
     }
     rooms.updateRoomSettings(room.code, { userId: 'owner' }, { historyAutoplay: true })
