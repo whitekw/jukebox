@@ -121,7 +121,7 @@ test('admin daily activity follows local midnight across a daylight-saving chang
   }
 })
 
-test('admin API gates data and changes, records pauses and revokes sessions', { timeout: 10_000 }, async () => {
+async function verifyAdminApi(publicOrigin = '') {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-admin-'))
   const databasePath = path.join(directory, 'jukebox.sqlite')
   const db = createDatabase(databasePath)
@@ -164,7 +164,8 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       cwd: path.resolve(__dirname, '..'),
       env: {
         ...process.env, PORT: String(port), DATABASE_PATH: databasePath,
-        ADMIN_DISCORD_IDS: adminDiscordId, YOUTUBE_API_KEY: '',
+        ADMIN_DISCORD_IDS: adminDiscordId, YOUTUBE_API_KEY: '', TRUST_PROXY: 'false',
+        DISCORD_REDIRECT_URI: publicOrigin ? `${publicOrigin}/api/auth/discord/callback` : '',
       },
       stdio: 'ignore',
     })
@@ -215,7 +216,10 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     })
     assert.equal((await patch(adminHeaders)).status, 403)
     assert.equal((await patch({ ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: 'https://evil.example' })).status, 403)
-    const actionHeaders = { ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: baseUrl }
+    const actionHeaders = { ...adminHeaders, 'X-Bside-Admin-Action': '1', Origin: publicOrigin || baseUrl,
+      ...(publicOrigin ? { 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': new URL(publicOrigin).host } : {}) }
+    assert.equal((await patch({ ...actionHeaders, Origin: 'https://evil.example',
+      'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'evil.example' })).status, 403)
     const faultDb = new DatabaseSync(databasePath)
     try {
       faultDb.exec(`CREATE TRIGGER reject_admin_audit BEFORE INSERT ON admin_audit_entries
@@ -297,7 +301,12 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
     assert.equal(clearedRoom.participants.length, 1)
     assert.equal((await fetch(`${baseUrl}/api/rooms/${room.code}/me`, { headers: { ...memberHeaders, 'x-participant-token': room.participantToken } })).status, 401)
     await fetch(listenerSocket.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '41' })
-    const revoke = await fetch(`${baseUrl}/api/admin/users/member/revoke-sessions`, {
+    const revokeUrl = `${baseUrl}/api/admin/users/member/revoke-sessions`
+    assert.equal((await fetch(revokeUrl, { method: 'POST', headers: adminHeaders })).status, 403)
+    assert.equal((await fetch(revokeUrl, {
+      method: 'POST', headers: { ...actionHeaders, Origin: 'https://evil.example' },
+    })).status, 403)
+    const revoke = await fetch(revokeUrl, {
       method: 'POST', headers: actionHeaders,
     })
     assert.equal(revoke.status, 200)
@@ -321,4 +330,7 @@ test('admin API gates data and changes, records pauses and revokes sessions', { 
       fs.rmSync(directory, { recursive: true, force: true })
     }
   }
-})
+}
+
+test('admin API gates data and changes, records pauses and revokes sessions', { timeout: 10_000 }, () => verifyAdminApi())
+test('admin mutations accept the configured HTTPS origin behind an HTTP proxy', { timeout: 10_000 }, () => verifyAdminApi('https://admin.example'))

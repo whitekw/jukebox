@@ -40,6 +40,16 @@ const authSessionTtlDays =
     ? configuredAuthSessionTtlDays
     : 30
 const authSessionTtlMs = authSessionTtlDays * 24 * 60 * 60 * 1_000
+// The proxy can rewrite Host or terminate HTTPS before forwarding plain HTTP.
+// Use the server's OAuth callback configuration as the trusted public origin.
+const adminPublicOrigin = (() => {
+  try {
+    const redirectUrl = new URL(process.env.DISCORD_REDIRECT_URI)
+    return ['http:', 'https:'].includes(redirectUrl.protocol) ? redirectUrl.origin : null
+  } catch {
+    return null
+  }
+})()
 const authCookieSecure = process.env.AUTH_COOKIE_SECURE === undefined
   ? process.env.NODE_ENV === 'production'
   : process.env.AUTH_COOKIE_SECURE === 'true'
@@ -261,7 +271,7 @@ app.use('/api/admin', (req, res, next) => {
 function requireAdminAction(req) {
   const origin = req.get('origin')
   if (req.get('x-bside-admin-action') !== '1' ||
-      (origin && origin !== `${req.protocol}://${req.get('host')}`)) {
+      (origin && origin !== `${req.protocol}://${req.get('host')}` && origin !== adminPublicOrigin)) {
     throw new AppError(403, '허용되지 않은 운영 요청입니다.', 'ADMIN_ACTION_FORBIDDEN')
   }
 }

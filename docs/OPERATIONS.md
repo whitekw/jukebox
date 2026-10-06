@@ -31,6 +31,8 @@ Discord Client Secret도 서버 환경 변수에만 둡니다. 세 Discord 설�
 
 Discord Developer Portal의 **OAuth2 → Redirects**에는 로컬 개발 시 `http://localhost:5173/api/auth/discord/callback`, HTTPS 운영 시 `https://bside.whitekw.com/api/auth/discord/callback`을 등록합니다. 설정값은 대소문자, 포트, 경로, trailing slash까지 완전히 일치해야 합니다. HTTP에서 전환할 때는 HTTPS callback을 먼저 추가한 다음 Portainer의 `DISCORD_REDIRECT_URI`를 변경하고, 로그인 확인 후 기존 HTTP callback을 제거합니다. HTTPS 운영에서는 `AUTH_COOKIE_SECURE=true`를 사용합니다.
 
+운영 대시보드의 변경 요청은 `DISCORD_REDIRECT_URI`의 출처(프로토콜·호스트·포트)를 공개 주소로 검증합니다. 프록시가 HTTPS를 종료하거나 내부 Host로 전달해도 공개 주소가 이 설정과 일치하면 세션 해제·기록 삭제를 처리합니다. `TRUST_PROXY`의 클라이언트 IP 신뢰 설정과는 별개이며, 전달 헤더만으로 외부 출처를 허용하지 않습니다.
+
 Chrome 확장 프로그램은 [`extension/README.md`](../extension/README.md)의 설치 절차를 따릅니다. OAuth의 Discord callback은 `DISCORD_REDIRECT_URI`를 사용하며, 완료 후 허용된 `https://{확장 ID}.chromiumapp.org/bside`로 일회용 코드만 보냅니다. HTTPS 전환 시 확장 프로그램도 `https://bside.whitekw.com`을 대상으로 다시 빌드해야 합니다.
 
 ## 3. 로컬 개발
