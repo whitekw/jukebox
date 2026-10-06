@@ -180,7 +180,8 @@ test('rebuilds the autoplay pool and empties current playback if no eligible vid
   try {
     rooms.advance(room.code, { userId: 'owner' })
     rooms.advance(room.code, { userId: 'owner' })
-    for (let index = 0; index < 10; index += 1) {
+    // Keep ten eligible records after deletion so autoplay can replace a removed current song.
+    for (let index = 0; index < 11; index += 1) {
       rooms.addSong(room.code, room.participantToken, track(`history-${index}`), 'owner')
       listen()
       rooms.advance(room.code, { userId: 'owner' })
@@ -188,11 +189,37 @@ test('rebuilds the autoplay pool and empties current playback if no eligible vid
     rooms.updateRoomSettings(room.code, { userId: 'owner' }, { historyAutoplay: true })
     assert.ok(rooms.getPublicRoom(room.code).autoplaySuggestions.length > 0)
     const result = remove('history-0')
+    assert.equal(result.room.autoplayHistoryCount, 10)
+    assert.ok(result.room.currentSong)
+    assert.notEqual(result.room.currentSong.videoId, 'history-0')
+    assert.ok(result.room.autoplaySuggestions.length > 0)
     assert.ok(result.room.autoplaySuggestions.every(({ videoId }) => videoId !== 'history-0'))
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM room_autoplay_suggestions WHERE room_id = ? AND video_id = ?').get(roomId, 'history-0').count, 0)
     rooms.updateRoomSettings(room.code, { userId: 'owner' }, { historyAutoplay: false })
     rooms.advance(room.code, { userId: 'owner' })
     rooms.addSong(room.code, room.participantToken, track('last-video'), 'owner')
     assert.equal(remove('last-video').room.currentSong, null)
+  } finally { db.close() }
+})
+
+test('deleting the current autoplay video empties playback when history falls below ten plays', () => {
+  const { db, rooms, room, roomId, remove, listen } = fixture()
+  try {
+    rooms.advance(room.code, { userId: 'owner' })
+    rooms.advance(room.code, { userId: 'owner' })
+    for (let index = 0; index < 10; index += 1) {
+      rooms.addSong(room.code, room.participantToken, track(`history-${index}`), 'owner')
+      listen()
+      rooms.advance(room.code, { userId: 'owner' })
+    }
+    const playing = rooms.updateRoomSettings(room.code, { userId: 'owner' }, { historyAutoplay: true })
+    assert.equal(playing.autoplayHistoryCount, 10)
+    assert.equal(playing.currentSong.isAutoplay, true)
+    assert.match(playing.currentSong.videoId, /^history-\d+$/)
+    const result = remove(playing.currentSong.videoId)
+    assert.equal(result.room.autoplayHistoryCount, 9)
+    assert.equal(result.room.currentSong, null)
+    assert.deepEqual(result.room.autoplaySuggestions, [])
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM room_autoplay_suggestions WHERE room_id = ?').get(roomId).count, 0)
   } finally { db.close() }
 })
