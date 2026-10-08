@@ -26,8 +26,20 @@ type WindowInteraction = {
 }
 
 const CHAT_WINDOW_STORAGE_KEY = 'jukebox:chat-window'
+
+function getTitlebarInset() {
+  if (!document.documentElement.hasAttribute('data-bside-desktop')) return 0
+  const header = document.querySelector('[data-desktop-titlebar]')
+  const fallback = document.getElementById('bside-titlebar-fallback')
+  return Math.max(
+    0,
+    header?.getBoundingClientRect().bottom ?? 0,
+    fallback && !fallback.hidden ? fallback.getBoundingClientRect().bottom : 0,
+  )
+}
+
 const clampToViewport = (rect: ChatWindowRect) =>
-  clampWindowRect(rect, window.innerWidth, window.innerHeight)
+  clampWindowRect(rect, window.innerWidth, window.innerHeight, getTitlebarInset())
 
 function getInitialWindowRect() {
   const fallback = clampToViewport({
@@ -106,6 +118,20 @@ export function useChatWindow() {
       })
     }
 
+    const headerObserver = new ResizeObserver(synchronizeViewport)
+    const observeHeaders = () => {
+      headerObserver.disconnect()
+      document
+        .querySelectorAll('[data-desktop-titlebar], #bside-titlebar-fallback')
+        .forEach(header => headerObserver.observe(header))
+      synchronizeViewport()
+    }
+    const desktopObserver = new MutationObserver(observeHeaders)
+    desktopObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-bside-desktop', 'data-bside-titlebar-fallback'],
+    })
+    observeHeaders()
     desktopMedia.addEventListener('change', synchronizeViewport)
     window.addEventListener('resize', synchronizeViewport)
     visualViewport?.addEventListener('resize', synchronizeViewport)
@@ -115,6 +141,8 @@ export function useChatWindow() {
       window.removeEventListener('resize', synchronizeViewport)
       visualViewport?.removeEventListener('resize', synchronizeViewport)
       visualViewport?.removeEventListener('scroll', synchronizeViewport)
+      headerObserver.disconnect()
+      desktopObserver.disconnect()
     }
   }, [])
 
@@ -164,10 +192,11 @@ export function useChatWindow() {
         )
       }
       if (interaction.mode.includes('n')) {
+        const minimumTop = clampToViewport({ ...start, y: -Infinity }).y
         top = clamp(
           start.y + deltaY,
-          WINDOW_MARGIN,
-          bottom - Math.min(MIN_WINDOW_HEIGHT, bottom - WINDOW_MARGIN),
+          minimumTop,
+          bottom - Math.min(MIN_WINDOW_HEIGHT, bottom - minimumTop),
         )
       }
       if (interaction.mode.includes('s')) {
@@ -178,12 +207,14 @@ export function useChatWindow() {
         )
       }
 
-      updateWindowRect({
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top,
-      })
+      updateWindowRect(
+        clampToViewport({
+          x: left,
+          y: top,
+          width: right - left,
+          height: bottom - top,
+        }),
+      )
     }
 
     const finishInteraction = () => {

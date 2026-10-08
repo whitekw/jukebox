@@ -18,7 +18,7 @@
 | `PARTICIPANT_LEAVE_GRACE_MS` | `5000` | 선택 | 마지막 연결 종료 후 참여자를 오프라인 처리하기까지의 유예 시간(ms) |
 | `YOUTUBE_API_KEY` | 없음 | YouTube 기능에 필수 | YouTube Data API v3 키 |
 | `TRUST_PROXY` | 백엔드 기본값 `false`, Compose 기본값 `true` | 프록시 구성에 따라 | `true`이면 Express가 한 단계 프록시의 클라이언트 IP를 신뢰 |
-| `JUKEBOX_PORT` | `3001` | Compose에서 선택 | 호스트에 공개할 포트 |
+| `JUKEBOX_PORT` | `3001` | 로컬 Compose에서 선택 | `compose.yaml`에서 호스트에 공개할 포트. 운영 Compose는 호스트 포트를 공개하지 않음 |
 | `DISCORD_CLIENT_ID` | 없음 | 방 생성에 필수 | Discord 애플리케이션 Client ID |
 | `DISCORD_CLIENT_SECRET` | 없음 | 방 생성에 필수 | 서버에서만 사용하는 Discord Client Secret |
 | `DISCORD_REDIRECT_URI` | 없음 | 방 생성에 필수 | Developer Portal에 등록한 정확한 OAuth2 callback URL |
@@ -129,7 +129,7 @@ docker compose down
 
 ### 게시 이미지로 배포
 
-`compose.deploy.yaml`은 GHCR의 commit SHA 이미지와 외부 `jukebox-data` 볼륨을 사용합니다.
+`compose.deploy.yaml`은 GHCR의 commit SHA 이미지, 외부 `jukebox-data` 볼륨과 외부 `proxy` 네트워크를 사용합니다. 운영 서버에 `proxy` 네트워크가 있어야 하며, 리버스 프록시 컨테이너도 같은 네트워크에 연결되어 있어야 합니다. 운영 Compose는 호스트 포트를 공개하지 않고 프록시가 `jukebox:3001`로 접속합니다.
 
 ```bash
 docker volume create jukebox-data
@@ -149,6 +149,7 @@ docker compose --env-file jukebox.env -f compose.deploy.yaml up -d
 
 - 외부 트래픽은 HTTPS로 종료합니다.
 - 일반 HTTP와 `/socket.io/`의 WebSocket upgrade를 모두 백엔드 포트로 전달합니다.
+- 운영 Compose에서는 `proxy` 네트워크의 `jukebox:3001`로 전달합니다. 호스트의 `127.0.0.1:3001`로는 접속할 수 없습니다.
 - 프록시가 실제 클라이언트 IP를 전달하고 토폴로지가 한 단계일 때 `TRUST_PROXY=true`를 사용합니다.
 - Cloudflare를 사용하는 경우 `CF-IPCountry`가 지역별 차트와 추천 언어에 사용됩니다.
 - 연결 유휴 시간 제한이 너무 짧으면 Socket.IO가 자주 재연결될 수 있습니다.
@@ -182,9 +183,9 @@ flowchart LR
 ### 상태 확인
 
 ```bash
-curl --fail http://127.0.0.1:3001/api/health
-docker compose ps
-docker compose logs --tail=200 jukebox
+docker compose --env-file jukebox.env -f compose.deploy.yaml exec jukebox node -e "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+docker compose --env-file jukebox.env -f compose.deploy.yaml ps
+docker compose --env-file jukebox.env -f compose.deploy.yaml logs --tail=200 jukebox
 ```
 
 애플리케이션 로그는 현재 시작 메시지와 처리되지 않은 5xx 오류를 표준 출력/오류에 기록합니다. 구조화 로그, access log, metrics 엔드포인트는 아직 없습니다.

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, RefreshCw, ListVideo, UserRound } from 'lucide-react'
 import { useAuth } from '../context'
 import { accountApi, type YouTubePlaylist, type YouTubeStatus } from '../accountApi'
-import { Brand } from '../../../shared/ui/Brand'
+import { EntryLayout } from '../../../shared/ui/EntryLayout'
 import { AccountMenu } from '../components/AccountMenu'
 import { AccountConfirmationDialog, type AccountConfirmation } from '../components/AccountConfirmationDialog'
 import { getErrorMessage, useI18n } from '../../../shared/i18n/i18n-context'
@@ -92,8 +92,7 @@ export function AccountPage() {
   const preview = avatar === undefined ? user?.avatarUrl : avatar
   const disabled = Boolean(busy)
   const card = 'rounded-2xl border border-line bg-panel p-5 sm:p-6'
-  return <main className="min-h-dvh bg-canvas text-ink">
-    <header className="flex items-center justify-between border-b border-line px-4 py-4 sm:px-8"><Brand /><AccountMenu compact /></header>
+  return <EntryLayout headerActions={<AccountMenu compact />}>
     <div className="mx-auto max-w-3xl px-4 py-7 sm:py-10">
       <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted hover:text-ink"><ArrowLeft size={16} />{t('common.home')}</Link>
       <h1 className="mt-5 mb-2 text-2xl font-bold">{t('account.title')}</h1><p className="mb-7 text-sm text-muted">{t('account.subtitle')}</p>
@@ -134,5 +133,5 @@ export function AccountPage() {
       <Link className="rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-purple-light" to="/privacy">{t('privacy.link')}</Link>
     </footer>
     {pendingConfirmation && <AccountConfirmationDialog confirmation={pendingConfirmation} onClose={() => setPendingConfirmation(null)} />}
-  </main>
+  </EntryLayout>
 }

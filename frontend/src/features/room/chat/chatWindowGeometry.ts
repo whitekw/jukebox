@@ -19,9 +19,14 @@ export function clampWindowRect(
   rect: ChatWindowRect,
   viewportWidth: number,
   viewportHeight: number,
+  topInset = 0,
 ) {
+  const minimumTop = Math.min(
+    Math.max(WINDOW_MARGIN, topInset + WINDOW_MARGIN),
+    Math.max(WINDOW_MARGIN, viewportHeight - WINDOW_MARGIN - 1),
+  )
   const maxWidth = Math.max(1, viewportWidth - WINDOW_MARGIN * 2)
-  const maxHeight = Math.max(1, viewportHeight - WINDOW_MARGIN * 2)
+  const maxHeight = Math.max(1, viewportHeight - minimumTop - WINDOW_MARGIN)
   const minimumWidth = Math.min(MIN_WINDOW_WIDTH, maxWidth)
   const minimumHeight = Math.min(MIN_WINDOW_HEIGHT, maxHeight)
   const width = clamp(rect.width, minimumWidth, maxWidth)
@@ -29,7 +34,7 @@ export function clampWindowRect(
 
   return {
     x: clamp(rect.x, WINDOW_MARGIN, viewportWidth - WINDOW_MARGIN - width),
-    y: clamp(rect.y, WINDOW_MARGIN, viewportHeight - WINDOW_MARGIN - height),
+    y: clamp(rect.y, minimumTop, viewportHeight - WINDOW_MARGIN - height),
     width,
     height,
   }
