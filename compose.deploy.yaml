@@ -1,6 +1,6 @@
 services:
   jukebox:
-    image: "ghcr.io/whitekw/jukebox:sha-7e5936418d143981a57a73d77688ae3626d790bc"
+    image: "ghcr.io/whitekw/jukebox:sha-ac1a344817c6738b07266bd743910f4a4adc9c2c"
     restart: unless-stopped
     init: true
     environment:
@@ -21,8 +21,8 @@ services:
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
       GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
       OAUTH_TOKEN_ENCRYPTION_KEY: "${OAUTH_TOKEN_ENCRYPTION_KEY:-}"
-    ports:
-      - "${JUKEBOX_PORT:-3001}:3001"
+    expose:
+      - "3001"
     volumes:
       - jukebox-data:/app/data
     read_only: true
@@ -37,3 +37,8 @@ volumes:
   jukebox-data:
     external: true
     name: jukebox-data
+
+networks:
+  default:
+    external: true
+    name: proxy
